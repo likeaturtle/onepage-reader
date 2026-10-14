@@ -1,0 +1,23 @@
+idf_component_register(
+    SRCS
+        "src/board_buttons.c"
+        "src/board_power.c"
+        "src/epd_ssd1677.c"
+        "src/font5x7.c"
+        "src/gfx.c"
+        "src/onepage_adc.c"
+        "src/sd_card.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        esp_driver_gpio
+        esp_driver_spi
+        esp_driver_sdspi
+        esp_driver_sdmmc
+        sdmmc
+        fatfs
+        esp_adc
+        esp_hw_support
+    PRIV_REQUIRES
+        esp_timer
+)

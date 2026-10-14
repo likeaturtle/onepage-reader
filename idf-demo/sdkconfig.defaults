@@ -1,0 +1,35 @@
+# OnePage C61 bring-up demo — ESP-IDF defaults.
+#
+# Requires ESP-IDF >= 5.5 for ESP32-C61 support (the vendor firmware is built
+# against 5.5.2). Build with:
+#   idf.py set-target esp32c61 && idf.py build
+
+# --- Flash: 16 MB, DIO, 80 MHz (PY25Q128HA / W25Q128JW both rate >= 104 MHz) --
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# --- 2 MB PSRAM ---------------------------------------------------------------
+# Quad mode at 40 MHz: the C61HR2 part inits unreliably at 80 MHz.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_SPEED_40M=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_BOOT_INIT=y
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
+
+# --- Console ------------------------------------------------------------------
+# The console must go to the ROM USB-Serial/JTAG device, never UART0: GPIO10 is
+# the charger enable (BAT_CHG_EN) and GPIO11 is the USB detect input, and those
+# are the C61's default UART0 TX/RX pins. USB-Serial/JTAG also matches how the
+# board is wired (USB-C straight into the chip) and how esptool talks to it.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# --- Partition table ----------------------------------------------------------
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# --- Housekeeping -------------------------------------------------------------
+# A full panel refresh busy-waits for up to a couple of seconds.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=15

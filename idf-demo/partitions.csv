@@ -1,0 +1,15 @@
+# Same offsets as the stock OnePage firmware so the demo can be flashed over it
+# and rolled back without moving anything around.
+#
+# The stock layout keeps its app in the app0/ota_0 slot at 0x10000 and leaves a
+# valid OTA selection in `otadata`; because a `factory` partition is only used
+# when `otadata` holds no valid selection, erase that region once after
+# flashing this table:
+#   esptool --chip esp32c61 -p <port> erase-region 0xe000 0x2000
+#
+# Name,   Type, SubType,  Offset,   Size,     Flags
+nvs,      data, nvs,      0x9000,   0x5000,
+otadata,  data, ota,      0xe000,   0x2000,
+factory,  app,  factory,  0x10000,  0x640000,
+spiffs,   data, spiffs,   0xc90000, 0x360000,
+coredump, data, coredump, 0xff0000, 0x10000,
