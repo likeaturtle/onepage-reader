@@ -42,17 +42,19 @@ of the reader firmware.
 
 | Area | On the panel | On the console |
 |:---|:---|:---|
-| Panel geometry & pixel mapping | checkerboard, 1 px lines, tone ramp | dimensions, refresh timing |
+| Panel geometry & pixel mapping | checkerboard, 1 px lines, tone ramp | dimensions, PSRAM, SD result |
 | Panel refresh modes | full refresh at boot, differential redraws on key events | mode per refresh |
 | Front key ladder (ADC) | 7 labelled boxes, filled while held | raw counts + millivolts per key event |
 | Side keys (BACK/UP/DOWN/POWER) | same boxes | `key NAME pressed/released` |
 | microSD | `SD  N FILES  RW OK` | card info, first four entries, write/read/verify |
 | Battery + USB | `BAT 4012MV 78%  USB 1` | divider reading |
-| Deep sleep | last frame stays on screen | `entering deep sleep; press POWER to wake` |
+| Deep sleep | `休眠中` box, image stays on screen | `entering deep sleep; press POWER to wake` |
 | Reset/wake diagnostics | `RESET WAKE FROM SLEEP` in the header | reset reason, heap, PSRAM |
 
-Controls: **CONFIRM** re-runs the SD test, **hold POWER for 2 s** parks the panel
-and enters deep sleep (press POWER again to wake).
+Controls: **CONFIRM** re-runs the SD test. **POWER** sleeps the board — either a
+single click or a 2 s hold (the hold acts immediately, without waiting for the
+release). The panel is left showing a `休眠中` box and the image survives the
+sleep; press POWER again to wake.
 
 ---
 
@@ -102,11 +104,15 @@ idf-demo/
 │       ├── board_power.c           rail, battery, USB detect, deep sleep
 │       ├── board_buttons.c         ADC ladder + side keys
 │       ├── epd_ssd1677.c           panel driver (init, RAM windows, refresh)
-│       ├── gfx.c / font5x7.c       framebuffer drawing + 5x7 font
+│       ├── gfx.c                   framebuffer drawing primitives
+│       ├── font5x7.c               ASCII bitmap font
+│       ├── font_cjk.c              休眠中 etc., generated from a system font
 │       ├── sd_card.c               mount, listing, write/read/verify
 │       └── onepage_adc.c           shared ADC1 unit + calibration
 ├── main/main.c                     the self test shown on the panel
-└── tools/preview_screen.py         renders the layout to a PNG offline
+└── tools/
+    ├── preview_screen.py           renders both layouts to PNGs offline
+    └── gen_cjk_bitmaps.py          regenerates font_cjk.c (only when adding glyphs)
 ```
 
 ---
@@ -128,6 +134,14 @@ flashing:
 
 ```bash
 python3 tools/preview_screen.py
+```
+
+`python3 tools/preview_screen.py --sleep` previews the deep sleep screen the
+same way. Chinese labels come from `font_cjk.c`, a tiny bitmap table generated
+from a system font; add glyphs (and the size) with:
+
+```bash
+python3 tools/gen_cjk_bitmaps.py --chars 休眠中门目录    # needs Pillow
 ```
 
 ---
@@ -201,9 +215,14 @@ Expected sequence after reset:
 3. Console prints the SD card info, entries and the write/read result; the panel
    switches to `SD  <n> FILES  RW OK`.
 4. Pressing any key fills its box within ~150 ms and prints a console line.
-5. CONFIRM re-runs the SD test; holding POWER for 2 s parks the panel and prints
-   `entering deep sleep`; pressing POWER wakes the board with
-   `RESET WAKE FROM SLEEP`.
+5. CONFIRM re-runs the SD test. A click on POWER (or a 2 s hold) repaints the
+   panel to the `休眠中` box, parks it, prints
+   `entering deep sleep; press POWER to wake` and sleeps the chip; pressing
+   POWER wakes the board with `RESET WAKE FROM SLEEP`.
+6. Left alone, the demo repaints **only** when something it displays actually
+   changes. The battery is re-sampled every 2 s, but the panel is only redrawn
+   once it has moved by 25 mV (and at most every 30 s), so an idle board shows
+   a still image instead of a flash every couple of seconds.
 
 Things worth checking closely, because they are the failure modes seen on this
 board so far:

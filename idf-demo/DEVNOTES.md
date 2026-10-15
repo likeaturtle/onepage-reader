@@ -194,14 +194,26 @@ app 还不存在，挂在 app 上没有意义（本项目早期版本就犯过�
 
 ## 10. 后续开发从哪里接
 
-- **绘制**：`components/onepage_c61/src/gfx.c`（`gfx_*` 原语）+ `font5x7.c`（5×7 位图字体）；
+- **绘制**：`components/onepage_c61/src/gfx.c`（`gfx_*` 原语）+ `font5x7.c`（5×7 ASCII 位图字体）
+  + `font_cjk.c`（中文方块点阵，`gfx_text_cjk()`，自带极简 UTF-8 解码）；
   `epd_ssd1677.c` 只负责 framebuffer、窗口和三种刷新模式，不参与画什么。
   framebuffer 是 800×480 / 8bpp = 48000 字节，1 bit = 1 像素，置位=白，优先分配在 PSRAM。
+- **加中文字**：`font_cjk.c` 是生成的，别手改。改字形或字号：
+  `python3 tools/gen_cjk_bitmaps.py --chars 休眠中门目录 [--size 48]`（需要 Pillow 和系统中文字体，
+  脚本会同时输出 `tools/preview_cjk.png` 供眼睛检查）。当前字集只有「休眠中」三个字。
 - **板级功能**：都在 `components/onepage_c61/`，可以单独复用（`main/` 只是 demo）。
   新功能建议：要么加进这个组件，要么在 `components/` 下新建一个组件，
   并把 `main/main.c` 换成你真正的应用。
 - **刷新模式选择**：`EPD_REFRESH_FULL`（~2 s，干净）、`EPD_REFRESH_HALF`、`EPD_REFRESH_FAST`（差分，快但有残影）。
   进深睡前调 `epd_sleep()` 把面板 park 住（图像留在屏上），唤醒后重新 init。
+- **重绘策略（踩过的坑）**：早期版本每 2 秒必然重绘一次 —— 电池是**单次 ADC 采样**（抖动远超 1 mV），
+  而主循环用 `previous_mv != bat_mv` 精确比较，于是"活值更新"变成了"每两秒闪一次"，残影也跟着累积。
+  现在：`ONEPAGE_BATTERY_SAMPLES=8` 平均 + 变化 ≥ `BAT_REDRAW_MV`(25 mV) 才算变 + 慢变量最多每
+  `SLOW_REDRAW_US`(30 s) 重绘一次；按键重绘仍是 120 ms 节流。**新增任何"活值"显示时，请照这个约定来**
+  （带阈值 + 限频），否则面板会一直闪。
+- **休眠交互**：`POWER` 单击或长按 2 s 都进深睡（长按到 2 s 立即执行，不等松手）；按下时长
+  < `POWER_CLICK_MIN_US`(30 ms) 视为毛刺忽略。进深睡前先用 `EPD_REFRESH_FULL` 画好「休眠中」
+  画面再 `epd_sleep()`，这样静止图像能挂几个小时不掉字、不留残影。
 - **加组件依赖**：6.0 里用了谁的头就必须在 `idf_component_register` 的
   `REQUIRES`/`PRIV_REQUIRES` 里声明，否则直接构建失败（这正是最初那个报错的原因）。
 - **改配置**：`sdkconfig.defaults` 只对新生成的 `sdkconfig` 生效；已经存在的

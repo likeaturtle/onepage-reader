@@ -58,3 +58,6 @@
 
 /* Battery divider on the board is 1:1, so the measured cell voltage is 2x. */
 #define ONEPAGE_BATTERY_DIVIDER 2.0f
+/* Readings averaged per sample: the ADC noise is far larger than the 1 mV
+ * resolution, and callers compare readings to decide on a redraw. */
+#define ONEPAGE_BATTERY_SAMPLES 8

@@ -3,6 +3,7 @@ idf_component_register(
         "src/board_buttons.c"
         "src/board_power.c"
         "src/epd_ssd1677.c"
+        "src/font_cjk.c"
         "src/font5x7.c"
         "src/gfx.c"
         "src/onepage_adc.c"

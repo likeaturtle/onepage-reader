@@ -6,7 +6,8 @@ the layout can be iterated on without flashing the board. The glyphs are parsed
 straight out of src/font5x7.c, so the font cannot drift from the firmware, but
 the layout itself is a hand-kept copy: if the demo changes, change this too.
 
-    python3 tools/preview_screen.py [out.png]
+    python3 tools/preview_screen.py [out.png]            # self test screen
+    python3 tools/preview_screen.py --sleep [out.png]    # deep sleep screen
 """
 
 import re
@@ -31,6 +32,27 @@ def load_font() -> dict[str, list[int]]:
 
 
 FONT = load_font()
+
+
+def load_cjk_font() -> tuple[int, dict[int, list[int]]]:
+    """Parse the generated CJK table (src/font_cjk.c) and its cell size."""
+    hdr = (ROOT / "components/onepage_c61/include/font_cjk.h").read_text()
+    px = int(re.search(r"#define FONT_CJK_PX (\d+)", hdr).group(1))
+    src = (ROOT / "components/onepage_c61/src/font_cjk.c").read_text()
+    entries = re.findall(r"\{0x([0-9A-Fa-f]{4}), \{(.*?)\}\},", src, re.S)
+    glyphs = {
+        int(cp, 16): [int(b, 16) for b in re.findall(r"0x([0-9A-Fa-f]{2})", body)]
+        for cp, body in entries
+    }
+    return px, glyphs
+
+
+CJK_PX, CJK = load_cjk_font()
+CJK_ROW_BYTES = (CJK_PX + 7) // 8
+
+
+def text_cjk_width(text: str, gap: int) -> int:
+    return len(text) * (CJK_PX + gap) - gap if text else 0
 
 
 class Screen:
@@ -58,6 +80,17 @@ class Screen:
     def fill_rect(self, x: int, y: int, w: int, h: int, black: bool = True) -> None:
         for row in range(h):
             self.hline(x, y + row, w, black)
+
+    def text_cjk(self, x: int, y: int, text: str, gap: int, black: bool = True) -> None:
+        cursor = x
+        for ch in text:
+            glyph = CJK.get(ord(ch))
+            if glyph:
+                for row in range(CJK_PX):
+                    for col in range(CJK_PX):
+                        ink = glyph[row * CJK_ROW_BYTES + col // 8] & (0x80 >> (col % 8))
+                        self.pixel(cursor + col, y + row, black if ink else not black)
+            cursor += CJK_PX + gap
 
     def checker(self, x: int, y: int, w: int, h: int, cell: int) -> None:
         for row in range(h):
@@ -157,7 +190,7 @@ def render() -> Screen:
         y += 19
 
     s.hline(16, 366, WIDTH - 32)
-    s.text(16, 376, "BUTTONS - HOLD POWER 2S TO SLEEP", 2)
+    s.text(16, 376, "BUTTONS - CLICK OR HOLD POWER TO SLEEP", 2)
     for i, name in enumerate(BUTTONS):
         x = 16 + i * (100 + 8)
         pressed = bool(STATE["buttons"] & (1 << i))
@@ -183,9 +216,28 @@ def to_image(s: Screen) -> Image.Image:
     return img
 
 
+def render_sleep() -> Screen:
+    """Mirror of draw_sleep_screen() in main/main.c."""
+    label, hint = "休眠中", "PRESS POWER TO WAKE"
+    gap, pad = 12, 32
+    box_w = text_cjk_width(label, gap) + pad * 2
+    box_h = CJK_PX + pad * 2
+    box_x = (WIDTH - box_w) // 2
+    box_y = (HEIGHT - box_h) // 2 - 20
+
+    s = Screen()
+    s.rect(box_x, box_y, box_w, box_h)
+    s.text_cjk(box_x + pad, box_y + pad, label, gap)
+    s.text((WIDTH - s.text_width(hint, 2)) // 2, box_y + box_h + 40, hint, 2)
+    return s
+
+
 def main() -> int:
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "tools/preview_screen.png"
-    screen = render()
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    sleepy = "--sleep" in sys.argv
+    default = "preview_sleep.png" if sleepy else "preview_screen.png"
+    out = Path(args[0]) if args else ROOT / "tools" / default
+    screen = render_sleep() if sleepy else render()
     to_image(screen).save(out)
     print(f"wrote {out} ({WIDTH}x{HEIGHT})")
 

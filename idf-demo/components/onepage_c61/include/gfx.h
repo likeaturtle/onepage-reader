@@ -20,3 +20,10 @@ void gfx_dither_rect(uint8_t *fb, int x, int y, int w, int h, int level);
 /* 5x7 bitmap text. `scale` 1..4 (each glyph cell is 6*scale x 8*scale). */
 void gfx_text(uint8_t *fb, int x, int y, const char *s, int scale, bool black);
 int gfx_text_width(const char *s, int scale);
+
+/* CJK bitmap text (font_cjk.h, square FONT_CJK_PX glyphs). `gap` is the number
+ * of blank pixels between glyphs. Characters missing from the table advance
+ * without drawing anything. UTF-8 input; a cell is always fully painted (ink
+ * and background), so the text stays readable over a busy background. */
+void gfx_text_cjk(uint8_t *fb, int x, int y, const char *utf8, int gap, bool black);
+int gfx_text_cjk_width(const char *utf8, int gap);

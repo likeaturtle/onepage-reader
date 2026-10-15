@@ -67,14 +67,25 @@ uint16_t board_battery_read_mv(void) {
     return 0;
   }
   gpio_set_level((gpio_num_t)ONEPAGE_PIN_BAT_CHG_EN, 0);
-  vTaskDelay(pdMS_TO_TICKS(5)); /* let the cell terminal voltage settle */
-  int raw = 0, mv = 0;
-  esp_err_t err = onepage_adc_read(s_bat_channel, &raw, &mv);
+  vTaskDelay(pdMS_TO_TICKS(20)); /* let the cell terminal voltage settle */
+
+  /* The vendor BSP takes a single reading, which jitters by several millivolts
+   * and makes the caller think the charge level is changing. Average instead. */
+  uint32_t sum_mv = 0;
+  int samples = 0;
+  for (int i = 0; i < ONEPAGE_BATTERY_SAMPLES; i++) {
+    int raw = 0, mv = 0;
+    if (onepage_adc_read(s_bat_channel, &raw, &mv) != ESP_OK) {
+      break;
+    }
+    sum_mv += (uint32_t)mv;
+    samples++;
+  }
   gpio_set_level((gpio_num_t)ONEPAGE_PIN_BAT_CHG_EN, 1);
-  if (err != ESP_OK) {
+  if (samples == 0) {
     return 0;
   }
-  return (uint16_t)(mv * ONEPAGE_BATTERY_DIVIDER);
+  return (uint16_t)((sum_mv / (uint32_t)samples) * ONEPAGE_BATTERY_DIVIDER);
 }
 
 uint8_t board_battery_percent(uint16_t millivolts) {

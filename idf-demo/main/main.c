@@ -16,6 +16,7 @@
 #include "board_buttons.h"
 #include "board_power.h"
 #include "epd_ssd1677.h"
+#include "font_cjk.h"
 #include "gfx.h"
 #include "onepage_pins.h"
 #include "sd_card.h"
@@ -44,6 +45,19 @@ static const char *TAG = "demo";
 #define BTN_BOX_H 40
 #define BTN_BOX_W 100
 #define BTN_BOX_GAP 8
+
+/* A single ADC reading of the battery divider jitters by more than 1 mV, so
+ * redrawing whenever the value changes means a panel flash every poll. Only
+ * react once the cell has moved by this much (~1% of charge), and rate-limit
+ * how often slow values may repaint the panel at all -- they are informational,
+ * while the panel pays for every refresh in ghosting and current. */
+#define BAT_REDRAW_MV 25
+#define SLOW_REDRAW_US (30LL * 1000 * 1000)
+#define ENV_POLL_US (2000LL * 1000)
+#define POWER_HOLD_US (2LL * 1000 * 1000)
+/* A press shorter than this is a glitch on the key line, not a click: with a
+ * 20 ms poll period an ignored contact bounce shows up as a single sample. */
+#define POWER_CLICK_MIN_US (30LL * 1000)
 
 typedef struct {
   bool sd_mounted;
@@ -236,7 +250,7 @@ static void render_screen(epd_refresh_mode_t mode) {
   draw_status(fb);
 
   gfx_hline(fb, 16, 366, ONEPAGE_EPD_WIDTH - 32, true);
-  gfx_text(fb, 16, 376, "BUTTONS - HOLD POWER 2S TO SLEEP", 2, true);
+  gfx_text(fb, 16, 376, "BUTTONS - CLICK OR HOLD POWER TO SLEEP", 2, true);
   draw_buttons(fb);
   gfx_text(fb, 16, 446, "CONFIRM = RERUN SD TEST", 2, true);
   gfx_text(fb, 16, 464, "ESP-IDF BRING-UP BUILD - NOT THE STOCK FIRMWARE", 1, true);
@@ -277,6 +291,41 @@ static void note_event(const char *name, bool pressed) {
   snprintf(s_state.last_event, sizeof(s_state.last_event), "%s %s", name, pressed ? "DOWN" : "UP");
 }
 
+/* Draw the "asleep" screen: a centred box with the label and a wake hint. The
+ * panel keeps this image while the chip is in deep sleep, so it is refreshed
+ * with the full waveform -- it has to survive for hours without ghosting. */
+static void draw_sleep_screen(void) {
+  uint8_t *fb = epd_framebuffer();
+  if (!fb) {
+    return;
+  }
+  const char *label = "休眠中";
+  const char *hint = "PRESS POWER TO WAKE";
+  const int gap = 12;
+  const int pad = 32;
+  const int box_w = gfx_text_cjk_width(label, gap) + pad * 2;
+  const int box_h = FONT_CJK_PX + pad * 2;
+  const int box_x = (ONEPAGE_EPD_WIDTH - box_w) / 2;
+  const int box_y = (ONEPAGE_EPD_HEIGHT - box_h) / 2 - 20;
+
+  gfx_clear(fb, true);
+  gfx_rect(fb, box_x, box_y, box_w, box_h, true);
+  gfx_text_cjk(fb, box_x + pad, box_y + pad, label, gap, true);
+  gfx_text(fb, (ONEPAGE_EPD_WIDTH - gfx_text_width(hint, 2)) / 2, box_y + box_h + 40, hint, 2,
+           true);
+}
+
+/* Park the panel on the sleep screen and put the chip into deep sleep. The
+ * image stays visible and POWER wakes the board again. */
+static void enter_sleep(void) {
+  ESP_LOGI(TAG, "sleep: click or 2 s hold on POWER");
+  draw_sleep_screen();
+  epd_refresh(EPD_REFRESH_FULL);
+  epd_sleep();
+  sd_card_unmount();
+  board_power_enter_deep_sleep();
+}
+
 /* --- main --------------------------------------------------------------- */
 
 void app_main(void) {
@@ -301,7 +350,9 @@ void app_main(void) {
   int64_t power_press_started_us = 0;
   bool power_handled = false;
   int64_t last_redraw_us = 0;
+  int64_t last_slow_redraw_us = esp_timer_get_time();
   int64_t last_poll_us = esp_timer_get_time();
+  bool slow_dirty = false;
 
   while (true) {
     const uint32_t mask = board_buttons_poll();
@@ -322,6 +373,18 @@ void app_main(void) {
         power_press_started_us = now;
         power_handled = false;
       }
+      /* POWER released before the hold threshold: a click sleeps too. Deep
+       * sleep never returns, so there is nothing to unwind here. */
+      if (i == BOARD_BTN_POWER && !is && power_press_started_us && !power_handled) {
+        const int64_t held_us = now - power_press_started_us;
+        power_press_started_us = 0;
+        if (held_us >= POWER_CLICK_MIN_US) {
+          ESP_LOGI(TAG, "POWER click (%lld ms)", held_us / 1000);
+          enter_sleep();
+        } else {
+          ESP_LOGD(TAG, "ignoring %lld us glitch on POWER", held_us);
+        }
+      }
       if (i == BOARD_BTN_CONFIRM && is) {
         run_sd_test();
         refresh_environment();
@@ -332,27 +395,36 @@ void app_main(void) {
     /* Long press on POWER parks the panel and sleeps. The image stays on the
      * display, and a second press of POWER wakes the board. */
     if (!power_handled && power_press_started_us && (mask & (1u << BOARD_BTN_POWER)) &&
-        (now - power_press_started_us) > 2LL * 1000 * 1000) {
+        (now - power_press_started_us) > POWER_HOLD_US) {
       power_handled = true;
       snprintf(s_state.last_event, sizeof(s_state.last_event), "POWER SLEEP");
-      render_screen(EPD_REFRESH_FAST);
-      epd_sleep();
-      sd_card_unmount();
-      board_power_enter_deep_sleep();
+      enter_sleep();
     }
 
-    /* Keep the slow-moving values (battery, heap, USB) live. */
-    if (now - last_poll_us > 2000LL * 1000) {
+    /* Keep the slow-moving values (battery, USB) live, but leave the panel
+     * alone unless the cell actually moved: a 1 mV jitter used to repaint the
+     * screen every two seconds. */
+    if (now - last_poll_us > ENV_POLL_US) {
       last_poll_us = now;
       const uint16_t previous_mv = s_state.bat_mv;
+      const bool previous_usb = s_state.usb;
       refresh_environment();
-      if (previous_mv != s_state.bat_mv) {
-        dirty = true;
+      const int delta_mv = (int)s_state.bat_mv - (int)previous_mv;
+      if (previous_usb != s_state.usb || delta_mv >= BAT_REDRAW_MV || delta_mv <= -BAT_REDRAW_MV) {
+        slow_dirty = true;
       }
     }
 
-    if (dirty && (now - last_redraw_us) > 120LL * 1000) {
+    /* Key-driven updates are throttled to 120 ms; the informational values get
+     * a much slower budget so charging (which walks the voltage up steadily)
+     * cannot turn the panel into a metronome. */
+    const bool slow_due = slow_dirty && (now - last_slow_redraw_us) > SLOW_REDRAW_US;
+    if ((dirty || slow_due) && (now - last_redraw_us) > 120LL * 1000) {
       last_redraw_us = now;
+      if (slow_due) {
+        last_slow_redraw_us = now;
+        slow_dirty = false;
+      }
       render_screen(EPD_REFRESH_FAST);
     }
 

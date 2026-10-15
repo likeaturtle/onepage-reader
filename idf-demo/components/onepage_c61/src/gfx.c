@@ -1,6 +1,7 @@
 #include "gfx.h"
 
 #include "font5x7.h"
+#include "font_cjk.h"
 #include "onepage_pins.h"
 
 #include <string.h>
@@ -99,6 +100,66 @@ int gfx_text_width(const char *s, int scale) {
     width += advance;
   }
   return width;
+}
+
+/* --- CJK text ----------------------------------------------------------- */
+
+/* Minimal UTF-8 decoder. Returns the codepoint and stores the encoded length in
+ * `len`; a malformed lead byte comes back as U+FFFD and skips one byte. */
+static uint32_t utf8_decode(const char *s, int *len) {
+  const uint8_t *b = (const uint8_t *)s;
+  if (b[0] < 0x80) {
+    *len = 1;
+    return b[0];
+  }
+  if ((b[0] & 0xE0) == 0xC0 && (b[1] & 0xC0) == 0x80) {
+    *len = 2;
+    return (uint32_t)((b[0] & 0x1F) << 6 | (b[1] & 0x3F));
+  }
+  if ((b[0] & 0xF0) == 0xE0 && (b[1] & 0xC0) == 0x80 && (b[2] & 0xC0) == 0x80) {
+    *len = 3;
+    return (uint32_t)((b[0] & 0x0F) << 12 | (b[1] & 0x3F) << 6 | (b[2] & 0x3F));
+  }
+  if ((b[0] & 0xF8) == 0xF0 && (b[1] & 0xC0) == 0x80 && (b[2] & 0xC0) == 0x80 &&
+      (b[3] & 0xC0) == 0x80) {
+    *len = 4;
+    return (uint32_t)((b[0] & 0x07) << 18 | (b[1] & 0x3F) << 12 | (b[2] & 0x3F) << 6 |
+                      (b[3] & 0x3F));
+  }
+  *len = 1;
+  return 0xFFFD;
+}
+
+int gfx_text_cjk_width(const char *utf8, int gap) {
+  int width = 0;
+  for (const char *p = utf8; *p;) {
+    int len = 1;
+    (void)utf8_decode(p, &len);
+    p += len;
+    width += FONT_CJK_PX + gap;
+  }
+  return width > 0 ? width - gap : 0;
+}
+
+void gfx_text_cjk(uint8_t *fb, int x, int y, const char *utf8, int gap, bool black) {
+  int cursor = x;
+  for (const char *p = utf8; *p;) {
+    int len = 1;
+    const uint32_t codepoint = utf8_decode(p, &len);
+    p += len;
+
+    const uint8_t *glyph = font_cjk_lookup(codepoint);
+    if (glyph) {
+      for (int row = 0; row < FONT_CJK_PX; row++) {
+        for (int col = 0; col < FONT_CJK_PX; col++) {
+          const bool ink = (glyph[row * FONT_CJK_ROW_BYTES + col / 8] & (0x80 >> (col & 7))) != 0;
+          set_pixel(fb, cursor + col, y + row, ink ? black : !black);
+        }
+      }
+    }
+    /* Missing glyphs still advance, so gfx_text_cjk_width() stays correct. */
+    cursor += FONT_CJK_PX + gap;
+  }
 }
 
 void gfx_text(uint8_t *fb, int x, int y, const char *s, int scale, bool black) {

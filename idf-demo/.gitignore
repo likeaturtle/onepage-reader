@@ -5,3 +5,5 @@ managed_components/
 dependencies.lock
 __pycache__/
 tools/preview_screen.png
+tools/preview_sleep.png
+tools/preview_cjk.png
