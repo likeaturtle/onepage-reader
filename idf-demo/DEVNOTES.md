@@ -4,7 +4,7 @@
 以及后面基于它继续开发时从哪里接。硬件相关的结论都来自厂商 BSP
 (`../firmware/open-onepage-sdk`) 和真机验证，不是推测。
 
-最后更新：2026-10-14
+最后更新：2026-10-17
 
 ------
 
@@ -12,10 +12,12 @@
 
 **2026-10-14：真机自测通过**（面板、按键、SD 卡、电池/USB、深睡全部按预期工作）。
 
-同一天在 ESP-IDF 6.0.1 下确认：
+2026-10-14 在 ESP-IDF 6.0.1 下确认；2026-10-17 又在 ESP-IDF 6.1 下重新做了一次
+从零构建，结论相同：
 
 - `idf.py build` 从零（删掉 `build/` 和 `sdkconfig/`）可以完整编译 + 链接，
-  产出 `bootloader.bin` / `partition-table.bin` / `onepage_c61_idf_demo.bin`。
+  产出 `bootloader.bin` / `partition-table.bin` / `onepage_c61_idf_demo.bin`
+  （6.0.1 与 6.1 均通过）。
 - eFuse 校验绕过确实进了 bootloader 的链接（`objdump` 看到校验路径 `jal` 到包装函数）。
 - `sdkconfig.defaults` 里的 flash / PSRAM / 控制台设置在生成的 `sdkconfig` 中生效。
 
@@ -83,11 +85,11 @@ Git：`idf-demo/` 已提交并推送 —— 提交 `eefdc60`
 
 | 项 | 路径 / 值 |
 |:---|:---|
-| ESP-IDF | **6.0.1**，`/Users/fujd/.espressif/v6.0.1/esp-idf` |
-| 激活脚本 | `. /Users/fujd/.espressif/tools/activate_idf_v6.0.1.sh`（**`idf.py` 不在默认 PATH，每个新终端都要 source**） |
-| Python venv | `/Users/fujd/.espressif/tools/python/v6.0.1/venv` |
+| ESP-IDF | **6.1**，`/Users/fujd/.espressif/v6.1/esp-idf` |
+| 激活脚本 | `. /Users/fujd/.espressif/tools/activate_idf_v6.1.sh`（**`idf.py` 不在默认 PATH，每个新终端都要 source**） |
+| Python venv | `/Users/fujd/.espressif/tools/python/v6.1/venv`（Python 3.14.8） |
 | 交叉工具链 | `riscv32-esp-elf` esp-15.2.0_20251204 |
-| esptool | v5.3.0（venv 里，激活后直接可用） |
+| esptool | v5.6.0（venv 里，激活后直接可用） |
 | 另一份 IDF | 5.5.2 在 `~/.platformio/packages/framework-espidf`，厂商固件用的，仅作对照 |
 
 激活脚本本身会设置 `IDF_PATH`、`IDF_PYTHON_ENV_PATH`，并定义 `idf.py` /
@@ -99,7 +101,7 @@ Git：`idf-demo/` 已提交并推送 —— 提交 `eefdc60`
 ## 6. 常用命令
 
 ```bash
-# 编译（set-target 只需一次，已经做过）
+# 编译（每台机器/每个干净 build 目录先 set-target 一次）
 idf.py build
 
 # 备份官方固件（强烈建议先做，回滚用）
@@ -145,7 +147,7 @@ app 放在 `factory`/0x10000（不是 IDF 默认的 ota_0），是为了和官�
 
 ------
 
-## 8. ESP-IDF 6.0 适配点（踩过的坑）
+## 8. ESP-IDF 6.x 适配点（踩过的坑）
 
 | 位置 | 问题 | 处理 |
 |:---|:---|:---|
@@ -154,6 +156,14 @@ app 放在 `factory`/0x10000（不是 IDF 默认的 ota_0），是为了和官�
 | `src/board_power.c` | `gpio_deep_sleep_hold_en()` 在 C61 上**不存在**（`SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP`，芯片自己保持 pad） | 不调用它，只对被拉低的 GPIO27 用 `gpio_hold_en()` |
 | `src/sd_card.c` | 6.0 默认 `-Werror`，`snprintf` 拼目录名触发 `format-truncation` | 改成显式精度 `%.62s` |
 | `components/onepage_c61/CMakeLists.txt` 里的 `PRIV_REQUIRES` | 6.0 强制检查组件依赖，用哪个组件的头就必须声明 | 新增 API 时记得同步声明，否则编不过 |
+
+### 6.1 的工具行为变化
+
+6.1 没有让本项目需要改代码的破坏性变化（6.1 的外设迁移文档只涉及 UART
+wakeup 和 LCD 回调，本项目都没用到）；工具侧唯一相关变化是 `idf.py flash`
+的默认行为：build 目录里已有
+`*_flashed.bin` 时只写变化的区域（fast reflash）。首次烧写、改了分区表，或者
+需要确保整片与 build 产物一致时，用 `idf.py flash -a` 强制全量烧写。
 
 ### eFuse 校验绕过（重点，容易搞错位置）
 
@@ -180,7 +190,7 @@ app 还不存在，挂在 app 上没有意义（本项目早期版本就犯过�
 **已验证**
 
 - 与真机一致的全套功能：面板显示与刷新、7 个按键、SD 挂载 + 读写校验、电池/USB 读数、深睡与唤醒。
-- IDF 6.0.1 下从零构建通过；bootloader 里确实链接了 eFuse 包装。
+- IDF 6.0.1 与 6.1 下从零构建通过；bootloader 里确实链接了 eFuse 包装。
 
 **未验证 / 待观察**
 
@@ -214,7 +224,7 @@ app 还不存在，挂在 app 上没有意义（本项目早期版本就犯过�
 - **休眠交互**：`POWER` 单击或长按 2 s 都进深睡（长按到 2 s 立即执行，不等松手）；按下时长
   < `POWER_CLICK_MIN_US`(30 ms) 视为毛刺忽略。进深睡前先用 `EPD_REFRESH_FULL` 画好「休眠中」
   画面再 `epd_sleep()`，这样静止图像能挂几个小时不掉字、不留残影。
-- **加组件依赖**：6.0 里用了谁的头就必须在 `idf_component_register` 的
+- **加组件依赖**：6.x 里用了谁的头就必须在 `idf_component_register` 的
   `REQUIRES`/`PRIV_REQUIRES` 里声明，否则直接构建失败（这正是最初那个报错的原因）。
 - **改配置**：`sdkconfig.defaults` 只对新生成的 `sdkconfig` 生效；已经存在的
   `sdkconfig`（gitignored）不会自动更新，改完要么 `rm sdkconfig` 重新生成，要么直接在 menuconfig 里改。

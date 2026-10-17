@@ -13,7 +13,7 @@ of the reader firmware.
 > **Status: verified on hardware (2026-10-14).** The self test passes on a real
 > board — panel, all seven keys, SD card, battery/USB readout and deep sleep.
 > The sources were ported off the vendor BSP (ESP-IDF 5.5.2, the version the
-> vendor firmware is built on) and **build cleanly with ESP-IDF 6.0.1**:
+> vendor firmware is built on) and **build cleanly with ESP-IDF 6.1**:
 > `idf.py build` completes the full compile + link, producing `bootloader.bin`,
 > `partition-table.bin` and `onepage_c61_idf_demo.bin` from a clean tree.
 > See [Verifying on hardware](#verifying-on-hardware) for the commands and what
@@ -119,7 +119,7 @@ idf-demo/
 
 ## Build
 
-Requirements: ESP-IDF **>= 5.5** (`esp32c61` support; verified on 6.0.1),
+Requirements: ESP-IDF **>= 5.5** (`esp32c61` support; verified on 6.1),
 Python 3.8+, `esptool`, and a USB-C cable that carries data.
 
 ```bash
@@ -127,6 +127,10 @@ cd idf-demo
 idf.py set-target esp32c61
 idf.py build
 ```
+
+If the checkout was previously built with an older ESP-IDF (for example on the
+old machine), remove the gitignored `build/` and `sdkconfig` first so the new
+toolchain regenerates everything and picks up `sdkconfig.defaults`.
 
 `tools/preview_screen.py` renders the same layout to `tools/preview_screen.png`
 on the host (needs Pillow) so the drawing code can be iterated on without
@@ -146,6 +150,41 @@ python3 tools/gen_cjk_bitmaps.py --chars 休眠中门目录    # needs Pillow
 
 ---
 
+## ESP-IDF 6.1 migration check
+
+On 2026-10-17 the project was re-checked against ESP-IDF 6.1
+(`/Users/fujd/.espressif/v6.1/esp-idf`) from a clean copy of the tree. The local
+install used Python 3.14.8, esptool 5.6.0 and `riscv32-esp-elf`
+esp-15.2.0_20251204.
+
+- `idf.py set-target esp32c61` followed by `idf.py build` completed the full
+  compile and link.
+- `bootloader.bin`, `partition-table.bin` and `onepage_c61_idf_demo.bin` were
+  generated. The application image is `0x4f930` bytes.
+- The settings in `sdkconfig.defaults` still take effect: 16 MB flash in DIO
+  mode at 80 MHz, 2 MB PSRAM in quad mode at 40 MHz, and the USB-Serial/JTAG
+  console.
+- The eFuse block-revision wrapper is still linked into the bootloader;
+  `objdump` shows the validation path calling
+  `__wrap_bootloader_common_check_efuse_blk_validity`.
+- No application source or CMake changes were required, and the project code
+  built without deprecation warnings.
+
+The ESP-IDF 6.1 migration notes cover the UART wake-up and LCD callback APIs,
+neither of which this demo uses. The tool-side change that does matter is the
+new fast-reflash default for `idf.py flash`; use `idf.py flash -a` when a full
+write is required, as described under [Flash](#flash).
+
+On a new machine, run `idf.py set-target esp32c61` once because `sdkconfig` is
+not committed. If the checkout was built with an older ESP-IDF, remove the
+gitignored `build/` and `sdkconfig` first.
+
+This migration check covers compilation and linking only: the board was not
+reflashed with the 6.1 build. Repeat the hardware checks in
+[Verifying on hardware](#verifying-on-hardware) after the first 6.1 flash.
+
+---
+
 ## Flash
 
 > Back up the stock firmware first — it makes rollback trivial:
@@ -158,8 +197,13 @@ python3 tools/gen_cjk_bitmaps.py --chars 休眠中门目录    # needs Pillow
 2. Flash the bootloader, partition table and app:
 
    ```bash
-   idf.py -p /dev/cu.usbmodemXXXX flash
+   idf.py -p /dev/cu.usbmodemXXXX flash -a
    ```
+
+   `-a` forces a full flash. ESP-IDF 6.1 otherwise defaults to fast reflash
+   (only changed regions) when `*_flashed.bin` files exist from an earlier
+   flash; use the full form for the first flash and after changing the
+   partition table.
 
 3. **Erase the stale OTA selection** so the bootloader starts this app rather
    than the stock firmware that still sits in the app1 slot:
@@ -269,6 +313,6 @@ bitmap set. Keep the attribution if you ship this.
 ## Development notes
 
 `DEVNOTES.md` holds what this README deliberately leaves out: board specifics,
-the local toolchain paths, the ESP-IDF 6.0 adaptations (including why the eFuse
+the local toolchain paths, the ESP-IDF 6.x adaptations (including why the eFuse
 workaround has to live in `bootloader_components/`), and what has not been
 verified yet.

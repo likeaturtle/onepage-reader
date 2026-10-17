@@ -1,7 +1,7 @@
 # OnePage C61 bring-up demo — ESP-IDF defaults.
 #
 # Requires ESP-IDF >= 5.5 for ESP32-C61 support (the vendor firmware is built
-# against 5.5.2). Build with:
+# against 5.5.2; this project is verified with 6.1). Build with:
 #   idf.py set-target esp32c61 && idf.py build
 
 # --- Flash: 16 MB, DIO, 80 MHz (PY25Q128HA / W25Q128JW both rate >= 104 MHz) --
