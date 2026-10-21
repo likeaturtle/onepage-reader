@@ -3,6 +3,8 @@
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include <string.h>
 
@@ -10,6 +12,7 @@ static const char *TAG = "adc1";
 
 static adc_oneshot_unit_handle_t s_unit;
 static adc_cali_handle_t s_cali;
+static SemaphoreHandle_t s_lock;
 static bool s_ready;
 static bool s_calibrated;
 
@@ -22,6 +25,15 @@ esp_err_t onepage_adc_init(void) {
   esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &s_unit);
   if (err != ESP_OK) {
     return err;
+  }
+
+  /* The UI task and the key-scan task both sample the front key ladder. The
+   * oneshot driver only try-locks the unit (contention returns a timeout), so
+   * serialise callers here instead of letting samples vanish. */
+  s_lock = xSemaphoreCreateMutex();
+  if (!s_lock) {
+    ESP_LOGE(TAG, "ADC mutex allocation failed");
+    return ESP_ERR_NO_MEM;
   }
 
 #if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
@@ -79,9 +91,15 @@ esp_err_t onepage_adc_read(int channel, int *raw, int *mv) {
   if (!s_ready || channel < 0) {
     return ESP_ERR_INVALID_STATE;
   }
+  if (s_lock) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+  }
   int sample = 0;
   esp_err_t err = adc_oneshot_read(s_unit, (adc_channel_t)channel, &sample);
   if (err != ESP_OK) {
+    if (s_lock) {
+      xSemaphoreGive(s_lock);
+    }
     return err;
   }
   if (raw) {
@@ -96,6 +114,9 @@ esp_err_t onepage_adc_read(int channel, int *raw, int *mv) {
        * the key windows apart, printed as a warning by the caller. */
       *mv = sample * 3100 / 4095;
     }
+  }
+  if (s_lock) {
+    xSemaphoreGive(s_lock);
   }
   return ESP_OK;
 }

@@ -7,11 +7,13 @@ idf_component_register(
         "src/font5x7.c"
         "src/gfx.c"
         "src/onepage_adc.c"
+        "src/onepage_mic.c"
         "src/sd_card.c"
     INCLUDE_DIRS
         "include"
     REQUIRES
         esp_driver_gpio
+        esp_driver_i2s
         esp_driver_spi
         esp_driver_sdspi
         esp_driver_sdmmc

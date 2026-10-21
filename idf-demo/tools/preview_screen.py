@@ -8,8 +8,11 @@ the layout itself is a hand-kept copy: if the demo changes, change this too.
 
     python3 tools/preview_screen.py [out.png]            # self test screen
     python3 tools/preview_screen.py --sleep [out.png]    # deep sleep screen
+    python3 tools/preview_screen.py --mic [out.png]      # live mic meter
+    python3 tools/preview_screen.py --result [out.png]   # finished recording
 """
 
+import math
 import re
 import sys
 from pathlib import Path
@@ -201,8 +204,100 @@ def render() -> Screen:
         text_x = x + (100 - s.text_width(name, 2)) // 2
         s.text(text_x, 396 + 13, name, 2, black=not pressed)
 
-    s.text(16, 446, "CONFIRM = RERUN SD TEST", 2)
+    s.text(16, 446, "CLICK CONFIRM = MIC RECORD", 2)
     s.text(16, 464, "ESP-IDF BRING-UP BUILD - NOT THE STOCK FIRMWARE", 1)
+    return s
+
+
+def render_mic(finished: bool) -> Screen:
+    """Mirror of draw_mic_screen() in main/main.c."""
+    # Post-auto-range example: measured noise floor -33 dBFS puts the bar at
+    # -30..0 dBFS, so speech around -24 dBFS is roughly 20%.
+    history = []
+    for i in range(64):
+        envelope = 0.15 + 0.65 * (0.5 + 0.5 * math.sin(i * 0.42)) ** 3
+        wobble = 0.08 * math.sin(i * 1.7)
+        history.append(max(2, min(70, int((envelope + wobble) * 70))))
+
+    elapsed_ms = 7420 if finished else 7400
+    level_db = -28 if finished else -24
+    peak_db, avg_db = -12, -36
+    level_pct = max(0, min(100, round((level_db + 30) * 100 / 30)))
+    peak_pct = max(0, min(100, round((peak_db + 30) * 100 / 30)))
+    pcm_rate_hz = 16000
+    count = len(history) if finished else 38
+
+    s = Screen()
+    title = "RECORDING FINISHED" if finished else "MIC LEVEL"
+    badge = "DONE" if finished else "REC"
+    s.text(16, 14, title, 3)
+
+    badge_x = 16 + s.text_width(title, 3) + 16
+    badge_w = s.text_width(badge, 2) + 16
+    if finished:
+        s.rect(badge_x, 10, badge_w, 30)
+        s.text(badge_x + 8, 17, badge, 2)
+    else:
+        s.fill_rect(badge_x, 10, badge_w, 30)
+        s.text(badge_x + 8, 17, badge, 2, black=False)
+
+    total_s = elapsed_ms // 1000
+    clock = f"{total_s // 60:02d}:{total_s % 60:02d}"
+    s.text(WIDTH - 16 - s.text_width(clock, 3), 14, clock, 3)
+    s.hline(16, 50, WIDTH - 32)
+
+    s.text(16, 64, "LEVEL", 2)
+    s.text(16, 84, f"{level_pct:3d}%", 6)
+
+    segs, seg_w, seg_gap = 27, 19, 2
+    seg_pitch = seg_w + seg_gap
+    bar_x, bar_y, bar_h = 210, 86, 40
+    lit = level_pct * segs // 100
+    for i in range(segs):
+        x = bar_x + i * seg_pitch
+        if i < lit:
+            s.fill_rect(x, bar_y, seg_w, bar_h)
+        else:
+            s.rect(x, bar_y, seg_w, bar_h)
+    bar_span = segs * seg_pitch - seg_gap
+    peak_x = bar_x + peak_pct * (bar_span - 1) // 100
+    s.fill_rect(peak_x - 1, 74, 3, 8)
+
+    s.text(bar_x, 130, "0", 1)
+    s.text(bar_x + bar_span - s.text_width("100", 1), 130, "100", 1)
+
+    s.text(16, 146, f"LEVEL {level_db} DBFS", 2)
+    s.text(300, 146, f"PEAK {peak_db} DBFS", 2)
+    s.text(590, 146, f"AVG {avg_db} DBFS", 2)
+    s.text(16, 166, f"PDM RX  {pcm_rate_hz} HZ PCM", 1)
+    s.text(WIDTH - 16 - s.text_width("LIVE LEVEL - AUDIO NOT SAVED", 1), 166,
+           "LIVE LEVEL - AUDIO NOT SAVED", 1)
+
+    s.hline(16, 190, WIDTH - 32)
+    s.text(16, 198, "LEVEL HISTORY - LAST 13 S", 2)
+
+    gx, gy, gw, gh = 16, 222, WIDTH - 32, 152
+    s.rect(gx, gy, gw, gh)
+    for level in range(1, 4):
+        for x in range(gx + 4, gx + gw - 4, 4):
+            s.pixel(x, gy + gh * level // 4)
+    slot_w = gw // 64
+    bar_w = slot_w - 2
+    base_y = gy + gh - 2
+    for i in range(count):
+        h = history[i] * (gh - 4) // 100
+        if history[i] > 0 and h < 1:
+            h = 1
+        if h > 0:
+            s.fill_rect(gx + 1 + i * slot_w, base_y - h, bar_w, h)
+
+    s.hline(16, 390, WIDTH - 32)
+    if finished:
+        s.text(16, 400, "BACK = MAIN SCREEN   CLICK CONFIRM = RECORD AGAIN", 2)
+        s.text(16, 424, "AUDIO WAS ANALYSED LIVE - NOT SAVED TO SD", 1)
+    else:
+        s.text(16, 400, "CLICK CONFIRM AGAIN TO STOP RECORDING", 2)
+        s.text(16, 424, "E-INK IS SLOW - THE METER UPDATES WHEN IT CAN", 1)
     return s
 
 
@@ -235,9 +330,19 @@ def render_sleep() -> Screen:
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     sleepy = "--sleep" in sys.argv
-    default = "preview_sleep.png" if sleepy else "preview_screen.png"
+    mic = "--mic" in sys.argv
+    result = "--result" in sys.argv
+
+    if sleepy:
+        default, screen = "preview_sleep.png", render_sleep()
+    elif mic:
+        default, screen = "preview_mic.png", render_mic(False)
+    elif result:
+        default, screen = "preview_result.png", render_mic(True)
+    else:
+        default, screen = "preview_screen.png", render()
+
     out = Path(args[0]) if args else ROOT / "tools" / default
-    screen = render_sleep() if sleepy else render()
     to_image(screen).save(out)
     print(f"wrote {out} ({WIDTH}x{HEIGHT})")
 

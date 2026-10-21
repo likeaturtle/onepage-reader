@@ -6,4 +6,6 @@ dependencies.lock
 __pycache__/
 tools/preview_screen.png
 tools/preview_sleep.png
+tools/preview_mic.png
+tools/preview_result.png
 tools/preview_cjk.png

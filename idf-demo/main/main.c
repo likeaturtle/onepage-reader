@@ -18,6 +18,7 @@
 #include "epd_ssd1677.h"
 #include "font_cjk.h"
 #include "gfx.h"
+#include "onepage_mic.h"
 #include "onepage_pins.h"
 #include "sd_card.h"
 
@@ -30,6 +31,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include <inttypes.h>
@@ -59,6 +61,18 @@ static const char *TAG = "demo";
  * 20 ms poll period an ignored contact bounce shows up as a single sample. */
 #define POWER_CLICK_MIN_US (30LL * 1000)
 
+/* The live meter can only change as fast as the panel: a differential refresh
+ * takes a few hundred milliseconds even in FAST mode, so asking for more than
+ * this just queues panel work and delays the CONFIRM release. */
+#define MIC_REDRAW_US (250LL * 1000)
+#define MIC_LOG_US (1000LL * 1000)
+/* CONFIRM is a click toggle now: press+release starts, the next click stops.
+ * Anything shorter than this is contact bounce, not a click. */
+#define MIC_CLICK_MIN_US (20LL * 1000)
+/* A differential refresh is cheap but accumulates ghosting, so give the meter a
+ * stronger clean-up pass every this many updates (roughly every few seconds). */
+#define MIC_CLEAN_EVERY 8
+
 typedef struct {
   bool sd_mounted;
   int sd_entries;
@@ -72,6 +86,23 @@ typedef struct {
 } app_state_t;
 
 static app_state_t s_state;
+
+typedef enum {
+  UI_MAIN = 0,
+  UI_RECORDING,
+  UI_RESULT,
+} ui_mode_t;
+
+static ui_mode_t s_ui = UI_MAIN;
+static bool s_mic_ready;
+static bool s_mic_failed;
+static onepage_mic_status_t s_rec;
+static onepage_mic_status_t s_last_rec;
+static bool s_have_rec;
+static int64_t s_last_mic_draw_us;
+static int64_t s_last_mic_log_us;
+static uint32_t s_mic_refresh_count;
+static SemaphoreHandle_t s_confirm_click;
 
 /* --- small helpers ------------------------------------------------------ */
 
@@ -228,6 +259,132 @@ static void draw_buttons(uint8_t *fb) {
   }
 }
 
+/* --- microphone meter --------------------------------------------------- */
+
+static void format_elapsed(char *out, size_t len, uint32_t ms) {
+  const uint32_t total_s = ms / 1000;
+  snprintf(out, len, "%02u:%02u", (unsigned)(total_s / 60), (unsigned)(total_s % 60));
+}
+
+/* Live recording / result screen. Kept in one function so both views share the
+ * meter geometry; only the title, badge and footer differ. */
+static void draw_mic_screen(uint8_t *fb, const onepage_mic_status_t *st, bool finished) {
+  char text[64];
+  gfx_clear(fb, true);
+
+  const char *title = finished ? "RECORDING FINISHED" : "MIC LEVEL";
+  const char *badge = finished ? "DONE" : "REC";
+  gfx_text(fb, 16, 14, title, 3, true);
+
+  const int badge_x = 16 + gfx_text_width(title, 3) + 16;
+  const int badge_w = gfx_text_width(badge, 2) + 16;
+  if (finished) {
+    gfx_rect(fb, badge_x, 10, badge_w, 30, true);
+    gfx_text(fb, badge_x + 8, 17, badge, 2, true);
+  } else {
+    gfx_fill_rect(fb, badge_x, 10, badge_w, 30, true);
+    gfx_text(fb, badge_x + 8, 17, badge, 2, false);
+  }
+
+  format_elapsed(text, sizeof(text), st->elapsed_ms);
+  gfx_text(fb, ONEPAGE_EPD_WIDTH - 16 - gfx_text_width(text, 3), 14, text, 3, true);
+  gfx_hline(fb, 16, 50, ONEPAGE_EPD_WIDTH - 32, true);
+
+  /* Big percentage plus a segmented bar. The peak-hold marker sits just above
+   * the bar so it stays visible even when the bar is full. */
+  gfx_text(fb, 16, 64, "LEVEL", 2, true);
+  snprintf(text, sizeof(text), "%3u%%", (unsigned)st->level_pct);
+  gfx_text(fb, 16, 84, text, 6, true);
+
+  const int segs = 27;
+  const int seg_w = 19;
+  const int seg_gap = 2;
+  const int seg_pitch = seg_w + seg_gap;
+  const int bar_x = 210;
+  const int bar_y = 86;
+  const int bar_h = 40;
+  const int lit = (int)st->level_pct * segs / 100;
+  for (int i = 0; i < segs; i++) {
+    const int x = bar_x + i * seg_pitch;
+    if (i < lit) {
+      gfx_fill_rect(fb, x, bar_y, seg_w, bar_h, true);
+    } else {
+      gfx_rect(fb, x, bar_y, seg_w, bar_h, true);
+    }
+  }
+  const int bar_span = segs * seg_pitch - seg_gap;
+  int peak_x = bar_x + (int)st->peak_pct * (bar_span - 1) / 100;
+  if (peak_x < bar_x) {
+    peak_x = bar_x;
+  }
+  if (peak_x > bar_x + bar_span - 1) {
+    peak_x = bar_x + bar_span - 1;
+  }
+  gfx_fill_rect(fb, peak_x - 1, 74, 3, 8, true);
+
+  gfx_text(fb, bar_x, 130, "0", 1, true);
+  gfx_text(fb, bar_x + bar_span - gfx_text_width("100", 1), 130, "100", 1, true);
+
+  snprintf(text, sizeof(text), "LEVEL %d DBFS", st->level_db);
+  gfx_text(fb, 16, 146, text, 2, true);
+  snprintf(text, sizeof(text), "PEAK %d DBFS", st->peak_db);
+  gfx_text(fb, 300, 146, text, 2, true);
+  snprintf(text, sizeof(text), "AVG %d DBFS", st->avg_db);
+  gfx_text(fb, 590, 146, text, 2, true);
+
+  snprintf(text, sizeof(text), "PDM RX  %u HZ PCM", (unsigned)st->pcm_rate_hz);
+  gfx_text(fb, 16, 166, text, 1, true);
+  const char *meter_hint = "LIVE LEVEL - AUDIO NOT SAVED";
+  if (!finished && st->calibrating) {
+    meter_hint = "CALIBRATING NOISE FLOOR - STAY QUIET";
+  }
+  gfx_text(fb, ONEPAGE_EPD_WIDTH - 16 - gfx_text_width(meter_hint, 1), 166, meter_hint, 1, true);
+
+  gfx_hline(fb, 16, 190, ONEPAGE_EPD_WIDTH - 32, true);
+  gfx_text(fb, 16, 198, "LEVEL HISTORY - LAST 13 S", 2, true);
+
+  const int gx = 16;
+  const int gy = 222;
+  const int gw = ONEPAGE_EPD_WIDTH - 32;
+  const int gh = 152;
+  gfx_rect(fb, gx, gy, gw, gh, true);
+  for (int level = 1; level < 4; level++) {
+    for (int x = gx + 4; x < gx + gw - 4; x += 4) {
+      gfx_pixel(fb, x, gy + gh * level / 4, true);
+    }
+  }
+  const int slot_w = gw / ONEPAGE_MIC_HISTORY_LEN;
+  const int bar_w = slot_w - 2;
+  const int base_y = gy + gh - 2;
+  for (int i = 0; i < st->history_count && i < ONEPAGE_MIC_HISTORY_LEN; i++) {
+    int h = (int)st->history[i] * (gh - 4) / 100;
+    if (st->history[i] > 0 && h < 1) {
+      h = 1;
+    }
+    if (h > 0) {
+      gfx_fill_rect(fb, gx + 1 + i * slot_w, base_y - h, bar_w, h, true);
+    }
+  }
+
+  gfx_hline(fb, 16, 390, ONEPAGE_EPD_WIDTH - 32, true);
+  if (finished) {
+    gfx_text(fb, 16, 400, "BACK = MAIN SCREEN   CLICK CONFIRM = RECORD AGAIN", 2, true);
+    gfx_text(fb, 16, 424, "AUDIO WAS ANALYSED LIVE - NOT SAVED TO SD", 1, true);
+  } else {
+    gfx_text(fb, 16, 400, "CLICK CONFIRM AGAIN TO STOP RECORDING", 2, true);
+    gfx_text(fb, 16, 424, "E-INK IS SLOW - THE METER UPDATES WHEN IT CAN", 1, true);
+  }
+}
+
+static void render_mic_screen(epd_refresh_mode_t mode, bool finished) {
+  uint8_t *fb = epd_framebuffer();
+  if (!fb) {
+    return;
+  }
+  draw_mic_screen(fb, finished ? &s_last_rec : &s_rec, finished);
+  epd_refresh(mode);
+}
+
 static void render_screen(epd_refresh_mode_t mode) {
   uint8_t *fb = epd_framebuffer();
   if (!fb) {
@@ -252,7 +409,18 @@ static void render_screen(epd_refresh_mode_t mode) {
   gfx_hline(fb, 16, 366, ONEPAGE_EPD_WIDTH - 32, true);
   gfx_text(fb, 16, 376, "BUTTONS - CLICK OR HOLD POWER TO SLEEP", 2, true);
   draw_buttons(fb);
-  gfx_text(fb, 16, 446, "CONFIRM = RERUN SD TEST", 2, true);
+
+  char footer[48];
+  if (s_have_rec) {
+    snprintf(footer, sizeof(footer), "LAST REC %u.%uS  PEAK %d DB",
+             (unsigned)(s_last_rec.elapsed_ms / 1000),
+             (unsigned)((s_last_rec.elapsed_ms % 1000) / 100), s_last_rec.peak_db);
+  } else if (s_mic_failed) {
+    snprintf(footer, sizeof(footer), "MIC UNAVAILABLE - SEE CONSOLE");
+  } else {
+    snprintf(footer, sizeof(footer), "CLICK CONFIRM = MIC RECORD");
+  }
+  gfx_text(fb, 16, 446, footer, 2, true);
   gfx_text(fb, 16, 464, "ESP-IDF BRING-UP BUILD - NOT THE STOCK FIRMWARE", 1, true);
 
   epd_refresh(mode);
@@ -287,8 +455,94 @@ static void run_sd_test(void) {
   }
 }
 
+/* Poll the keys from a separate task while the UI task is blocked in an e-ink
+ * refresh. CONFIRM is on the ADC ladder, so a click that starts and ends
+ * entirely inside a panel refresh would otherwise be missed. Only the click is
+ * posted here; the UI task performs the start/stop so drawing stays
+ * single-threaded. */
+static void key_scan_task(void *arg) {
+  (void)arg;
+  uint32_t previous = board_buttons_poll();
+  int64_t pressed_us = 0;
+  for (;;) {
+    vTaskDelay(pdMS_TO_TICKS(20));
+    const uint32_t mask = board_buttons_poll();
+    const bool was = (previous & (1u << BOARD_BTN_CONFIRM)) != 0;
+    const bool is = (mask & (1u << BOARD_BTN_CONFIRM)) != 0;
+    if (is && !was) {
+      pressed_us = esp_timer_get_time();
+    } else if (!is && was && pressed_us) {
+      const int64_t held_us = esp_timer_get_time() - pressed_us;
+      pressed_us = 0;
+      if (held_us >= MIC_CLICK_MIN_US) {
+        xSemaphoreGive(s_confirm_click);
+      }
+    }
+    previous = mask;
+  }
+}
+
 static void note_event(const char *name, bool pressed) {
   snprintf(s_state.last_event, sizeof(s_state.last_event), "%s %s", name, pressed ? "DOWN" : "UP");
+}
+
+/* --- recording flow ----------------------------------------------------- */
+
+static void start_recording(void) {
+  /* Initialise lazily: the boot path stays exactly as it was before the
+   * microphone existed, and an I2S problem can only affect the first take
+   * instead of the whole demo. */
+  if (!s_mic_ready && !s_mic_failed) {
+    const esp_err_t err = onepage_mic_init();
+    if (err != ESP_OK) {
+      s_mic_failed = true;
+      snprintf(s_state.last_event, sizeof(s_state.last_event), "MIC INIT ERR");
+      ESP_LOGE(TAG, "mic: init failed (%s)", esp_err_to_name(err));
+      return;
+    }
+    s_mic_ready = true;
+    ESP_LOGI(TAG, "mic: initialised on first use");
+  }
+  if (s_mic_failed) {
+    snprintf(s_state.last_event, sizeof(s_state.last_event), "MIC UNAVAILABLE");
+    ESP_LOGW(TAG, "mic: CONFIRM ignored, microphone not initialised");
+    return;
+  }
+
+  const esp_err_t err = onepage_mic_start();
+  if (err != ESP_OK) {
+    snprintf(s_state.last_event, sizeof(s_state.last_event), "MIC START ERR");
+    ESP_LOGE(TAG, "mic: start failed (%s)", esp_err_to_name(err));
+    return;
+  }
+
+  onepage_mic_get_status(&s_rec);
+  s_ui = UI_RECORDING;
+  /* The start screen is already a HALF refresh, so the next periodic update can
+   * go straight to differential. */
+  s_mic_refresh_count = 1;
+  render_mic_screen(EPD_REFRESH_HALF, false);
+  s_last_mic_draw_us = esp_timer_get_time();
+  s_last_mic_log_us = s_last_mic_draw_us;
+  ESP_LOGI(TAG, "mic: recording (click CONFIRM again to stop)");
+}
+
+static void stop_recording(void) {
+  onepage_mic_stop();
+  onepage_mic_get_status(&s_last_rec);
+  s_have_rec = true;
+  s_ui = UI_RESULT;
+  render_mic_screen(EPD_REFRESH_HALF, true);
+  ESP_LOGI(TAG, "mic: result %u ms, level %d dBFS, peak %d dBFS, avg %d dBFS, PCM %u Hz",
+           (unsigned)s_last_rec.elapsed_ms, s_last_rec.level_db, s_last_rec.peak_db,
+           s_last_rec.avg_db, (unsigned)s_last_rec.pcm_rate_hz);
+}
+
+static void return_to_main(uint32_t buttons) {
+  s_state.buttons = buttons;
+  s_ui = UI_MAIN;
+  refresh_environment();
+  render_screen(EPD_REFRESH_HALF);
 }
 
 /* Draw the "asleep" screen: a centred box with the label and a wake hint. The
@@ -319,6 +573,8 @@ static void draw_sleep_screen(void) {
  * image stays visible and POWER wakes the board again. */
 static void enter_sleep(void) {
   ESP_LOGI(TAG, "sleep: click or 2 s hold on POWER");
+  /* Never cut the rail while the PDM clock is still running. */
+  onepage_mic_stop();
   draw_sleep_screen();
   epd_refresh(EPD_REFRESH_FULL);
   epd_sleep();
@@ -339,6 +595,25 @@ void app_main(void) {
   ESP_ERROR_CHECK(epd_init());
   ESP_ERROR_CHECK(board_buttons_init());
 
+  /* CONFIRM is a click toggle. Scan it from its own task so the click is not
+   * lost while this task is blocked for hundreds of milliseconds in a panel
+   * refresh; the action itself is still executed here. */
+  s_confirm_click = xSemaphoreCreateBinary();
+  if (!s_confirm_click ||
+      xTaskCreate(key_scan_task, "key_scan", 3072, NULL, 2, NULL) != pdPASS) {
+    ESP_LOGE(TAG, "key scan task creation failed; CONFIRM toggle disabled");
+    if (s_confirm_click) {
+      vSemaphoreDelete(s_confirm_click);
+      s_confirm_click = NULL;
+    }
+  }
+
+  /* The microphone shares the SD/panel rail, so it is safe to bring up here.
+   * Initialisation is deliberately deferred to the first CONFIRM click: a
+   * failure then leaves the self test and SD path untouched, and the boot path
+   * stays identical to the version that was verified on hardware. */
+  ESP_LOGI(TAG, "mic: PDM capture will be initialized on first CONFIRM");
+
   s_state.buttons = board_buttons_poll();
   render_screen(EPD_REFRESH_FULL);
 
@@ -357,6 +632,17 @@ void app_main(void) {
   while (true) {
     const uint32_t mask = board_buttons_poll();
     const int64_t now = esp_timer_get_time();
+
+    /* A CONFIRM click may have arrived while this task was refreshing the
+     * panel; key_scan_task latched it. Toggle the take here, on the UI task. */
+    if (s_confirm_click && xSemaphoreTake(s_confirm_click, 0) == pdTRUE) {
+      if (s_ui == UI_RECORDING) {
+        stop_recording();
+      } else if (s_ui == UI_MAIN || s_ui == UI_RESULT) {
+        start_recording();
+      }
+    }
+
     bool dirty = false;
 
     for (int i = 0; i < BOARD_BTN_COUNT; i++) {
@@ -385,9 +671,15 @@ void app_main(void) {
           ESP_LOGD(TAG, "ignoring %lld us glitch on POWER", held_us);
         }
       }
-      if (i == BOARD_BTN_CONFIRM && is) {
-        run_sd_test();
-        refresh_environment();
+      /* CONFIRM clicks are handled by key_scan_task above; this loop only
+       * tracks the press state for the on-screen key boxes. */
+      /* BACK leaves the result screen; a CONFIRM click starts another take. */
+      if (i == BOARD_BTN_BACK && is && s_ui == UI_RESULT) {
+        return_to_main(mask);
+        dirty = false;
+        last_redraw_us = now;
+        last_poll_us = now;
+        last_slow_redraw_us = now;
       }
     }
     s_state.buttons = mask;
@@ -401,31 +693,50 @@ void app_main(void) {
       enter_sleep();
     }
 
-    /* Keep the slow-moving values (battery, USB) live, but leave the panel
-     * alone unless the cell actually moved: a 1 mV jitter used to repaint the
-     * screen every two seconds. */
-    if (now - last_poll_us > ENV_POLL_US) {
-      last_poll_us = now;
-      const uint16_t previous_mv = s_state.bat_mv;
-      const bool previous_usb = s_state.usb;
-      refresh_environment();
-      const int delta_mv = (int)s_state.bat_mv - (int)previous_mv;
-      if (previous_usb != s_state.usb || delta_mv >= BAT_REDRAW_MV || delta_mv <= -BAT_REDRAW_MV) {
-        slow_dirty = true;
+    if (s_ui == UI_MAIN) {
+      /* Keep the slow-moving values (battery, USB) live, but leave the panel
+       * alone unless the cell actually moved: a 1 mV jitter used to repaint the
+       * screen every two seconds. */
+      if (now - last_poll_us > ENV_POLL_US) {
+        last_poll_us = now;
+        const uint16_t previous_mv = s_state.bat_mv;
+        const bool previous_usb = s_state.usb;
+        refresh_environment();
+        const int delta_mv = (int)s_state.bat_mv - (int)previous_mv;
+        if (previous_usb != s_state.usb || delta_mv >= BAT_REDRAW_MV ||
+            delta_mv <= -BAT_REDRAW_MV) {
+          slow_dirty = true;
+        }
       }
-    }
 
-    /* Key-driven updates are throttled to 120 ms; the informational values get
-     * a much slower budget so charging (which walks the voltage up steadily)
-     * cannot turn the panel into a metronome. */
-    const bool slow_due = slow_dirty && (now - last_slow_redraw_us) > SLOW_REDRAW_US;
-    if ((dirty || slow_due) && (now - last_redraw_us) > 120LL * 1000) {
-      last_redraw_us = now;
-      if (slow_due) {
-        last_slow_redraw_us = now;
-        slow_dirty = false;
+      /* Key-driven updates are throttled to 120 ms; the informational values get
+       * a much slower budget so charging (which walks the voltage up steadily)
+       * cannot turn the panel into a metronome. */
+      const bool slow_due = slow_dirty && (now - last_slow_redraw_us) > SLOW_REDRAW_US;
+      if ((dirty || slow_due) && (now - last_redraw_us) > 120LL * 1000) {
+        last_redraw_us = now;
+        if (slow_due) {
+          last_slow_redraw_us = now;
+          slow_dirty = false;
+        }
+        render_screen(EPD_REFRESH_FAST);
       }
-      render_screen(EPD_REFRESH_FAST);
+    } else if (s_ui == UI_RECORDING) {
+      /* Refresh the meter at a cadence the panel can actually keep up with.
+       * The capture task keeps filling the history regardless of this branch. */
+      if (now - s_last_mic_draw_us >= MIC_REDRAW_US) {
+        onepage_mic_get_status(&s_rec);
+        const epd_refresh_mode_t mode =
+            (s_mic_refresh_count++ % MIC_CLEAN_EVERY) == 0 ? EPD_REFRESH_HALF : EPD_REFRESH_FAST;
+        render_mic_screen(mode, false);
+        s_last_mic_draw_us = esp_timer_get_time();
+        if (s_last_mic_draw_us - s_last_mic_log_us >= MIC_LOG_US) {
+          s_last_mic_log_us = s_last_mic_draw_us;
+          ESP_LOGI(TAG, "mic: %u ms, level %d dBFS (%u%%), peak %d dBFS",
+                   (unsigned)s_rec.elapsed_ms, s_rec.level_db, (unsigned)s_rec.level_pct,
+                   s_rec.peak_db);
+        }
+      }
     }
 
     vTaskDelay(pdMS_TO_TICKS(20));
