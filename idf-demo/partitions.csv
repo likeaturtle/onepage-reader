@@ -1,4 +1,4 @@
-# Same offsets as the stock OnePage firmware so the demo can be flashed over it
+# Same offsets as the stock OnePage firmware so this app can be flashed over it
 # and rolled back without moving anything around.
 #
 # The stock layout keeps its app in the app0/ota_0 slot at 0x10000 and leaves a

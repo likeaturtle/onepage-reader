@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
-"""Generate the CJK bitmap font used by the demo (font_cjk.c / font_cjk.h).
+"""Generate the CJK bitmap fonts used by the calendar UI.
 
-The 5x7 table in font5x7.c only covers ASCII, and hauling a full UTF-8 font
-engine in for a couple of UI labels is not worth it on this target. Instead the
-few glyphs the UI needs are rendered from a system font once and committed as a
-square bitmap table.
+Two tables are produced:
 
-    python3 tools/gen_cjk_bitmaps.py                # current glyph set, 48 px
-    python3 tools/gen_cjk_bitmaps.py --size 32      # try another cell size
-    python3 tools/gen_cjk_bitmaps.py --chars 休眠中
+* ``font_gb2312_24.bin`` -- every GB2312 level-1/2 character (6763 glyphs) in
+  a 24x24 cell. It is embedded into the firmware with EMBED_FILES and looked up
+  by codepoint, so arbitrary Chinese event titles received over BLE render
+  without a font engine.
+* ``font_cjk_large.c/.h`` -- a handful of 48x48 glyphs for the sleep screen
+  headline (the big "休眠中" label).
+
+    python3 tools/gen_cjk_bitmaps.py
 
 Requires Pillow. Fonts are host-specific, so the generated files are committed
-and this script only needs to run when glyphs are added or the size changes.
+and this script only needs to run when the glyph set or cell size changes. Use
+the IDF virtualenv if the system Python has no Pillow:
+
+    /Users/fujd/.espressif/tools/python/v6.1/venv/bin/python tools/gen_cjk_bitmaps.py
 """
 
 import argparse
 import pathlib
+import struct
 import sys
 
 try:
@@ -24,102 +30,128 @@ except ImportError:  # pragma: no cover - host dependency
     sys.exit("needs Pillow: python3 -m pip install Pillow")
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-SRC = REPO / "components" / "onepage_c61" / "src" / "font_cjk.c"
-HDR = REPO / "components" / "onepage_c61" / "include" / "font_cjk.h"
+COMPONENT = REPO / "components" / "onepage_c61"
+BIN = COMPONENT / "font_gb2312_24.bin"
+LARGE_SRC = COMPONENT / "src" / "font_cjk_large.c"
+LARGE_HDR = COMPONENT / "include" / "font_cjk_large.h"
 PREVIEW = REPO / "tools" / "preview_cjk.png"
 
-# First hit wins. All of these ship with macOS and have full CJK coverage.
+# The committed bitmap was generated from Noto Sans CJK SC (OFL, see
+# tools/fonts/OFL.txt). Keep the source font in one of these locations, or pass
+# --font explicitly. Using a system font changes the license of the generated
+# bitmap, so it is not a silent fallback.
 FONT_CANDIDATES = [
-    "/System/Library/Fonts/STHeiti Medium.ttc",
-    "/System/Library/Fonts/Hiragino Sans GB.ttc",
-    "/System/Library/Fonts/Supplemental/Songti.ttc",
+    "/tmp/NotoSansCJKsc-Regular.otf",
+    "/Library/Fonts/NotoSansCJKsc-Regular.otf",
+    str(pathlib.Path.home() / "Downloads/NotoSansCJKsc-Regular.otf"),
 ]
 
-DEFAULT_CHARS = "休眠中"
-INK_LEVEL = 128  # threshold on the antialiased render
+# The large table is intentionally tiny: only the sleep headline is 48 px.
+LARGE_CHARS = "休眠中"
+GB2312_PX = 24
+LARGE_PX = 48
+INK_LEVEL = 120
+MAGIC = b"OPF1"
+VERSION = 1
 
 
 def find_font():
     for path in FONT_CANDIDATES:
         if pathlib.Path(path).exists():
             return path
-    sys.exit("no CJK font found; edit FONT_CANDIDATES in this script")
+    sys.exit(
+        "Noto Sans CJK SC not found. Download it (OFL) and pass --font:\n"
+        "  curl -L -o /tmp/NotoSansCJKsc-Regular.otf \\n"
+        "    https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
+    )
+
+
+def gb2312_chars():
+    """All GB2312 level-1 and level-2 characters, sorted by codepoint."""
+    chars = []
+    for hi in range(0xA1, 0xF8):
+        for lo in range(0xA1, 0xFF):
+            try:
+                chars.append(bytes([hi, lo]).decode("gb2312"))
+            except UnicodeDecodeError:
+                continue
+    # Sort by codepoint so the firmware can binary-search the table.
+    chars.sort(key=ord)
+    return chars
 
 
 def render_glyphs(chars, size, font_path):
-    """Render each character into a size x size ink bitmap (1 = ink)."""
+    """Render each character into a size x size ink bitmap (1 = ink).
+
+    The glyph is drawn with its em box centred in the cell. Do not re-centre
+    every glyph on its own ink: that makes full-width CJK glyphs and
+    punctuation jump around relative to each other.
+    """
     font = ImageFont.truetype(font_path, size)
-    boxes = []
+    bitmaps = []
+    row_bytes = (size + 7) // 8
     for ch in chars:
         img = Image.new("L", (size, size), 0)
         ImageDraw.Draw(img).text((size / 2, size / 2), ch, font=font, fill=255, anchor="mm")
-        boxes.append(img.load())
-
-    # One shared offset for every glyph: centring each character on its own ink
-    # would make the set look uneven, since glyphs differ in ink extent.
-    xs = [x for p in boxes for x in range(size) for y in range(size) if p[x, y] >= INK_LEVEL]
-    ys = [y for p in boxes for x in range(size) for y in range(size) if p[x, y] >= INK_LEVEL]
-    if not xs:
-        sys.exit("nothing rendered; is the font readable?")
-    dx = (size - (max(xs) - min(xs) + 1)) // 2 - min(xs)
-    dy = (size - (max(ys) - min(ys) + 1)) // 2 - min(ys)
-
-    bitmap = []
-    for p in boxes:
+        px = img.load()
         rows = []
         for y in range(size):
             byte, bit = 0, 0x80
-            row = []
             for x in range(size):
-                sx, sy = x - dx, y - dy
-                ink = 0 <= sx < size and 0 <= sy < size and p[sx, sy] >= INK_LEVEL
-                if ink:
+                if px[x, y] >= INK_LEVEL:
                     byte |= bit
                 bit >>= 1
                 if bit == 0:
-                    row.append(byte)
+                    rows.append(byte)
                     byte, bit = 0, 0x80
-            rows.extend(row)
-        bitmap.append(rows)
-    return bitmap
+            if bit != 0x80:
+                rows.append(byte)
+        bitmaps.append(rows)
+    return bitmaps, row_bytes
 
 
-def write_header(size):
-    row_bytes = (size + 7) // 8
-    HDR.write_text(
+def write_binary(chars, bitmaps, size, row_bytes, font_path):
+    records = []
+    for ch, rows in zip(chars, bitmaps):
+        records.append(struct.pack("<I", ord(ch)) + bytes(rows))
+    header = MAGIC + struct.pack("<HBBII", VERSION, size, row_bytes, len(records), 0)
+    BIN.write_bytes(header + b"".join(records))
+    print(f"{BIN.relative_to(REPO)}: {len(records)} glyphs, {size}px, {BIN.stat().st_size} bytes")
+    print(f"  source: {font_path}")
+
+
+def write_large(chars, bitmaps, size, row_bytes, font_path):
+    glyph_bytes = row_bytes * size
+    LARGE_HDR.write_text(
         f"""#pragma once
 
 #include <stdint.h>
 
-/* Square CJK bitmap font, generated by tools/gen_cjk_bitmaps.py -- do not edit
- * by hand. Bit set = ink, row major, MSB is the leftmost pixel, {row_bytes}
- * bytes per row. */
+/* 48 px CJK glyphs for the sleep headline, generated by
+ * tools/gen_cjk_bitmaps.py -- do not edit by hand. Bit set = ink, row major,
+ * MSB is the leftmost pixel, {row_bytes} bytes per row. */
 
-#define FONT_CJK_PX {size}
-#define FONT_CJK_ROW_BYTES {row_bytes}
-#define FONT_CJK_GLYPH_BYTES (FONT_CJK_ROW_BYTES * FONT_CJK_PX)
+#define FONT_CJK_LARGE_PX {size}
+#define FONT_CJK_LARGE_ROW_BYTES {row_bytes}
+#define FONT_CJK_LARGE_GLYPH_BYTES (FONT_CJK_LARGE_ROW_BYTES * FONT_CJK_LARGE_PX)
 
-/* Bitmap for `codepoint`, or NULL when it is not in the table. */
-const uint8_t *font_cjk_lookup(uint32_t codepoint);
+const uint8_t *font_cjk_large_lookup(uint32_t codepoint);
 """
     )
-
-
-def write_source(chars, bitmap, size, font_path):
     out = [
-        '#include "font_cjk.h"',
+        '#include "font_cjk_large.h"',
         "",
         "/* Generated by tools/gen_cjk_bitmaps.py from",
-        f" * {font_path} at {size} px: {chars} */",
+        f" * {pathlib.Path(font_path).name} at {size} px: {chars} */",
         "",
         "typedef struct {",
         "  uint32_t codepoint;",
-        "  uint8_t bitmap[FONT_CJK_GLYPH_BYTES];",
-        "} font_cjk_glyph_t;",
+        "  uint8_t bitmap[FONT_CJK_LARGE_GLYPH_BYTES];",
+        "} font_cjk_large_glyph_t;",
         "",
-        "static const font_cjk_glyph_t kGlyphs[] = {",
+        "static const font_cjk_large_glyph_t kGlyphs[] = {",
     ]
-    for ch, rows in zip(chars, bitmap):
+    for ch, rows in zip(chars, bitmaps):
         out.append(f"    {{0x{ord(ch):04X}, {{ /* {ch} */")
         for i in range(0, len(rows), 12):
             chunk = ", ".join(f"0x{b:02X}" for b in rows[i : i + 12])
@@ -128,7 +160,7 @@ def write_source(chars, bitmap, size, font_path):
     out += [
         "};",
         "",
-        "const uint8_t *font_cjk_lookup(uint32_t codepoint) {",
+        "const uint8_t *font_cjk_large_lookup(uint32_t codepoint) {",
         "  for (size_t i = 0; i < sizeof(kGlyphs) / sizeof(kGlyphs[0]); i++) {",
         "    if (kGlyphs[i].codepoint == codepoint) {",
         "      return kGlyphs[i].bitmap;",
@@ -138,39 +170,42 @@ def write_source(chars, bitmap, size, font_path):
         "}",
         "",
     ]
-    SRC.write_text("\n".join(out))
+    LARGE_SRC.write_text("\n".join(out))
+    print(f"{LARGE_SRC.relative_to(REPO)}: {len(chars)} glyphs at {size}px ({glyph_bytes} bytes each)")
 
 
-def write_preview(chars, bitmap, size):
-    """Upscaled strip so the glyphs can be eyeballed without flashing."""
-    scale = 4
-    img = Image.new("L", (size * scale * len(chars), size * scale), 255)
+def write_preview(samples, bitmaps, row_bytes, size, scale=3):
+    cols = len(samples)
+    img = Image.new("L", (size * scale * cols, size * scale), 255)
     px = img.load()
-    for i, rows in enumerate(bitmap):
+    for i, rows in enumerate(bitmaps):
         for y in range(size):
             for x in range(size):
-                if rows[y * ((size + 7) // 8) + x // 8] & (0x80 >> (x % 8)):
+                if rows[y * row_bytes + x // 8] & (0x80 >> (x % 8)):
                     for dy in range(scale):
                         for dx in range(scale):
                             px[i * size * scale + x * scale + dx, y * scale + dy] = 0
     img.save(PREVIEW)
+    print(f"{PREVIEW.relative_to(REPO)} (eyeball this before flashing)")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--chars", default=DEFAULT_CHARS, help="glyphs to embed")
-    ap.add_argument("--size", type=int, default=48, help="square cell size in pixels")
     ap.add_argument("--font", default=None, help="override the font file")
     args = ap.parse_args()
 
     font_path = args.font or find_font()
-    bitmap = render_glyphs(args.chars, args.size, font_path)
-    write_header(args.size)
-    write_source(args.chars, bitmap, args.size, font_path)
-    write_preview(args.chars, bitmap, args.size)
-    print(f"{SRC.relative_to(REPO)}: {len(args.chars)} glyphs at {args.size}px from {font_path}")
-    print(f"{HDR.relative_to(REPO)}")
-    print(f"{PREVIEW.relative_to(REPO)} (eyeball this before flashing)")
+
+    chars = gb2312_chars()
+    bitmaps, row_bytes = render_glyphs(chars, GB2312_PX, font_path)
+    write_binary(chars, bitmaps, GB2312_PX, row_bytes, font_path)
+
+    large_bitmaps, large_row_bytes = render_glyphs(LARGE_CHARS, LARGE_PX, font_path)
+    write_large(LARGE_CHARS, large_bitmaps, LARGE_PX, large_row_bytes, font_path)
+
+    samples = "日历个人工作家庭学习提醒日程今天删除休眠中序号时间"
+    sample_bitmaps, sample_row_bytes = render_glyphs(samples, GB2312_PX, font_path)
+    write_preview(samples, sample_bitmaps, sample_row_bytes, GB2312_PX)
 
 
 if __name__ == "__main__":

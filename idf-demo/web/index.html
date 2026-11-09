@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f1ea">
+<title>OnePage 日历 · 蓝牙</title>
+<style>
+  :root {
+    --paper: #f4f1ea;
+    --paper-2: #ebe6db;
+    --ink: #191817;
+    --ink-soft: #55514a;
+    --line: #cbc4b5;
+    --accent: #b94a2c;
+    --accent-ink: #fff8f1;
+    --ok: #2f6b4f;
+    --warn: #8a5a12;
+    --shadow: 0 10px 30px rgba(60, 48, 32, .10);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 500px at 50% -200px, #fffdf7 0%, transparent 70%),
+      var(--paper);
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+          "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 64px; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 8px 0 20px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .mark {
+    width: 42px; height: 42px; border: 1.5px solid var(--ink); border-radius: 10px;
+    display: grid; place-items: center; font-weight: 700; font-size: 20px;
+    background: #fffdf8; box-shadow: 3px 3px 0 var(--ink);
+  }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  .sub { color: var(--ink-soft); font-size: 12.5px; margin-top: 2px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px;
+    border: 1px solid var(--line); border-radius: 999px; background: #fffdf8;
+    font-size: 12.5px; white-space: nowrap; color: var(--ink-soft);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #9a9488; }
+  .pill.on { border-color: #9bb8a7; color: var(--ok); }
+  .pill.on .dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(47,107,79,.12); }
+  .pill.err { border-color: #d8a99a; color: var(--accent); }
+  .pill.err .dot { background: var(--accent); }
+  .card {
+    background: #fffdf8; border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow);
+  }
+  .card h2 { font-size: 14px; margin: 0 0 4px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+  .card .lead { margin: 0 0 14px; color: var(--ink-soft); font-size: 13.5px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; }
+  button {
+    font: inherit; border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+    border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600;
+    transition: transform .08s ease, opacity .15s ease;
+  }
+  button:hover { opacity: .9; }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .38; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--ink); border-color: var(--line); font-weight: 500; }
+  button.danger { background: transparent; color: var(--accent); border-color: #d8a99a; }
+  button.small { padding: 6px 10px; font-size: 12.5px; border-radius: 8px; }
+  .compat {
+    display: none; margin-bottom: 16px; padding: 13px 15px; border-radius: 12px;
+    background: #fff4ec; border: 1px solid #e1b8a6; color: #6d311f; font-size: 13.5px;
+  }
+  .compat.show { display: block; }
+  form { display: grid; gap: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  label { display: grid; gap: 5px; font-size: 12.5px; color: var(--ink-soft); font-weight: 600; letter-spacing: .03em; }
+  input, select, textarea {
+    font: inherit; color: var(--ink); background: #fffefb; border: 1px solid var(--line);
+    border-radius: 9px; padding: 10px 11px; min-width: 0; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid rgba(185,74,44,.25); border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 74px; }
+  .hint { color: var(--ink-soft); font-size: 12px; }
+  .divider { height: 1px; background: var(--line); margin: 16px 0; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .month { font-size: 18px; font-weight: 700; letter-spacing: .02em; }
+  .day-group { margin-top: 14px; }
+  .day-head {
+    display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700;
+    color: var(--ink-soft); letter-spacing: .05em; margin-bottom: 7px;
+  }
+  .day-head::after { content: ""; height: 1px; background: var(--line); flex: 1; }
+  .event {
+    display: grid; grid-template-columns: 72px 1fr auto; gap: 12px; align-items: start;
+    padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px;
+    background: #fffefb; margin-bottom: 8px;
+  }
+  .event .time { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13.5px; line-height: 1.3; }
+  .event .time span { display: block; color: var(--ink-soft); font-weight: 500; font-size: 12px; }
+  .event .title { font-weight: 650; line-height: 1.35; word-break: break-word; }
+  .event .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; font-size: 12.5px; color: var(--ink-soft); }
+  .badge {
+    display: inline-block; border: 1px solid var(--line); border-radius: 999px;
+    padding: 1px 8px; font-size: 11.5px; color: var(--ink-soft); background: var(--paper);
+  }
+  .empty { padding: 26px 10px; text-align: center; color: var(--ink-soft); font-size: 14px; }
+  .empty strong { display: block; color: var(--ink); margin-bottom: 4px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip {
+    border: 1px solid var(--line); background: var(--paper); border-radius: 999px;
+    padding: 5px 11px; font-size: 12.5px; color: var(--ink-soft);
+  }
+  .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; margin-top: 12px; font-size: 13px; }
+  .status-grid div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px dotted var(--line); padding-bottom: 6px; }
+  .status-grid span:first-child { color: var(--ink-soft); }
+  .status-grid span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+  details.log { margin-top: 4px; }
+  details.log summary { cursor: pointer; color: var(--ink-soft); font-size: 13px; font-weight: 600; }
+  pre#log {
+    margin: 10px 0 0; padding: 12px; max-height: 220px; overflow: auto;
+    background: #23211e; color: #e9e3d6; border-radius: 10px;
+    font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 20px);
+    opacity: 0; pointer-events: none; transition: .2s ease;
+    background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 10px;
+    font-size: 13.5px; max-width: calc(100vw - 32px); z-index: 20;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .foot { color: var(--ink-soft); font-size: 11.5px; text-align: center; margin-top: 22px; }
+  @media (max-width: 560px) {
+    header { flex-direction: column; }
+    .grid { grid-template-columns: 1fr; }
+    .event { grid-template-columns: 62px 1fr auto; gap: 9px; }
+    .status-grid { grid-template-columns: 1fr; }
+    .wrap { padding: 16px 12px 56px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="mark">日</div>
+      <div>
+        <h1>OnePage 日历</h1>
+        <div class="sub">ESP32-C61 · 蓝牙日程 · 低功耗墨水屏</div>
+      </div>
+    </div>
+    <div id="statusPill" class="pill"><span class="dot"></span><span id="statusText">未连接</span></div>
+  </header>
+
+  <div id="compat" class="compat"></div>
+
+  <section class="card">
+    <h2>连接设备</h2>
+    <p class="lead">先唤醒设备（按 POWER），再点击连接。设备名称：<strong>OnePage Calendar</strong>。</p>
+    <div class="row">
+      <button id="connectBtn" class="grow">连接蓝牙设备</button>
+      <button id="sleepBtn" class="ghost" disabled>让设备锁屏</button>
+    </div>
+    <div class="status-grid">
+      <div><span>设备</span><span id="devName">—</span></div>
+      <div><span>固件</span><span id="devFw">—</span></div>
+      <div><span>日程数</span><span id="devEvents">—</span></div>
+      <div><span>设备时间</span><span id="devTime">—</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>添加日程</h2>
+    <p class="lead">填写本地日期与时间。所有日程使用同一个日历，发送后会立即出现在设备屏幕上。</p>
+    <form id="addForm">
+      <div class="grid">
+        <label>日期
+          <input id="dateInput" type="date" required>
+        </label>
+        <label>开始时间
+          <input id="startInput" type="time" required>
+        </label>
+        <label>结束时间
+          <input id="endInput" type="time">
+        </label>
+      </div>
+      <label>标题
+        <input id="titleInput" type="text" maxlength="15" placeholder="例如：项目评审（最多 15 字）" required>
+      </label>
+      <label>备注（可选）
+        <textarea id="noteInput" maxlength="30" placeholder="地点、参与人或其他说明（最多 30 字）"></textarea>
+      </label>
+      <div class="row">
+        <button id="addBtn" type="submit" disabled>发送到设备</button>
+        <span class="hint" id="addHint">连接设备后可发送</span>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>本月日程</h2>
+    <div class="toolbar">
+      <button id="prevMonth" class="ghost small" aria-label="上个月">← 上月</button>
+      <div id="monthLabel" class="month">—</div>
+      <button id="nextMonth" class="ghost small" aria-label="下个月">下月 →</button>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <button id="todayBtn" class="ghost small">回到今天</button>
+      <button id="reloadBtn" class="ghost small" disabled>刷新</button>
+      <span class="hint grow" id="listHint"></span>
+    </div>
+    <div id="eventList"></div>
+  </section>
+
+  <details class="log">
+    <summary>蓝牙协议日志</summary>
+    <pre id="log"></pre>
+  </details>
+
+  <div class="foot">Web Bluetooth 需要 HTTPS 或 localhost · Android Chrome / Edge · iOS 请使用支持 Web Bluetooth 的浏览器</div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const SERVICE = "6f6e6570-6167-6531-6361-6c656e646172";
+  const RX_UUID = "6f6e6570-6167-6531-6361-000000000001";
+  const TX_UUID = "6f6e6570-6167-6531-6361-000000000002";
+  const CHUNK = 20; // default ATT MTU 23 minus 3; always safe without MTU discovery
+
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    device: null,
+    server: null,
+    rx: null,
+    tx: null,
+    connected: false,
+    events: [],
+    monthCursor: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+    writeChain: Promise.resolve(),
+    waiters: [],
+    rxText: "",
+    decoder: new TextDecoder("utf-8"),
+    encoder: new TextEncoder(),
+    loadingList: false,
+    pendingLoad: false,
+  };
+
+  // --- helpers ----------------------------------------------------------
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parseYmd = (s) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+  const weekday = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+
+  function toast(message) {
+    const el = $("toast");
+    el.textContent = message;
+    el.classList.add("show");
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => el.classList.remove("show"), 2600);
+  }
+
+  function log(direction, text) {
+    const el = $("log");
+    const line = `${new Date().toLocaleTimeString()} ${direction} ${text}`;
+    el.textContent = (el.textContent ? el.textContent + "\n" : "") + line;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function setStatus(kind, text) {
+    const pill = $("statusPill");
+    pill.classList.toggle("on", kind === "on");
+    pill.classList.toggle("err", kind === "err");
+    $("statusText").textContent = text;
+  }
+
+  function updateControls() {
+    const on = state.connected;
+    $("connectBtn").textContent = on ? "断开连接" : "连接蓝牙设备";
+    $("addBtn").disabled = !on;
+    $("reloadBtn").disabled = !on;
+    $("sleepBtn").disabled = !on;
+    $("addHint").textContent = on ? "发送后设备屏幕会刷新" : "连接设备后可发送";
+  }
+
+  // --- protocol ---------------------------------------------------------
+  function waitFor(predicate, timeout = 7000) {
+    return new Promise((resolve, reject) => {
+      const waiter = { predicate, resolve, reject, timer: null };
+      waiter.timer = setTimeout(() => {
+        state.waiters = state.waiters.filter((w) => w !== waiter);
+        reject(new Error("设备响应超时"));
+      }, timeout);
+      state.waiters.push(waiter);
+    });
+  }
+
+  function settleWaiters(message) {
+    const matched = [];
+    state.waiters = state.waiters.filter((w) => {
+      let ok = false;
+      try { ok = w.predicate(message); } catch (_) { ok = false; }
+      if (ok) { matched.push(w); return false; }
+      return true;
+    });
+    for (const w of matched) {
+      clearTimeout(w.timer);
+      w.resolve(message);
+    }
+  }
+
+  function rejectWaiters(error) {
+    const pending = state.waiters;
+    state.waiters = [];
+    for (const w of pending) {
+      clearTimeout(w.timer);
+      w.reject(error);
+    }
+  }
+
+  function handleMessage(message) {
+    settleWaiters(message);
+    if (message.ev === "hello") {
+      applyHello(message);
+      return;
+    }
+    if (message.ev === "ev") {
+      const index = state.events.findIndex((e) => e.id === message.id);
+      if (index >= 0) state.events[index] = message;
+      else state.events.push(message);
+      return;
+    }
+    if (message.ev === "done") {
+      state.loadingList = false;
+      renderEvents();
+      return;
+    }
+    if (message.ok === false) {
+      if (message.error) toast(`设备返回：${message.error}`);
+      return;
+    }
+    if (message.ok === true) {
+      if (message.cmd === "add" && message.trunc) {
+        toast("已添加（标题或备注过长，已截断）");
+      }
+    }
+  }
+
+  function onNotify(event) {
+    const value = event.target.value;
+    state.rxText += state.decoder.decode(value, { stream: true });
+    let index;
+    while ((index = state.rxText.indexOf("\n")) >= 0) {
+      const line = state.rxText.slice(0, index).trim();
+      state.rxText = state.rxText.slice(index + 1);
+      if (!line) continue;
+      log("←", line);
+      try {
+        handleMessage(JSON.parse(line));
+      } catch (err) {
+        log("!", `JSON 解析失败: ${err.message}`);
+      }
+    }
+  }
+
+  function sendRaw(bytes) {
+    state.writeChain = state.writeChain.then(async () => {
+      if (!state.rx) throw new Error("未连接");
+      for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+        const part = bytes.slice(offset, offset + CHUNK);
+        if (state.rx.writeValueWithResponse) {
+          await state.rx.writeValueWithResponse(part);
+        } else {
+          await state.rx.writeValue(part);
+        }
+      }
+    });
+    return state.writeChain;
+  }
+
+  function send(command) {
+    const line = JSON.stringify(command) + "\n";
+    log("→", line.trim());
+    return sendRaw(state.encoder.encode(line)).catch((err) => {
+      log("!", `发送失败: ${err.message}`);
+      throw err;
+    });
+  }
+
+  async function command(payload, predicate, timeout = 7000) {
+    const waiter = waitFor(predicate, timeout);
+    await send(payload);
+    return waiter;
+  }
+
+  // --- device state -----------------------------------------------------
+  function applyHello(message) {
+    $("devName").textContent = message.name || "OnePage C61";
+    $("devFw").textContent = message.fw || "—";
+    $("devEvents").textContent = Number.isFinite(message.events) ? `${message.events} 条` : "—";
+    if (message.time_valid && Number.isFinite(message.now) && Number.isFinite(message.tz)) {
+      const local = new Date((message.now + message.tz * 60) * 1000);
+      $("devTime").textContent = `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}`;
+    } else {
+      $("devTime").textContent = "未同步";
+    }
+  }
+
+  // --- month list -------------------------------------------------------
+  function monthBounds(date) {
+    const first = new Date(date.getFullYear(), date.getMonth(), 1);
+    const last = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    return { from: ymd(first), to: ymd(last) };
+  }
+
+  function updateMonthLabel() {
+    $("monthLabel").textContent =
+      `${state.monthCursor.getFullYear()}年${state.monthCursor.getMonth() + 1}月`;
+  }
+
+  async function loadMonth() {
+    updateMonthLabel();
+    if (!state.connected) {
+      $("eventList").innerHTML = '<div class="empty"><strong>未连接设备</strong>连接后读取本月日程</div>';
+      return;
+    }
+    if (state.loadingList) {
+      state.pendingLoad = true;
+      return;
+    }
+    state.loadingList = true;
+    state.events = [];
+    $("listHint").textContent = "正在读取…";
+    $("eventList").innerHTML = '<div class="empty">正在读取本月日程…</div>';
+    const { from, to } = monthBounds(state.monthCursor);
+    try {
+      const done = waitFor((m) => m.ev === "done" || m.ok === false, 9000);
+      await send({ cmd: "list", from, to });
+      const result = await done;
+      if (result.ok === false) throw new Error(result.error || "设备拒绝读取");
+      state.loadingList = false;
+      if (state.pendingLoad) {
+        state.pendingLoad = false;
+        loadMonth();
+        return;
+      }
+      $("listHint").textContent = `${state.events.length} 条`;
+      renderEvents();
+    } catch (err) {
+      state.loadingList = false;
+      $("listHint").textContent = "";
+      $("eventList").innerHTML = `<div class="empty"><strong>读取失败</strong>${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function renderEvents() {
+    const container = $("eventList");
+    if (!state.connected) return;
+    if (!state.events.length) {
+      container.innerHTML = '<div class="empty"><strong>本月还没有日程</strong>在上方添加，或切换月份查看</div>';
+      return;
+    }
+    const sorted = state.events.slice().sort((a, b) =>
+      `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`));
+    const groups = new Map();
+    for (const event of sorted) {
+      if (!groups.has(event.date)) groups.set(event.date, []);
+      groups.get(event.date).push(event);
+    }
+    let html = "";
+    for (const [date, events] of groups) {
+      const day = parseYmd(date);
+      html += `<div class="day-group"><div class="day-head">${day.getMonth() + 1}月${day.getDate()}日 ${weekday[day.getDay()]}</div>`;
+      for (const event of events) {
+        html += `<div class="event">
+          <div class="time">${escapeHtml(event.start)}<span>${escapeHtml(event.end)}</span></div>
+          <div><div class="title">${escapeHtml(event.title || "(无标题)")}</div>
+          <div class="meta">${event.note ? `<span>${escapeHtml(event.note)}</span>` : ""}</div></div>
+          <button class="danger small" data-delete="${event.id}" aria-label="删除日程">删除</button>
+        </div>`;
+      }
+      html += "</div>";
+    }
+    container.innerHTML = html;
+    container.querySelectorAll("[data-delete]").forEach((button) => {
+      button.addEventListener("click", () => removeEvent(Number(button.dataset.delete)));
+    });
+  }
+
+  async function removeEvent(id) {
+    if (!state.connected) return;
+    if (!window.confirm("删除这个日程？删除后无法恢复。")) return;
+    try {
+      const ack = await command({ cmd: "del", id },
+        (m) => (m.ok && m.cmd === "del") || m.ok === false);
+      if (!ack.ok) throw new Error(ack.error || "删除失败");
+      toast("已删除");
+      await loadMonth();
+    } catch (err) {
+      toast(`删除失败：${err.message}`);
+    }
+  }
+
+  // --- add event --------------------------------------------------------
+  function defaultTimes() {
+    const now = new Date();
+    const start = new Date(now.getTime() + 60 * 60 * 1000);
+    start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15, 0, 0);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    return {
+      date: ymd(start),
+      start: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
+      end: `${pad(end.getHours())}:${pad(end.getMinutes())}`,
+    };
+  }
+
+  function resetFormDefaults() {
+    const t = defaultTimes();
+    $("dateInput").value = t.date;
+    $("startInput").value = t.start;
+    $("endInput").value = t.end;
+  }
+
+  async function submitEvent(event) {
+    event.preventDefault();
+    if (!state.connected) return;
+    const date = $("dateInput").value;
+    const start = $("startInput").value;
+    const end = $("endInput").value;
+    const title = $("titleInput").value.trim();
+    const note = $("noteInput").value.trim();
+    if (!date || !start || !title) {
+      toast("请填写日期、开始时间和标题");
+      return;
+    }
+    if (end && end <= start) {
+      toast("结束时间必须晚于开始时间");
+      return;
+    }
+    $("addBtn").disabled = true;
+    try {
+      const ack = await command({
+        cmd: "add", date, start, end, title, note
+      }, (m) => (m.ok && m.cmd === "add") || m.ok === false);
+      if (!ack.ok) throw new Error(ack.error || "添加失败");
+      toast(ack.trunc ? "已添加（内容已截断）" : "已发送到设备");
+      $("titleInput").value = "";
+      $("noteInput").value = "";
+      const d = parseYmd(date);
+      state.monthCursor = new Date(d.getFullYear(), d.getMonth(), 1);
+      await loadMonth();
+      const hello = await command({ cmd: "hello" }, (m) => m.ev === "hello", 5000).catch(() => null);
+      if (hello) applyHello(hello);
+    } catch (err) {
+      toast(`添加失败：${err.message}`);
+    } finally {
+      $("addBtn").disabled = !state.connected;
+    }
+  }
+
+  // --- connection -------------------------------------------------------
+  async function syncTime() {
+    const tz = -new Date().getTimezoneOffset();
+    const ack = await command({
+      cmd: "time",
+      epoch: Math.floor(Date.now() / 1000),
+      tz,
+    }, (m) => (m.ok && m.cmd === "time") || m.ok === false);
+    if (!ack.ok) throw new Error(ack.error || "时间同步失败");
+    if (ack.local) $("devTime").textContent = ack.local;
+    log("i", `时间已同步，时区 ${tz >= 0 ? "+" : ""}${tz} 分钟`);
+  }
+
+  async function connect() {
+    if (!navigator.bluetooth) {
+      showCompat();
+      return;
+    }
+    setStatus("", "正在连接…");
+    $("connectBtn").disabled = true;
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE] }],
+        optionalServices: [SERVICE],
+      });
+      state.device = device;
+      device.addEventListener("gattserverdisconnected", onDisconnected);
+      const server = await device.gatt.connect();
+      state.decoder = new TextDecoder("utf-8");
+      state.rxText = "";
+      const service = await server.getPrimaryService(SERVICE);
+      state.rx = await service.getCharacteristic(RX_UUID);
+      state.tx = await service.getCharacteristic(TX_UUID);
+      state.tx.addEventListener("characteristicvaluechanged", onNotify);
+
+      const helloPromise = waitFor((m) => m.ev === "hello", 7000);
+      await state.tx.startNotifications();
+      state.connected = true;
+      state.writeChain = Promise.resolve();
+      updateControls();
+      setStatus("on", "已连接");
+      toast("已连接设备");
+      await send({ cmd: "hello" });
+      const hello = await helloPromise;
+      applyHello(hello);
+      updateControls();
+      await syncTime().catch((err) => {
+        log("!", err.message);
+        toast("时间同步失败，设备日期可能不准");
+      });
+      resetFormDefaults();
+      await loadMonth();
+    } catch (err) {
+      log("!", `连接失败: ${err.message}`);
+      setStatus("err", "连接失败");
+      toast(`连接失败：${err.message}`);
+      state.connected = false;
+      updateControls();
+    } finally {
+      $("connectBtn").disabled = false;
+    }
+  }
+
+  function onDisconnected() {
+    state.connected = false;
+    state.rx = null;
+    state.tx = null;
+    state.device = null;
+    state.rxText = "";
+    rejectWaiters(new Error("连接已断开"));
+    setStatus("", "未连接");
+    updateControls();
+    $("eventList").innerHTML = '<div class="empty"><strong>设备已断开</strong>重新连接后继续</div>';
+    toast("设备已断开");
+  }
+
+  async function disconnect() {
+    if (state.device && state.device.gatt.connected) {
+      state.device.gatt.disconnect();
+    }
+    onDisconnected();
+  }
+
+  async function sleepDevice() {
+    if (!state.connected) return;
+    if (!window.confirm("让设备立刻锁屏并进入深睡？之后按设备 POWER 键唤醒。")) return;
+    try {
+      await send({ cmd: "sleep" });
+      toast("设备正在锁屏，屏幕会显示接下来的日程");
+    } catch (err) {
+      toast(`发送失败：${err.message}`);
+    }
+  }
+
+  // --- setup ------------------------------------------------------------
+  function showCompat() {
+    const el = $("compat");
+    el.classList.add("show");
+    if (!window.isSecureContext) {
+      el.textContent = "当前页面不是安全上下文。Web Bluetooth 需要 HTTPS 或 localhost，请通过 HTTPS 静态站点打开本页。";
+    } else if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      el.textContent = "iOS Safari 不支持 Web Bluetooth。请使用 Android 上的 Chrome/Edge，或在 iOS 上使用支持 Web Bluetooth 的浏览器（如 Bluefy）。";
+    } else {
+      el.textContent = "当前浏览器不支持 Web Bluetooth。请使用 Android Chrome/Edge 或桌面版 Chrome/Edge。";
+    }
+  }
+
+  function init() {
+    if (!navigator.bluetooth) showCompat();
+    else if (!window.isSecureContext) showCompat();
+    else if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) showCompat();
+
+    resetFormDefaults();
+    updateMonthLabel();
+    $("eventList").innerHTML = '<div class="empty"><strong>未连接设备</strong>连接后读取本月日程</div>';
+
+    $("connectBtn").addEventListener("click", () => {
+      if (state.connected) disconnect();
+      else connect();
+    });
+    $("sleepBtn").addEventListener("click", sleepDevice);
+    $("addForm").addEventListener("submit", submitEvent);
+    $("reloadBtn").addEventListener("click", loadMonth);
+    $("prevMonth").addEventListener("click", () => {
+      state.monthCursor = new Date(state.monthCursor.getFullYear(), state.monthCursor.getMonth() - 1, 1);
+      loadMonth();
+    });
+    $("nextMonth").addEventListener("click", () => {
+      state.monthCursor = new Date(state.monthCursor.getFullYear(), state.monthCursor.getMonth() + 1, 1);
+      loadMonth();
+    });
+    $("todayBtn").addEventListener("click", () => {
+      const now = new Date();
+      state.monthCursor = new Date(now.getFullYear(), now.getMonth(), 1);
+      $("dateInput").value = ymd(now);
+      loadMonth();
+    });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

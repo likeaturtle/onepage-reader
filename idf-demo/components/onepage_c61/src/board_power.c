@@ -29,6 +29,19 @@ esp_err_t board_power_init(void) {
   gpio_set_level((gpio_num_t)ONEPAGE_PIN_EPD_RST, 1);
   vTaskDelay(pdMS_TO_TICKS(120)); /* let the rail settle before the SD mounts */
 
+  /* The SD card shares the SPI bus with the panel. This application never
+   * mounts a card, but its CS line must still be parked high: a floating CS
+   * can let the card drive MISO while the panel is being addressed. */
+  gpio_config_t sd_cs_cfg = {
+      .pin_bit_mask = 1ULL << ONEPAGE_PIN_SD_CS,
+      .mode = GPIO_MODE_OUTPUT,
+      .pull_up_en = GPIO_PULLUP_ENABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE,
+  };
+  gpio_config(&sd_cs_cfg);
+  gpio_set_level((gpio_num_t)ONEPAGE_PIN_SD_CS, 1);
+
   /* USB_DET is an open-drain output of the LM66200 power mux: it pulls low
    * when USB power is present and floats otherwise, so it needs a pull-up. */
   gpio_config_t usb_cfg = {

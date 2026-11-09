@@ -4,6 +4,7 @@ idf_component_register(
         "src/board_power.c"
         "src/epd_ssd1677.c"
         "src/font_cjk.c"
+        "src/font_cjk_large.c"
         "src/font5x7.c"
         "src/gfx.c"
         "src/onepage_adc.c"
@@ -11,6 +12,8 @@ idf_component_register(
         "src/sd_card.c"
     INCLUDE_DIRS
         "include"
+    EMBED_FILES
+        "font_gb2312_24.bin"
     REQUIRES
         esp_driver_gpio
         esp_driver_i2s

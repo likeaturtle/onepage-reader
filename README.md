@@ -44,6 +44,7 @@ This repository serves as the central hub of the entire ecosystem: it houses the
 
 - **Next-Gen ESP32-C61**: Low-power RISC-V core with integrated Wi-Fi 6 and BLE.
 - **BLE Page-Turner Remote**: Supports Bluetooth remote page turning with battery monitoring, key swapping, and live scanning.
+- **BLE Calendar**: A phone web page sends schedules to the reader over BLE; the portrait e-ink UI has month/day views, event deletion and a low-power lock screen with the next appointments; all entries share one calendar.
 - **Web Companion Tools**:
   - **Web Serial Flasher**: Flash firmware directly from Chromium-based browsers without local toolchain setups.
   - **Online Font Tool (`cpfont`)**: In-browser CJK font subsetting and glyph rasterization.

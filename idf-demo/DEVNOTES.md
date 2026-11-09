@@ -4,7 +4,7 @@
 以及后面基于它继续开发时从哪里接。硬件相关的结论都来自厂商 BSP
 (`../firmware/open-onepage-sdk`) 和真机验证，不是推测。
 
-最后更新：2026-10-20
+最后更新：2026-11-09
 
 ------
 
@@ -311,3 +311,217 @@ app 还不存在，挂在 app 上没有意义（本项目早期版本就犯过�
   它的板级支持包 `open-onepage-sdk` 抄过来的。
 - 硬件原始资料：`../electronics/`、`../mechanical/`、`../web/`。
 - 本 demo 的说明：`README.md`（含烧写、回滚、排障表）。
+
+------
+
+## 13. 2026-11-09：BLE 日历应用
+
+`main/` 从 bring-up 自测换成了日历应用；板级组件 `onepage_c61` 保持不变（面板、
+按键、电源、ADC、SD、麦克风都还在，只是新应用不用 SD/麦克风）。原来的自测说明
+移到了 `docs/bringup-demo.md`，里面有面板时序、按键窗口、GPIO27/SD 约束和 eFuse
+包装的历史记录，仍然有效。
+
+### 13.1 结构
+
+| 位置 | 职责 |
+|:---|:---|
+| `main/main.c` | 状态机、按键任务、自动锁屏/深睡、BLE 回调、时间/电池 |
+| `main/calendar_ui.c` | 月历、当天列表、详情、删除确认、锁屏画面的纯绘制 |
+| `components/calendar/` | 数据模型、NVS 持久化、公历日期工具、时区/时钟 |
+| `components/ble_calendar/` | NimBLE GATT 服务、JSON 协议、分块收发 |
+| `components/cjson/` | 厂商 cJSON 1.7.19（MIT，仅 vendored cJSON.c/h） |
+| `components/onepage_c61/font_gb2312_24.bin` | 7445 个 GB2312 字形的 24px 位图（566KB，闪烁内嵌） |
+
+### 13.2 为什么是 NVS，而不是 SD / SPIFFS
+
+- SD 卡要挂载、会耗电，而且 GPIO27 与面板共用电源；不挂 SD 就不会触发“挂载后
+  再脉冲 GPIO27 把卡锁死”的坑。日历在无卡时也必须能用。
+- `spiffs` 分区是官方固件放字体/书的地方，格式化或覆盖有丢用户数据的风险。
+- NVS 分区 20KB，日历按单条 blob 存：`namespace=calstore`，key `db`，另有
+  `epoch`/`tz`。96 条事件、标题 47B、备注 95B 的最坏情况约 15KB。NVS 满时
+  `save_db_locked()` 从最旧的**过去**事件开始删，`add` 的 ack 里带 `pruned`；
+  如果全是未来事件就返回 `calendar full`，不做静默丢弃。
+- blob 头 16B（magic/version/计数/next_id/CRC32），payload 是变长记录；读取时
+  先校验 CRC32，损坏/版本不符就退回默认日历。NVS 自己的 entry CRC 不够跨 entry。
+- 每条变更重写整个 blob。日历写入频率很低，NVS 的磨损均衡足够；不要把它改成
+  每次按键都写。
+
+### 13.3 时钟
+
+- 事件存的是**本地公历日 + 当天分钟数**，没有 UTC 转换，所以换时区不会把已有
+  日程挪走。
+- 手机每次连接都会发 `time`（epoch + 分钟偏移）。NVS 里也存 `epoch`/`tz`；
+  冷启动时如果 RTC 时间无效就恢复上次的时钟（`time_synced=false`，屏幕上仍会
+  显示时间，但手机连上后会纠正）。
+- IDF 默认 `LIBC_TIME_SYSCALL_USE_RTC_HRT`，深睡期间 RTC 走 32.768kHz 晶振，
+  `time()` 会继续；这是不外加 RTC 电池也能保持日期的前提。
+- 屏幕上的时钟**不按分钟重绘**：e-ink 每次刷新都耗电并留残影，锁屏前的 3 分钟
+  内时间最多差几分钟，可接受。任何按键/BLE 变更都会重绘。
+
+### 13.4 BLE
+
+- 服务/特征 UUID 和 canonical 字符串见 `components/ble_calendar/include/ble_calendar.h`
+  与 `docs/ble-protocol.md`。`BLE_UUID128_INIT` 收的是**小端**字节序，写反了
+  手机会扫不到服务。
+- 广播包放 128-bit service UUID，扫描响应放名字 `OnePage Calendar`；广播间隔
+  300–350ms，连接间隔 30–50ms（手机提交表单的体验优先）。
+- 手机写入按 20 字节分块，设备按换行重组（2KB RX buffer）；设备通知按
+  `min(MTU-3, 180)` 分块，网页按换行重组。协议是“行 JSON”，没有 request id，
+  客户端必须串行发命令。
+- 连接订阅后设备主动发 `hello`；网页也发一次 `hello` 作为兜底。
+- `sleep` 命令先 ack，再回调主任务锁屏；主任务先 `ble_calendar_shutdown()`
+  （terminate + adv stop + `nimble_port_stop` + `nimble_port_deinit`），再画锁屏，
+  避免锁屏的 2 秒里还有 BLE 中断/通知。
+- 没有配对/加密：附近任何 central 都能读写。个人桌面设备可以接受；如果要做
+  可信设备，应该加应用层 PIN 或 LE Secure Connections + 绑定，别只靠“UUID 不公开”。
+
+### 13.5 低功耗配置（重要）
+
+`sdkconfig.defaults` 里新增：
+
+```
+CONFIG_RTC_CLK_SRC_EXT_CRYS=y
+CONFIG_BT_LE_SLEEP_ENABLE=y
+CONFIG_BT_LE_LP_CLK_SRC_DEFAULT=y
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_PM_POWER_DOWN_CPU_IN_LIGHT_SLEEP=y
+CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=n
+CONFIG_ESP_MODEM_CLOCK_ENABLE_CHECKING=y
+CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y
+```
+
+- **为什么 peripheral power-down 必须关掉，且 light sleep 目前也关闭**：C61 的
+  SAR ADC（前面板电阻梯、电池分压）和 USB-Serial/JTAG 不在 light-sleep retention
+  列表里。2026-11-09 真机实测：`light_sleep_enable=true` 时空闲一段时间后按键无
+  响应、网页 add 有 ack 但屏幕不刷新、USB 串口消失；关掉后按键/网页/重绘全部恢复。
+  详见 13.9。
+- PSRAM 用默认的 half-sleep（`PM_SLP_SPIRAM_HALFSLEEP_ENABLED`），事件数组和
+  blob 在 PSRAM 里；当前 light sleep 关闭，PSRAM 一直保持供电。
+- `esp_pm_configure()` 在 `app_main` 里显式调用，`max=CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ`
+  （160），`min=40`，**`light_sleep_enable=false`**。自动 light sleep 在本板上实测会
+  让前面板 ADC 按键、USB-Serial/JTAG 和屏幕刷新在空闲后一起“假死”（见 13.9），
+  所以只保留 DFS；低功耗主要靠 3 分钟后的深睡。
+- 空闲锁屏：未连接 3 分钟、已连接 10 分钟、POWER 单击/2 秒长按、网页 `sleep`
+  命令都会进深睡。插着 USB 时跳过自动锁屏（用外部供电，也方便串口调试和桌面常显），
+  POWER/网页仍可主动锁。深睡前 `epd_sleep()` 把面板 park，`board_power_enter_deep_sleep()`
+  拉低 GPIO27 并 hold，屏幕图像留在屏上。
+- 空闲时不做周期重绘；电池每 60 秒采样一次，只有变化 ≥3% 才重绘；按键重绘
+  120ms 节流；每 12 次差分刷新插一次 HALF 清残影。
+
+### 13.6 字体
+
+- `tools/gen_cjk_bitmaps.py` 现在生成两个东西：
+  - `components/onepage_c61/font_gb2312_24.bin`：GB2312 全表（含 A1–A9 符号区，
+    7445 字形），24px，二进制格式 `OPF1` + 16B header + 76B/字形，Unicode
+    排序，二分查找。用 `EMBED_FILES` 链进 app。字形来自 Noto Sans CJK SC
+    （OFL 1.1，见 `tools/fonts/OFL.txt`），不是系统字体。
+  - `components/onepage_c61/src/font_cjk_large.c/.h`：48px 的「休眠中」子集。
+- 字体不是 C 数组而是二进制，原因是 7445 字形的 C 源约 3MB，编译慢且 review
+  噪音大；生成脚本和预览图都在仓库里，改字集时重新跑脚本即可。
+- 混合排版在 `gfx.c`：ASCII 用 5x7 scale 3（18px 宽），CJK 用 24px，字距 1px；
+  `gfx_text_utf8_*` 负责裁剪/省略号/自动换行。缺字画空心框，不会静默消失。
+- `tools/check_font_coverage.py` 会扫所有 C 源文件的非 ASCII 字符，确认都在
+  GB2312 表里，并检查 header/网页的 UUID 是否同步；当前 0 缺失。改 UI 文案后
+  先跑它。
+
+### 13.7 构建状态
+
+2026-11-09 用 IDF 6.1 从干净 `sdkconfig` 构建通过：
+
+```
+onepage_c61_idf_demo.bin binary size 0x1419f0 bytes
+smallest app partition 0x640000 bytes, 80% free
+DIRAM 138041 / 256624 bytes (54%), 118583 free
+```
+
+注意：`sdkconfig.defaults` 只对**新生成**的 `sdkconfig` 生效。加/改低功耗或 BLE
+选项后，要么 `rm sdkconfig` 重新生成，要么 menuconfig 里手动改。
+
+### 13.8 验证状态 / 风险
+
+- 2026-11-09 上板验证过：擦除/烧写、面板初始化、前后左右/确认/返回按键、
+  手机网页 BLE 连接、`add` 后自动重绘、差分刷新约 460–480 ms。验证中定位到
+  light sleep 会导致按键/刷新/串口假死，已关闭（13.9）。
+- **仍未验证**：深睡电流、锁屏画面在真实面板上的保持时间、NVS 满时的 prune、
+  真实手机的分块极限（大标题/长列表）、USB 拔掉后纯电池的 3 分钟自动锁屏。
+- 如果以后重新启用 light sleep，按 13.9 的检查项先验证前面板 ADC、USB 串口和
+  网页 add 后重绘；不要只看 BLE 还能广播。
+- `CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y` 是调试期保护；如果它在某些 light
+  sleep 路径上触发 panic，需要定位是哪个驱动在睡眠中访问 cache，而不是直接关掉。
+- 96 条事件和 20KB NVS 的关系是估算；真实 NVS 还有 PHY calibration 等数据。
+  如果 `add` 频繁返回 `calendar full`，优先减小 `CAL_MAX_EVENTS` 或改存 SD。
+- Web Bluetooth 在 iOS Safari 不可用；Android 上必须 HTTPS/localhost。
+- 本应用不碰 SD 卡；如果以后要加“导出到 SD”，注意 DEVNOTES 第 4 节的 GPIO27
+  时序约束仍然成立。
+
+### 13.9 2026-11-09：light sleep 导致按键/刷新/串口假死（已定位）
+
+现象：
+
+- 空闲几分钟后按前后左右/确认/返回，屏幕没有变化；
+- 手机网页能连上并收到 `add` 的 ack，但设备屏幕不重绘；
+- `/dev/cu.usbmodem*` 有时直接消失。
+
+诊断固件把 `esp_pm_configure(..., .light_sleep_enable=false)`，同时给按键边沿、
+BLE 回调、`draw_current` 和 BLE `add/list` 加日志。真机日志：
+
+```
+calendar-app: key CONFIRM down
+calendar-app: handle CONFIRM view=0
+calendar-app: draw view=1 mode=0
+calendar-app: draw done in 476 ms
+ble_cal: add id=4 cal=4 day=20766 start=1140 end=1200
+calendar-app: BLE data changed
+calendar-app: draw done in 463 ms
+```
+
+结论：问题不在按键硬件、面板 BUSY 或 NVS，而是自动 light sleep。C61 的
+SARADC/USB-Serial-JTAG 不做 light-sleep 上下文保持；本板的按键扫描和 USB 控制台
+都依赖它们。最终固件在 `init_power_management()` 里把 `light_sleep_enable` 固定为
+`false`，保留 DFS、BLE 广播/连接和深睡。深睡前仍然 `epd_sleep()` +
+`board_power_enter_deep_sleep()`，长期功耗主要由深睡决定。
+
+以后如果要重新启用 light sleep，先做三件事：前面板 ADC 连续扫描、USB 串口在线、
+网页 add 后重绘；三者都通过再考虑，不要只看 BLE 还能广播。
+
+------
+
+## 14. 2026-11-09：单一日历 + 竖版 UI
+
+按使用反馈做了两处结构性调整：
+
+### 14.1 只保留一个日历
+
+- `calendar.c` 的默认日历从 5 个（个人/工作/家庭/学习/提醒）改成 1 个「日历」。
+- `calendar_init()` 新增 `normalize_single_calendar()`：老数据库里如果还有多个日历，
+  把所有事件的 `cal` 强制改成 0，日历数改成 1，名称改成「日历」，然后保存回 NVS。
+  这样升级固件不会丢已有日程，只是分类被合并。
+- BLE 的 `add`/`list` 忽略 `cal` 字段；`addcal`/`delcal`/`rencal` 已从协议中移除。
+  `hello` 仍带一个 `cals:["日历"]` 以兼容旧客户端，但网页不再显示分类。
+- UI 顶部不再有分类 chips；月历的 UP/DOWN 改成“上一周/下一周”，不再切换日历。
+- 网页删除了“目标日历”下拉框和“日历分类”卡片，添加日程只发日期/时间/标题/备注。
+
+### 14.2 竖版 480x800
+
+面板原生显存仍是 800x480。为了不改 SSD1677 初始化/窗口时序，UI 在 **480x800
+逻辑坐标系**里绘制，`gfx.c` 的 `set_pixel()` 负责把它旋转进 800x480 framebuffer：
+
+- `ONEPAGE_UI_WIDTH=480`、`ONEPAGE_UI_HEIGHT=800`、`ONEPAGE_UI_ROTATION=270`，
+  定义在 `onepage_pins.h`。
+- 270 表示“设备顺时针转 90° 后看正”，映射为 `px=y, py=479-x`。
+  如果实际图像上下颠倒/方向不对，把 `ONEPAGE_UI_ROTATION` 改成 90 再编译烧写。
+- `gfx_clear()` 仍然清整个 800x480 物理 buffer；所有图元通过 `set_pixel()` 变换，
+  所以 `epd_refresh()`、三种刷新模式和睡眠画面都不用改。
+- 竖版布局：月历 7 列 x 5/6 行，单元格 60px 宽；当天列表最多显示 8 行；详情页
+  备注最多 8 行；锁屏显示 5 条。不再有分类栏，纵向空间更充足。
+- `tools/preview_calendar.py` 改为 480x800，预览图可直接检查竖版排版。
+
+### 14.3 验证
+
+- 构建通过：`0x1419f0`，app 分区 80% 空闲。
+- 2026-11-09 真机确认：竖版方向正确（270 映射）、旧 5 条日程合并为 1 个日历、
+  按键导航和网页添加后自动刷新均正常。
+- 若换一台面板装配方向相反的机器，只需把 `ONEPAGE_UI_ROTATION` 改成 90。
+- 原有的 light sleep 修复（13.9）继续有效：`light_sleep_enable=false`。

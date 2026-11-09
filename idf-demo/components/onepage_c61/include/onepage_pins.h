@@ -36,10 +36,17 @@
 #define ONEPAGE_SD_SPI_HZ_KHZ 20000           /* vendor: 20 MHz */
 
 /* --- Panel geometry ----------------------------------------------------- */
+/* Native panel memory is 800x480 landscape. The UI is composed in a portrait
+ * 480x800 coordinate system and gfx.c rotates it into the native framebuffer.
+ * Change ONEPAGE_UI_ROTATION to 90 if the image is upside down on your unit. */
 #define ONEPAGE_EPD_WIDTH 800
 #define ONEPAGE_EPD_HEIGHT 480
 #define ONEPAGE_EPD_ROW_BYTES (ONEPAGE_EPD_WIDTH / 8)
 #define ONEPAGE_EPD_BUFFER_SIZE (ONEPAGE_EPD_ROW_BYTES * ONEPAGE_EPD_HEIGHT)
+
+#define ONEPAGE_UI_WIDTH 480
+#define ONEPAGE_UI_HEIGHT 800
+#define ONEPAGE_UI_ROTATION 270
 
 /* --- Buttons ------------------------------------------------------------ */
 /* Front 4-key ADC ladder (BACK / CONFIRM / LEFT / RIGHT on one pin) plus

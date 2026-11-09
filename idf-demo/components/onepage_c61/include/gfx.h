@@ -21,9 +21,28 @@ void gfx_dither_rect(uint8_t *fb, int x, int y, int w, int h, int level);
 void gfx_text(uint8_t *fb, int x, int y, const char *s, int scale, bool black);
 int gfx_text_width(const char *s, int scale);
 
-/* CJK bitmap text (font_cjk.h, square FONT_CJK_PX glyphs). `gap` is the number
- * of blank pixels between glyphs. Characters missing from the table advance
- * without drawing anything. UTF-8 input; a cell is always fully painted (ink
- * and background), so the text stays readable over a busy background. */
+/* 24 px CJK bitmap text (font_cjk.h). `gap` is the number of blank pixels
+ * between glyphs. UTF-8 input; a cell is always fully painted (ink and
+ * background), so the text stays readable over a busy background. */
 void gfx_text_cjk(uint8_t *fb, int x, int y, const char *utf8, int gap, bool black);
 int gfx_text_cjk_width(const char *utf8, int gap);
+
+/* 48 px glyphs for the sleep headline (font_cjk_large.h). */
+void gfx_text_cjk_large(uint8_t *fb, int x, int y, const char *utf8, int gap, bool black);
+int gfx_text_cjk_large_width(const char *utf8, int gap);
+
+/* Mixed ASCII + CJK text: ASCII uses the 5x7 font at scale 3 (18x21 cell),
+ * CJK uses the 24 px table. The cell height is 24 px. */
+void gfx_text_utf8(uint8_t *fb, int x, int y, const char *utf8, bool black);
+int gfx_text_utf8_width(const char *utf8);
+
+/* Draws as many characters as fit in `max_width`, ending with an ellipsis
+ * when the string was shortened. Returns the drawn width. */
+int gfx_text_utf8_clipped(uint8_t *fb, int x, int y, const char *utf8, int max_width,
+                          bool black);
+
+/* Greedy character-level wrapping. `max_lines` bounds the output; when the
+ * text does not fit, the last line ends with an ellipsis. Returns the number
+ * of lines drawn. */
+int gfx_text_utf8_wrap(uint8_t *fb, int x, int y, const char *utf8, int max_width,
+                       int line_height, int max_lines, bool black);
