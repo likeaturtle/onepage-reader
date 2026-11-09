@@ -77,10 +77,14 @@ static struct {
   volatile bool ble_subscribed;
   bool ble_started;
   uint8_t battery_pct;
+  bool battery_valid;
+  uint16_t battery_mv;
   bool usb;
   int64_t last_input_us;
   int64_t last_render_us;
   int64_t last_battery_us;
+  int64_t battery_retry_us;
+  uint8_t battery_retry_count;
   uint32_t refresh_count;
   char toast[48];
   int64_t toast_until_us;
@@ -119,6 +123,7 @@ static void fill_status(ui_status_t *status) {
   status->time_synced = calendar_time_synced();
   status->local_epoch = calendar_local_epoch();
   status->battery_pct = s_app.battery_pct;
+  status->battery_valid = s_app.battery_valid;
   status->usb = s_app.usb;
   status->ble_available = s_app.ble_started;
   status->ble_connected = s_app.ble_connected;
@@ -132,11 +137,53 @@ static void refresh_battery(bool force) {
   }
   s_app.last_battery_us = now;
   const uint16_t mv = board_battery_read_mv();
+  /* Sample the key node only after the battery burst, so switching the ADC
+   * mux to channel 2 cannot contaminate the battery's first conversion. */
+  (void)board_buttons_poll();
   const uint8_t pct = board_battery_percent(mv);
   const bool usb = board_usb_connected();
+  const bool battery_ok = mv >= 3000 && mv <= 4400;
+
+  /* The first sample after power-up can still be charging from the charger's
+   * start-up transient (the 60 s poll is normal). Re-read with backoff and
+   * repaint as soon as the pack voltage is in the 1S range. */
+  s_app.battery_mv = mv;
+  if (battery_ok) {
+    s_app.battery_valid = true;
+    s_app.battery_retry_us = 0;
+    s_app.battery_retry_count = 0;
+  } else if (s_app.battery_retry_count < 5 && s_app.battery_retry_us == 0) {
+    s_app.battery_retry_us =
+        now + ((int64_t)2 << s_app.battery_retry_count) * 1000 * 1000;
+    s_app.battery_retry_count++;
+  }
+
   const int delta = (int)pct - (int)s_app.battery_pct;
   if (force || usb != s_app.usb || delta >= BATTERY_REDRAW_PCT || delta <= -BATTERY_REDRAW_PCT) {
-    s_app.battery_pct = pct;
+    /* One line per real change makes a 0% report diagnosable: 3200 mV is a cell
+     * at the bottom of the curve, while ~6200 mV means the ADC is seeing the
+     * front-key ladder (3.1 V pin) instead of the battery divider. */
+    if (battery_ok) {
+      ESP_LOGI(TAG, "battery: %u mV -> %u%% (usb=%d)", (unsigned)mv, (unsigned)pct,
+               usb ? 1 : 0);
+    } else {
+      ESP_LOGI(TAG, "battery: %u mV -> --%% (usb=%d, waiting for a valid sample)",
+               (unsigned)mv, usb ? 1 : 0);
+    }
+    if (force) {
+      /* The front-key node is a convenient second voltage on the same ADC1
+       * unit. If both nodes read ~3.0 V, the battery channel is looking at the
+       * key ladder (swapped/miswired divider) rather than the 1:1 divider. */
+      ESP_LOGI(TAG, "ADC probe: front-key node %d mV, battery node %u mV",
+               board_buttons_last_adc_mv(), (unsigned)(mv / 2));
+    }
+    if (mv < 2500 || mv > 4400) {
+      ESP_LOGW(TAG, "battery voltage %u mV is outside a 1S LiPo range; check the ADC wiring",
+               (unsigned)mv);
+    }
+    if (battery_ok) {
+      s_app.battery_pct = pct;
+    }
     s_app.usb = usb;
     if (!force) {
       s_app.dirty = true;
@@ -659,6 +706,18 @@ void app_main(void) {
       s_app.dirty = true;
     }
     refresh_battery(false);
+    if (s_app.battery_retry_us && now_us() >= s_app.battery_retry_us) {
+      s_app.battery_retry_us = 0;
+      /* A retry must not postpone the regular 60 s poll. */
+      const int64_t last_poll_us = s_app.last_battery_us;
+      refresh_battery(true);
+      s_app.last_battery_us = last_poll_us;
+      /* Only repaint once there is a real percentage to show; an invalid retry
+       * keeps the existing "--%" without an extra e-ink flash. */
+      if (s_app.battery_valid) {
+        s_app.dirty = true;
+      }
+    }
 
     if (s_app.toast[0] && now_us() >= s_app.toast_until_us) {
       s_app.toast[0] = '\0';

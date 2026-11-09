@@ -14,6 +14,9 @@ typedef struct {
   bool time_synced;
   uint32_t local_epoch; /* epoch shifted by the phone timezone */
   uint8_t battery_pct;
+  /* False until the first plausible pack voltage arrives; the header then
+   * shows "--%" instead of pretending the battery is empty. */
+  bool battery_valid;
   bool usb;
   bool ble_available;
   bool ble_connected;

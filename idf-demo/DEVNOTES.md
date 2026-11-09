@@ -409,6 +409,15 @@ CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y
   拉低 GPIO27 并 hold，屏幕图像留在屏上。
 - 空闲时不做周期重绘；电池每 60 秒采样一次，只有变化 ≥3% 才重绘；按键重绘
   120ms 节流；每 12 次差分刷新插一次 HALF 清残影。
+- **电池分压是 5.1 M + 5.1 M 的高阻节点，GPIO5 又是 LP/RTC 引脚**：ADC 配置后
+  显式 `rtc_gpio_set_direction(DISABLED)` + `rtc_gpio_pullup_dis()` /
+  `rtc_gpio_pulldown_dis()`（5.5 的 `gpio_config_as_analog()` 本来就这样做，
+  6.1 只调 `rtc_gpio_deinit()`，后者在 LP IO 不忙时不清 RTC 上/下拉）。
+- **上电后的第一次电池采样不可信（实测踩坑）**：充电/上电瞬态会让第一次读数
+  偏高（约 5.1 V，×2 后 0%），而 60 秒后的周期采样回到 4.16 V/100%。现在
+  `refresh_battery()` 在读数超出 1S 范围时按 2/4/8/16/32 秒重试，表头在拿到
+  合理值前显示 `--%`，不会先假装 0%；重试到合理值后自动重绘。第一次上电不要
+  用 0% 判断电池好坏。
 
 ### 13.6 字体
 

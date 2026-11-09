@@ -363,8 +363,8 @@ board so far:
   off for your panel revision.
 - **Front key thresholds** — the console prints the raw ADC count and the
   millivolts for every event. If a key reads as the wrong one, adjust the
-  windows in `board_buttons.c` against those numbers (and check the ADC
-  calibration line: `adc1: ADC1 ready, calibration: hardware|approximate`).
+  windows in `board_buttons.c` against those numbers (and check the per-channel
+  ADC lines: `adc1: GPIO4 -> ADC1 channel 2, calibration: hardware|approximate`).
 - **`SD NOT MOUNTED`** — the card shares GPIO27 with the panel; confirm a FAT
   formatted card is inserted and that the rail sequence ran (a second panel
   reset after mounting is the usual cause of a latched card).

@@ -334,6 +334,7 @@ power-management docs for SARADC and USB-Serial/JTAG.
 | `bad json` / `missing cmd` | a write was truncated or split without a newline; the page chunks at 20 bytes and appends `\n` once |
 | Event says `calendar full` | 96 events / NVS is full and no past events are left to prune; delete some events |
 | Header clock is `--:--` | never synced since power-on; connect the phone or check the time command |
+| Header battery is `--%` | first sample after power-up is still settling; the app retries at 2/4/8/16/32 s and replaces it as soon as the pack voltage is plausible |
 | Keys stop working after idling | automatic light sleep was re-enabled in `init_power_management()`; keep `light_sleep_enable = false` on this board (and keep `CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=n`) |
 | Boots the old stock firmware | `otadata` not erased (see the flash steps) |
 

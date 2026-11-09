@@ -22,6 +22,11 @@ int onepage_adc_claim_gpio(int gpio);
  * the channel was never claimed. */
 esp_err_t onepage_adc_read(int channel, int *raw, int *mv);
 
+/* Average `samples` readings while holding the ADC unit for the whole burst.
+ * Use this for the battery divider: it keeps another task from switching the
+ * input mux between samples. Returns ESP_FAIL when every sample failed. */
+esp_err_t onepage_adc_read_burst(int channel, int samples, int *avg_raw, int *avg_mv);
+
 /* False when no hardware calibration scheme is available; millivolt values are
  * then a linear approximation and the key windows should be re-checked. */
 bool onepage_adc_calibrated(void);

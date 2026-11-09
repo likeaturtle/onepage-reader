@@ -82,7 +82,11 @@ static void draw_header(uint8_t *fb, const ui_status_t *status) {
   x -= 12;
 
   char battery[8];
-  snprintf(battery, sizeof(battery), "%u%%", (unsigned)status->battery_pct);
+  if (status->battery_valid) {
+    snprintf(battery, sizeof(battery), "%u%%", (unsigned)status->battery_pct);
+  } else {
+    snprintf(battery, sizeof(battery), "--%%");
+  }
   const int battery_w = gfx_text_width(battery, 2);
   x -= battery_w;
   gfx_text(fb, x, 14, battery, 2, true);

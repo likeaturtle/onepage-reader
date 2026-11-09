@@ -77,28 +77,90 @@ bool board_usb_connected(void) {
 
 uint16_t board_battery_read_mv(void) {
   if (s_bat_channel < 0) {
+    ESP_LOGW(TAG, "battery ADC channel unavailable");
     return 0;
   }
-  gpio_set_level((gpio_num_t)ONEPAGE_PIN_BAT_CHG_EN, 0);
-  vTaskDelay(pdMS_TO_TICKS(20)); /* let the cell terminal voltage settle */
+  /* Diagnostic: sample once with charging still enabled. If the node is fine
+   * here but collapses to ~3 V after the pause, BAT_CHG_EN is gating the sense
+   * path rather than just the charge current. */
+  int pre_raw = 0;
+  int pre_mv = 0;
+  const esp_err_t pre_err = onepage_adc_read(s_bat_channel, &pre_raw, &pre_mv);
 
-  /* The vendor BSP takes a single reading, which jitters by several millivolts
-   * and makes the caller think the charge level is changing. Average instead. */
-  uint32_t sum_mv = 0;
-  int samples = 0;
-  for (int i = 0; i < ONEPAGE_BATTERY_SAMPLES; i++) {
-    int raw = 0, mv = 0;
-    if (onepage_adc_read(s_bat_channel, &raw, &mv) != ESP_OK) {
-      break;
-    }
-    sum_mv += (uint32_t)mv;
-    samples++;
-  }
+  gpio_set_level((gpio_num_t)ONEPAGE_PIN_BAT_CHG_EN, 0);
+  /* The vendor BSP samples 5 ms after pausing the charger. Do not stretch this:
+   * the BAT_CHG_EN net also gates the battery-sense path on this board, and a
+   * longer pause lets the high-impedance divider node drift up to ~3 V (which
+   * the x2 conversion reports as a phantom ~6 V pack). */
+  vTaskDelay(pdMS_TO_TICKS(5));
+
+  /* The vendor BatteryMonitor takes a single analogReadMilliVolts() sample.
+   * Log that first sample separately: if the following burst drifts upward,
+   * averaging it is what turns a good first reading into a phantom 5-6 V. */
+  int first_raw = 0;
+  int first_mv = 0;
+  const esp_err_t first_err = onepage_adc_read(s_bat_channel, &first_raw, &first_mv);
+
+  /* Average a burst while holding the ADC unit; see onepage_adc_read_burst().
+   * A single reading jitters by several millivolts, which used to make the
+   * caller think the charge level was changing. */
+  int raw = 0;
+  int pin_mv = 0;
+  const esp_err_t err =
+      onepage_adc_read_burst(s_bat_channel, ONEPAGE_BATTERY_SAMPLES, &raw, &pin_mv);
   gpio_set_level((gpio_num_t)ONEPAGE_PIN_BAT_CHG_EN, 1);
-  if (samples == 0) {
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "battery ADC read failed: %s", esp_err_to_name(err));
     return 0;
   }
-  return (uint16_t)((sum_mv / (uint32_t)samples) * ONEPAGE_BATTERY_DIVIDER);
+
+  const int paused_raw = raw;
+  const int paused_pin_mv = pin_mv;
+  const uint16_t paused_pack_mv = (uint16_t)(pin_mv * ONEPAGE_BATTERY_DIVIDER);
+  const uint16_t first_pack_mv =
+      first_err == ESP_OK ? (uint16_t)(first_mv * ONEPAGE_BATTERY_DIVIDER) : 0;
+  uint16_t pack_mv = paused_pack_mv;
+
+  /* A burst can drift upward when a high-impedance node is sampled; the vendor
+   * firmware reads one sample only. Prefer a plausible first sample over an
+   * implausible average. */
+  if (first_pack_mv >= 2500 && first_pack_mv <= 4400 &&
+      (paused_pack_mv < 2500 || paused_pack_mv > 4400)) {
+    pack_mv = first_pack_mv;
+  }
+
+  /* If pausing the charger leaves the sense node floating, both readings are
+   * unusable. Fall back to a sample with charging enabled; it is at worst the
+   * charger's CV voltage, still far better than a phantom 6 V pack. */
+  if (pack_mv < 2500 || pack_mv > 4400) {
+    int retry_raw = 0;
+    int retry_pin_mv = 0;
+    if (onepage_adc_read_burst(s_bat_channel, ONEPAGE_BATTERY_SAMPLES, &retry_raw,
+                               &retry_pin_mv) == ESP_OK) {
+      const uint16_t retry_pack_mv = (uint16_t)(retry_pin_mv * ONEPAGE_BATTERY_DIVIDER);
+      ESP_LOGW(TAG,
+               "battery: paused reading %u mV is implausible; charging reading %u mV",
+               (unsigned)pack_mv, (unsigned)retry_pack_mv);
+      if (retry_pack_mv >= 2500 && retry_pack_mv <= 4400) {
+        pack_mv = retry_pack_mv;
+      }
+    }
+  }
+
+  /* DEBUG: the raw count separates a wrong calibration from an input that is
+   * genuinely at ~3 V. The user-visible summary is logged by refresh_battery. */
+  if (pre_err == ESP_OK) {
+    ESP_LOGD(TAG,
+             "battery: charging raw=%d pin=%d; paused first raw=%d pin=%d; burst raw=%d "
+             "pin=%d; using %u mV",
+             pre_raw, pre_mv, first_raw, first_mv, paused_raw, paused_pin_mv,
+             (unsigned)pack_mv);
+  } else {
+    ESP_LOGD(TAG,
+             "battery: paused first raw=%d pin=%d; burst raw=%d pin=%d; using %u mV",
+             first_raw, first_mv, paused_raw, paused_pin_mv, (unsigned)pack_mv);
+  }
+  return pack_mv;
 }
 
 uint8_t board_battery_percent(uint16_t millivolts) {
