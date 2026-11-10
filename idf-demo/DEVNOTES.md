@@ -428,8 +428,9 @@ CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y
   命令都会进深睡。插着 USB 时跳过自动锁屏（用外部供电，也方便串口调试和桌面常显），
   POWER/网页仍可主动锁。深睡前 `epd_sleep()` 把面板 park，`board_power_enter_deep_sleep()`
   拉低 GPIO27 并 hold，屏幕图像留在屏上。
-- 空闲时不做周期重绘；电池每 60 秒采样一次，只有变化 ≥3% 才重绘；按键重绘
-  120ms 节流；每 12 次差分刷新插一次 HALF 清残影。
+- 醒着时只做表头走时，不做整屏周期重绘：每分钟一次 FAST 差分（只动时钟数字，
+  不计入 HALF 计数）；电池每 60 秒采样一次，只有变化 ≥5% 才重绘；按键重绘
+  120ms 节流；每 30 次内容刷新插一次 HALF 清残影。
 - **电池分压是 5.1 M + 5.1 M 的高阻节点，GPIO5 又是 LP/RTC 引脚**：ADC 配置后
   显式 `rtc_gpio_set_direction(DISABLED)` + `rtc_gpio_pullup_dis()` /
   `rtc_gpio_pulldown_dis()`（5.5 的 `gpio_config_as_analog()` 本来就这样做，

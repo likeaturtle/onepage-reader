@@ -44,7 +44,7 @@ static const char *TAG = "calendar-app";
 #define BATTERY_REDRAW_PCT 5
 #define AUTO_SLEEP_US (180LL * 1000 * 1000)
 #define AUTO_SLEEP_CONNECTED_US (600LL * 1000 * 1000)
-#define CLEAN_REFRESH_EVERY 12
+#define CLEAN_REFRESH_EVERY 30
 #define TOAST_MS 1600
 
 typedef enum {
@@ -72,6 +72,9 @@ static struct {
   uint16_t detail_id;
   bool follow_today;
   volatile bool dirty;
+  /* The pending refresh only changes the header clock; it must not be counted
+   * towards the ghost-cleaning cadence. */
+  bool clock_only;
   volatile bool sleep_requested;
   volatile bool ble_connected;
   volatile bool ble_subscribed;
@@ -99,6 +102,7 @@ static volatile bool s_ble_activity;
 static uint32_t s_last_generation;
 static QueueHandle_t s_key_queue;
 static int64_t s_last_alive_us;
+static uint32_t s_last_minute;
 
 /* --- helpers ------------------------------------------------------------ */
 
@@ -116,6 +120,7 @@ static void set_toast(const char *text) {
 
 static void mark_dirty(void) {
   s_app.dirty = true;
+  s_app.clock_only = false;
   s_app.last_input_us = now_us();
 }
 
@@ -347,7 +352,7 @@ static void build_month_view(ui_month_t *view) {
   }
 }
 
-static void draw_current(epd_refresh_mode_t mode) {
+static void draw_current(epd_refresh_mode_t mode, bool count_refresh) {
   const int64_t draw_start = now_us();
   ESP_LOGD(TAG, "draw view=%d mode=%d", (int)s_app.view, (int)mode);
   uint8_t *fb = epd_framebuffer();
@@ -402,14 +407,16 @@ static void draw_current(epd_refresh_mode_t mode) {
 
   epd_refresh(mode);
   s_app.last_render_us = now_us();
-  s_app.refresh_count++;
+  if (count_refresh) {
+    s_app.refresh_count++;
+  }
   ESP_LOGD(TAG, "draw done in %lld ms", (now_us() - draw_start) / 1000);
 }
 
 static epd_refresh_mode_t next_refresh_mode(void) {
   /* Differential refreshes are fast but accumulate ghosting; insert a stronger
-   * HALF pass every few updates. Cold boot, the wake frame and the lock screen
-   * pick their mode explicitly instead. */
+   * HALF pass every 30 content updates. Cold boot, the wake frame and the lock
+   * screen pick their mode explicitly instead. */
   if (s_app.refresh_count != 0 && (s_app.refresh_count % CLEAN_REFRESH_EVERY) == 0) {
     return EPD_REFRESH_HALF;
   }
@@ -705,7 +712,8 @@ void app_main(void) {
            calendar_count(), calendar_time_valid() ? "valid" : "not synced");
 
   ESP_LOGI(TAG, "first frame: drawing at %lld ms", (long long)(now_us() / 1000));
-  draw_current(panel_was_parked ? EPD_REFRESH_HALF : EPD_REFRESH_FULL);
+  draw_current(panel_was_parked ? EPD_REFRESH_HALF : EPD_REFRESH_FULL, true);
+  s_last_minute = calendar_time_valid() ? calendar_local_epoch() / 60 : 0;
   ESP_LOGI(TAG, "first frame: on screen at %lld ms (BLE starts next)",
            (long long)(now_us() / 1000));
 
@@ -761,6 +769,18 @@ void app_main(void) {
       enter_sleep();
     }
 
+    /* Advance the header clock once a minute while awake. Only the digits
+     * change, so this is a tiny differential update: it runs FAST and does not
+     * count towards the ghost-cleaning cadence. */
+    const uint32_t minute = calendar_time_valid() ? calendar_local_epoch() / 60 : 0;
+    if (minute != s_last_minute) {
+      s_last_minute = minute;
+      if (!s_app.dirty) {
+        s_app.dirty = true;
+        s_app.clock_only = true;
+      }
+    }
+
     const int64_t now = now_us();
     if (now - s_last_alive_us >= 30LL * 1000 * 1000) {
       s_last_alive_us = now;
@@ -769,7 +789,9 @@ void app_main(void) {
     }
     if (s_app.dirty && now - s_app.last_render_us >= UI_MIN_REDRAW_US) {
       s_app.dirty = false;
-      draw_current(next_refresh_mode());
+      const bool clock_only = s_app.clock_only;
+      s_app.clock_only = false;
+      draw_current(clock_only ? EPD_REFRESH_FAST : next_refresh_mode(), !clock_only);
     }
 
     /* On USB power the battery is not at risk; staying awake also keeps the

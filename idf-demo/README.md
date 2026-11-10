@@ -201,11 +201,13 @@ timezone does not shift existing events.
   keys / battery) and the USB-Serial/JTAG console do not survive it reliably,
   and keys/screen updates appeared dead after the first sleep. Deep sleep is
   the primary low-power state. See [Known board issue](#known-board-issue).
-- **The panel is only repainted when something changed**; there is no periodic
-  clock tick. A differential refresh is used for navigation and a stronger
-  `HALF` pass every 12 refreshes. Cold boot uses `FULL`; a wake from deep sleep
-  and the lock screen use `HALF` (both RAM planes, sped-up waveform), so the
-  panel flashes once briefly instead of cycling black/white for ~2 s.
+- **The panel is only repainted when something changed.** Interaction uses a
+  differential refresh and a stronger `HALF` pass every 30 content refreshes.
+  While awake the header clock also advances once a minute through the same
+  differential path (only the digits change, and this tick does not count
+  towards the 30). Cold boot uses `FULL`; a wake from deep sleep and the lock
+  screen use `HALF` (both RAM planes, sped-up waveform), so the panel flashes
+  once briefly instead of cycling black/white for ~2 s.
 - **Peripheral power-down in light sleep is deliberately disabled**, and
   automatic light sleep itself is currently disabled at runtime. On the C61 the
   SAR ADC (front keys, battery) and USB-Serial/JTAG console are not light-sleep
@@ -297,7 +299,7 @@ The following is what to verify on a real board. Compilation cannot cover these:
    then press every key. The ADC ladder and the side keys must still register.
    This is the regression that forced automatic light sleep off; if it is ever
    re-enabled, test the front-key ADC and USB console first.
-5. **Panel refresh/ghosting** — navigate 20+ times; the `HALF` pass every 12
+5. **Panel refresh/ghosting** — navigate 30+ times; the `HALF` pass every 30
    refreshes should keep ghosting acceptable.
 6. **Deep sleep current** — measure with the panel parked and the rail cut.
    The expected dominant state is deep sleep. Also measure advertising-only
