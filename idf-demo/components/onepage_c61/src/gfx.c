@@ -5,6 +5,7 @@
 #include "font_cjk_large.h"
 #include "onepage_pins.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 /* Mixed-text metrics: ASCII is the 5x7 table at scale 3, CJK is the 24 px
@@ -73,6 +74,37 @@ void gfx_rect(uint8_t *fb, int x, int y, int w, int h, bool black) {
 void gfx_fill_rect(uint8_t *fb, int x, int y, int w, int h, bool black) {
   for (int row = 0; row < h; row++) {
     gfx_hline(fb, x, y + row, w, black);
+  }
+}
+
+void gfx_line(uint8_t *fb, int x0, int y0, int x1, int y1, int thickness, bool black) {
+  if (thickness < 1) {
+    thickness = 1;
+  }
+  const int dx = abs(x1 - x0);
+  const int sx = x0 < x1 ? 1 : -1;
+  const int dy = -abs(y1 - y0);
+  const int sy = y0 < y1 ? 1 : -1;
+  int err = dx + dy;
+  for (;;) {
+    if (thickness == 1) {
+      gfx_pixel(fb, x0, y0, black);
+    } else {
+      gfx_fill_rect(fb, x0 - thickness / 2, y0 - thickness / 2, thickness, thickness,
+                    black);
+    }
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+    const int e2 = 2 * err;
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
   }
 }
 

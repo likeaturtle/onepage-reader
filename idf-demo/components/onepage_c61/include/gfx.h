@@ -11,6 +11,8 @@ void gfx_pixel(uint8_t *fb, int x, int y, bool black);
 void gfx_hline(uint8_t *fb, int x, int y, int w, bool black);
 void gfx_vline(uint8_t *fb, int x, int y, int h, bool black);
 void gfx_rect(uint8_t *fb, int x, int y, int w, int h, bool black);
+/* Bresenham line with a square brush of `thickness` pixels. */
+void gfx_line(uint8_t *fb, int x0, int y0, int x1, int y1, int thickness, bool black);
 void gfx_fill_rect(uint8_t *fb, int x, int y, int w, int h, bool black);
 void gfx_checker(uint8_t *fb, int x, int y, int w, int h, int cell, bool invert);
 void gfx_grid(uint8_t *fb, int x, int y, int w, int h, int cell, bool black);

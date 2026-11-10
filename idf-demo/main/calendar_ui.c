@@ -72,16 +72,36 @@ static void draw_centered(uint8_t *fb, int y, const char *text, bool black) {
 
 /* --- shared chrome ------------------------------------------------------ */
 
-static void draw_header(uint8_t *fb, const ui_status_t *status) {
-  gfx_text_utf8(fb, MARGIN, 8, "日历", true);
+/* Bluetooth glyph for the header: outline while advertising, bold while a
+ * phone is connected, slashed when the radio failed to start. It replaces the
+ * old text label so the top bar carries no language-dependent status text. */
+static void draw_ble_icon(uint8_t *fb, int x, int y, bool available, bool connected) {
+  const int cx = x + 7;
+  const int right = x + 13;
+  const int top = y;
+  const int bottom = y + 21;
+  const int q1 = y + 5;
+  const int mid = y + 11;
+  const int q3 = y + 16;
+  const int thickness = (available && connected) ? 3 : 2;
 
-  int x = UI_W - MARGIN;
-  char clock[8];
-  format_clock(status, clock, sizeof(clock));
-  const int clock_w = gfx_text_width(clock, 3);
-  x -= clock_w;
-  gfx_text(fb, x, 10, clock, 3, true);
-  x -= 12;
+  gfx_line(fb, cx, top, cx, bottom, thickness, true);
+  gfx_line(fb, cx, top, right, q1, thickness, true);
+  gfx_line(fb, right, q1, cx, mid, thickness, true);
+  gfx_line(fb, cx, mid, right, q3, thickness, true);
+  gfx_line(fb, right, q3, cx, bottom, thickness, true);
+  /* Left half of the bind-rune cross. */
+  gfx_line(fb, cx, mid, x + 1, q1 - 1, thickness, true);
+  gfx_line(fb, cx, mid, x + 1, q3 + 1, thickness, true);
+
+  if (!available) {
+    gfx_line(fb, x, y + 2, x + 13, y + 19, 2, true);
+  }
+}
+
+static void draw_header(uint8_t *fb, const ui_status_t *status) {
+  /* Left: radio state icon + battery percentage. */
+  draw_ble_icon(fb, MARGIN, 10, status->ble_available, status->ble_connected);
 
   char battery[8];
   if (status->battery_valid) {
@@ -89,23 +109,13 @@ static void draw_header(uint8_t *fb, const ui_status_t *status) {
   } else {
     snprintf(battery, sizeof(battery), "--%%");
   }
-  const int battery_w = gfx_text_width(battery, 2);
-  x -= battery_w;
-  gfx_text(fb, x, 14, battery, 2, true);
-  x -= 12;
+  gfx_text(fb, MARGIN + 22, 14, battery, 2, true);
 
-  const char *ble = !status->ble_available ? "蓝牙失败"
-                    : status->ble_connected ? "已连接"
-                                            : "可连接";
-  const int ble_w = gfx_text_utf8_width(ble);
-  x -= ble_w;
-  gfx_text_utf8(fb, x, 8, ble, true);
-  x -= 14;
-
-  gfx_rect(fb, x, 16, 10, 10, true);
-  if (status->ble_connected) {
-    gfx_fill_rect(fb, x + 2, 18, 6, 6, true);
-  }
+  /* Right: clock. */
+  char clock[8];
+  format_clock(status, clock, sizeof(clock));
+  const int clock_w = gfx_text_width(clock, 3);
+  gfx_text(fb, UI_W - MARGIN - clock_w, 10, clock, 3, true);
 
   gfx_hline(fb, MARGIN, HEADER_LINE_Y, UI_W - 2 * MARGIN, true);
 }

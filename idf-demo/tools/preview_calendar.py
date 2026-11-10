@@ -86,6 +86,26 @@ class Screen:
         for row in range(h):
             self.hline(x, y + row, w, black)
 
+    def line(self, x0, y0, x1, y1, thickness=1, black=True):
+        dx, sx = abs(x1 - x0), (1 if x0 < x1 else -1)
+        dy, sy = -abs(y1 - y0), (1 if y0 < y1 else -1)
+        err = dx + dy
+        while True:
+            if thickness <= 1:
+                self.pixel(x0, y0, black)
+            else:
+                self.fill_rect(x0 - thickness // 2, y0 - thickness // 2,
+                               thickness, thickness, black)
+            if x0 == x1 and y0 == y1:
+                break
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+
     def text5x7(self, x, y, s, scale=1, black=True):
         cur = x
         for ch in s:
@@ -180,22 +200,24 @@ EVENTS = [
 ]
 
 
-def header(s, clock="15:57", battery="78%", connected=True):
-    s.text_utf8(12, 8, "日历")
-    x = W - 12
-    x -= s.text5x7_width(clock, 3)
-    s.text5x7(x, 10, clock, 3)
-    x -= 12
-    x -= s.text5x7_width(battery, 2)
-    s.text5x7(x, 14, battery, 2)
-    x -= 12
-    label = "已连接" if connected else "可连接"
-    x -= s.text_width(label)
-    s.text_utf8(x, 8, label)
-    x -= 14
-    s.rect(x, 16, 10, 10)
-    if connected:
-        s.fill_rect(x + 2, 18, 6, 6)
+def ble_icon(s, x, y, available=True, connected=True):
+    cx, right = x + 7, x + 13
+    top, bottom = y, y + 21
+    q1, mid, q3 = y + 5, y + 11, y + 16
+    t = 3 if (available and connected) else 2
+    for x0, y0, x1, y1 in ((cx, top, cx, bottom), (cx, top, right, q1),
+                           (right, q1, cx, mid), (cx, mid, right, q3),
+                           (right, q3, cx, bottom),
+                           (cx, mid, x + 1, q1 - 1), (cx, mid, x + 1, q3 + 1)):
+        s.line(x0, y0, x1, y1, t)
+    if not available:
+        s.line(x, y + 2, x + 13, y + 19, 2)
+
+
+def header(s, clock="15:57", battery="78%", connected=True, available=True):
+    ble_icon(s, 12, 10, available, connected)
+    s.text5x7(34, 14, battery, 2)
+    s.text5x7(W - 12 - s.text5x7_width(clock, 3), 10, clock, 3)
     s.hline(12, 40, W - 24)
 
 
