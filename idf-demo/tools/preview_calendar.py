@@ -201,15 +201,18 @@ EVENTS = [
 
 
 def ble_icon(s, x, y, available=True, connected=True):
+    inverted = available and connected
+    if inverted:
+        s.fill_rect(x - 2, y - 3, 18, 28)
+    ink = not inverted
     cx, right = x + 7, x + 13
     top, bottom = y, y + 21
     q1, mid, q3 = y + 5, y + 11, y + 16
-    t = 3 if (available and connected) else 2
     for x0, y0, x1, y1 in ((cx, top, cx, bottom), (cx, top, right, q1),
                            (right, q1, cx, mid), (cx, mid, right, q3),
                            (right, q3, cx, bottom),
                            (cx, mid, x + 1, q1 - 1), (cx, mid, x + 1, q3 + 1)):
-        s.line(x0, y0, x1, y1, t)
+        s.line(x0, y0, x1, y1, 2, ink)
     if not available:
         s.line(x, y + 2, x + 13, y + 19, 2)
 
