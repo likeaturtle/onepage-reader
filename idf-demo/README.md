@@ -57,7 +57,7 @@ outline while advertising, white-on-black on a rounded badge while connected,
 and a 50% dither (fake gray) plus a gray "!" when the radio failed.
 The portrait month grid has 5 or 6 week rows and seven columns. A black cell is the
 selected day, a double outline is today, and up to four dots show that day's
-events. The Saturday and Sunday columns carry a light 3/16 Bayer dither; the
+events. The Saturday and Sunday columns carry a light 1/16 Bayer dither; the
 grid lines, selected cell, date numbers and event dots are painted on top, so
 the dots stay solid. When the selected day has events, a floating card next to its cell
 shows the date, the day's event count and up to five entries (time + title).

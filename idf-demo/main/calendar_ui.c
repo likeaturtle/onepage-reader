@@ -15,7 +15,7 @@
 #define MONTH_GRID_Y 116
 #define MONTH_CELL_W 60
 /* Bayer level (0..16) for the Saturday/Sunday cell shading. */
-#define WEEKEND_SHADE 3
+#define WEEKEND_SHADE 1
 #define FOOTER_LINE_Y 744
 #define FOOTER_TEXT_Y 750
 

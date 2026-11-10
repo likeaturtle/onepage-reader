@@ -307,8 +307,8 @@ def month_preview():
         counts[when] = counts.get(when, 0) + 1
 
     for row in range(5):
-        s.dither_rect(grid_x, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 3)
-        s.dither_rect(grid_x + 6 * cell_w, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 3)
+        s.dither_rect(grid_x, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 1)
+        s.dither_rect(grid_x + 6 * cell_w, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 1)
 
     for row in range(1, 5):
         s.hline(grid_x, grid_y + row * cell_h, cell_w * 7)
