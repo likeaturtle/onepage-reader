@@ -207,8 +207,16 @@ def footer(s, line1, line2):
     s.text_utf8(W - 12 - s.text_width(power), 774, power)
 
 
-def peek_card(s, day, events):
-    x, y, w, h = 16, 628, W - 32, 108
+def peek_card(s, day, events, first_day, rows):
+    x, w = 16, W - 32
+    cell_h = 110 if rows == 5 else 96
+    shown = min(len(events), 5)
+    h = 54 + shown * 30
+    row = max(0, min((day - first_day).days // 7, rows - 1))
+    cell_top = 116 + row * cell_h
+    y = cell_top + cell_h + 6
+    if y + h > 738:
+        y = max(116, cell_top - h - 6)
     s.fill_rect(x, y, w, h, False)
     s.rect(x, y, w, h)
     s.rect(x + 3, y + 3, w - 6, h - 6)
@@ -217,7 +225,7 @@ def peek_card(s, day, events):
     total = f"{len(events)} 条"
     s.text_utf8(x + w - 12 - s.text_width(total), y + 8, total)
     s.hline(x + 12, y + 38, w - 24)
-    for i, (_when, start, _end, title, _note) in enumerate(events[:2]):
+    for i, (_when, start, _end, title, _note) in enumerate(events[:shown]):
         ey = y + 44 + i * 30
         s.text5x7(x + 12, ey, start, 3)
         s.text_clipped(x + 112, ey, title or "(无标题)", w - 112 - 12)
@@ -267,7 +275,7 @@ def month_preview():
     selected_day = dt.date(2026, 11, 9)
     day_events = [ev for ev in EVENTS if ev[0] == selected_day]
     if day_events:
-        peek_card(s, selected_day, day_events)
+        peek_card(s, selected_day, day_events, grid_start, 5)
     footer(s, "上下:切周  左右:换天", "确认:查看  返回:今天")
     s.save("preview_month.png")
 

@@ -93,7 +93,7 @@ static struct {
 static cal_event_t s_day_events[CAL_MAX_DAY_EVENTS];
 static int s_day_count;
 static uint8_t s_month_counts[42];
-static cal_event_t s_peek_events[2];
+static cal_event_t s_peek_events[5];
 static volatile bool s_calendar_dirty;
 static volatile bool s_ble_activity;
 static uint32_t s_last_generation;
@@ -336,13 +336,12 @@ static void build_month_view(ui_month_t *view) {
   view->month_event_count = month_events;
 
   /* Floating peek card: events on the day under the selection. The grid counts
-   * already give the exact day total; only the first two events are needed for
-   * the card itself. */
+   * already give the exact day total; the card itself shows the first five. */
   const int sel_idx = (int)s_app.day - (int)grid_start;
   if (sel_idx >= 0 && sel_idx < 42) {
     view->peek_total = s_month_counts[sel_idx];
     if (view->peek_total > 0) {
-      view->peek_shown = calendar_events_on_day(0, s_app.day, s_peek_events, 2);
+      view->peek_shown = calendar_events_on_day(0, s_app.day, s_peek_events, 5);
       view->peek_events = s_peek_events;
     }
   }

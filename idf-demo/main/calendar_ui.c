@@ -11,6 +11,9 @@
 #define UI_H ONEPAGE_UI_HEIGHT
 #define MARGIN 12
 #define HEADER_LINE_Y 40
+#define MONTH_GRID_X 30
+#define MONTH_GRID_Y 116
+#define MONTH_CELL_W 60
 #define FOOTER_LINE_Y 744
 #define FOOTER_LINE1_Y 750
 #define FOOTER_LINE2_Y 774
@@ -125,14 +128,34 @@ static void draw_footer(uint8_t *fb, const char *line1, const char *line2) {
 
 /* --- month view --------------------------------------------------------- */
 
-/* Floating preview of the selected day, over the bottom of the month grid.
- * Only drawn while the selected day has events; the opaque white body hides
- * the grid lines (and the event dots of the last row) underneath. */
+/* Floating preview of the selected day, shown next to its cell: below it when
+ * the lower half of the grid has room, otherwise above it. The opaque white
+ * body hides whatever grid lines sit underneath. */
 static void draw_peek_card(uint8_t *fb, const ui_month_t *view) {
   const int x = 16;
-  const int y = 628;
   const int w = UI_W - 2 * x;
-  const int h = 108;
+  const int rows = (view->grid_rows < 5 || view->grid_rows > 6) ? 6 : view->grid_rows;
+  const int cell_h = rows == 5 ? 110 : 96;
+  const int shown = view->peek_shown > 5 ? 5 : view->peek_shown;
+  const int h = 54 + shown * 30;
+
+  int row = ((int)view->selected_day - (int)view->first_day) / 7;
+  if (row < 0) {
+    row = 0;
+  }
+  if (row >= rows) {
+    row = rows - 1;
+  }
+  const int cell_top = MONTH_GRID_Y + row * cell_h;
+
+  int y = cell_top + cell_h + 6;
+  if (y + h > 738) {
+    /* Not enough room below: float above the selected cell instead. */
+    y = cell_top - h - 6;
+    if (y < MONTH_GRID_Y) {
+      y = MONTH_GRID_Y;
+    }
+  }
 
   gfx_fill_rect(fb, x, y, w, h, false);
   gfx_rect(fb, x, y, w, h, true);
@@ -151,7 +174,6 @@ static void draw_peek_card(uint8_t *fb, const ui_month_t *view) {
 
   gfx_hline(fb, x + 12, y + 38, w - 24, true);
 
-  const int shown = view->peek_shown > 2 ? 2 : view->peek_shown;
   for (int i = 0; i < shown; i++) {
     const cal_event_t *event = &view->peek_events[i];
     const int ey = y + 44 + i * 30;
@@ -169,9 +191,9 @@ void ui_draw_month(uint8_t *fb, const ui_month_t *view) {
 
   const int title_y = 52;
   const int weekday_y = 86;
-  const int grid_y = 116;
-  const int grid_x = 30;
-  const int cell_w = 60;
+  const int grid_y = MONTH_GRID_Y;
+  const int grid_x = MONTH_GRID_X;
+  const int cell_w = MONTH_CELL_W;
   int rows = view->grid_rows;
   if (rows < 5 || rows > 6) {
     rows = 6;
