@@ -33,9 +33,9 @@ typedef struct {
   int grid_rows;
   uint8_t counts[42];
   int month_event_count;
-  /* Events on the selected day, drawn as a floating card above or below the
-   * selected cell. peek_total is the real day count; only the first five
-   * events are copied into peek_events. */
+  /* Events on the selected day, drawn in the card docked below the grid.
+   * peek_total is the real day count; only the first five events are copied
+   * into peek_events and the card lists three of them. */
   int peek_total;
   int peek_shown;
   const cal_event_t *peek_events;

@@ -340,8 +340,8 @@ static void build_month_view(ui_month_t *view) {
   memcpy(view->counts, s_month_counts, sizeof(view->counts));
   view->month_event_count = month_events;
 
-  /* Floating peek card: events on the day under the selection. The grid counts
-   * already give the exact day total; the card itself shows the first five. */
+  /* Docked peek card: events on the selected day. The grid counts already give
+   * the exact day total; the card itself shows the first three. */
   const int sel_idx = (int)s_app.day - (int)grid_start;
   if (sel_idx >= 0 && sel_idx < 42) {
     view->peek_total = s_month_counts[sel_idx];

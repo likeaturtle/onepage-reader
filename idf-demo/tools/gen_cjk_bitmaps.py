@@ -10,6 +10,9 @@ Two tables are produced:
 * ``font_cjk_large.c/.h`` -- a handful of 48x48 glyphs for the sleep screen
   headline (the big "休眠中" label).
 
+Both tables place each glyph on a hanzi baseline measured at that pixel size,
+so the full ink box fits the cell instead of losing the bottom rows.
+
     python3 tools/gen_cjk_bitmaps.py
 
 Requires Pillow. Fonts are host-specific, so the generated files are committed
@@ -80,19 +83,54 @@ def gb2312_chars():
     return chars
 
 
-def render_glyphs(chars, size, font_path):
+def measure_hanzi_baseline(font, size, chars):
+    """Return the baseline that keeps a full-height hanzi inside the cell.
+
+    Pillow's "mm" anchor centres the font's line box, which sits a couple of
+    pixels lower than the ideographic em box: at 24 px the bottom rows of most
+    hanzi landed past row 23 and were cut off by the bitmap. Measuring the
+    hanzi ink and anchoring on their baseline keeps the whole glyph; the
+    tallest characters span rows 0..size-1, shorter ones are centred.
+    """
+    hanzi = [ch for ch in chars if 0x4E00 <= ord(ch) <= 0x9FFF]
+    if not hanzi:
+        return size * 0.875
+    canvas = size * 2
+    top_min = 1 << 30
+    bot_max = -(1 << 30)
+    threshold = bytes(0 if v < INK_LEVEL else 255 for v in range(256))
+    for ch in hanzi:
+        img = Image.new("L", (canvas, canvas), 0)
+        ImageDraw.Draw(img).text((size / 2, size), ch, font=font, fill=255, anchor="ms")
+        bbox = img.point(threshold).getbbox()
+        if not bbox:
+            continue
+        top_min = min(top_min, bbox[1] - size)
+        bot_max = max(bot_max, bbox[3] - size)
+    if top_min == 1 << 30:
+        return size * 0.875
+    baseline = -top_min
+    if bot_max - top_min < size:
+        baseline += (size - (bot_max - top_min)) // 2
+    return baseline
+
+
+def render_glyphs(chars, size, font_path, font_index=0, baseline=None):
     """Render each character into a size x size ink bitmap (1 = ink).
 
-    The glyph is drawn with its em box centred in the cell. Do not re-centre
-    every glyph on its own ink: that makes full-width CJK glyphs and
-    punctuation jump around relative to each other.
+    Glyphs are anchored on the hanzi baseline measured for this size, so the
+    full ink box fits the cell. Do not re-centre every glyph on its own ink:
+    that makes full-width CJK glyphs and punctuation jump around relative to
+    each other.
     """
-    font = ImageFont.truetype(font_path, size)
+    font = ImageFont.truetype(font_path, size, index=font_index)
+    if baseline is None:
+        baseline = measure_hanzi_baseline(font, size, chars)
     bitmaps = []
     row_bytes = (size + 7) // 8
     for ch in chars:
         img = Image.new("L", (size, size), 0)
-        ImageDraw.Draw(img).text((size / 2, size / 2), ch, font=font, fill=255, anchor="mm")
+        ImageDraw.Draw(img).text((size / 2, baseline), ch, font=font, fill=255, anchor="ms")
         px = img.load()
         rows = []
         for y in range(size):
@@ -193,19 +231,25 @@ def write_preview(samples, bitmaps, row_bytes, size, scale=3):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--font", default=None, help="override the font file")
+    ap.add_argument("--font-index", type=int, default=0,
+                    help="face index when --font is a .ttc (Noto Sans CJK SC is 2)")
     args = ap.parse_args()
 
     font_path = args.font or find_font()
 
     chars = gb2312_chars()
-    bitmaps, row_bytes = render_glyphs(chars, GB2312_PX, font_path)
+    font = ImageFont.truetype(font_path, GB2312_PX, index=args.font_index)
+    baseline = measure_hanzi_baseline(font, GB2312_PX, chars)
+    bitmaps, row_bytes = render_glyphs(chars, GB2312_PX, font_path, args.font_index, baseline)
     write_binary(chars, bitmaps, GB2312_PX, row_bytes, font_path)
 
-    large_bitmaps, large_row_bytes = render_glyphs(LARGE_CHARS, LARGE_PX, font_path)
+    large_bitmaps, large_row_bytes = render_glyphs(LARGE_CHARS, LARGE_PX, font_path,
+                                                   args.font_index)
     write_large(LARGE_CHARS, large_bitmaps, LARGE_PX, large_row_bytes, font_path)
 
     samples = "日历个人工作家庭学习提醒日程今天删除休眠中序号时间"
-    sample_bitmaps, sample_row_bytes = render_glyphs(samples, GB2312_PX, font_path)
+    sample_bitmaps, sample_row_bytes = render_glyphs(samples, GB2312_PX, font_path,
+                                                     args.font_index, baseline)
     write_preview(samples, sample_bitmaps, sample_row_bytes, GB2312_PX)
 
 

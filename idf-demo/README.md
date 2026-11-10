@@ -55,15 +55,17 @@ On the panel: the top bar keeps the BLE icon and battery percentage on the
 left and the clock on the right (no title text). The BLE state is icon-only:
 outline while advertising, white-on-black on a rounded badge while connected,
 and a 50% dither (fake gray) plus a gray "!" when the radio failed.
-The portrait month grid has 5 or 6 week rows and seven columns. A black cell is the
-selected day, a double outline is today, and up to four dots show that day's
-events. The Saturday and Sunday columns carry a light 1/16 Bayer dither; the
-grid lines, selected cell, date numbers and event dots are painted on top, so
-the dots stay solid. When the selected day has events, a floating card next to its cell
-shows the date, the day's event count and up to five entries (time + title).
-The card sits below the cell when the lower half of the grid has room and above
-it otherwise, so it never covers the selection; CONFIRM still opens the full
-day agenda. The single footer line maps the front keys: BACK on the left,
+Every screen uses one 30 px margin on the 480 px canvas (420 px of content) and
+one 24 px body size (the lock screen enlarges its headline and clock), with a
+shared footer rule and baseline. The portrait month
+grid has 5 or 6 week rows and seven columns and keeps a constant 420 px height.
+A black cell is the selected day, a double outline is today, and up to four dots
+show that day's events. The Saturday and Sunday columns carry a light 1/16
+Bayer dither; the grid lines, selected cell, date numbers and event dots are
+painted on top, so the dots stay solid. A card docked below the grid shows the
+selected date, the day's event count and up to three entries (time + title), or
+"这天没有日程"; it never covers dates, and CONFIRM still opens the full day
+agenda. The single footer line maps the front keys: BACK on the left,
 LEFT/RIGHT in the middle and CONFIRM on the right. There is no
 calendar-category row or selector anymore.
 

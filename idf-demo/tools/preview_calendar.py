@@ -3,7 +3,9 @@
 
 The layout mirrors main/calendar_ui.c (480x800 logical canvas, rotated by gfx.c
 onto the 800x480 panel). It reads the real font5x7 table and embedded GB2312
-font blob, so missing glyphs and overflow show up here.
+font blob, so missing glyphs and overflow show up here. The C file and this
+script share the same spacing constants: 30 px margins, 24 px body text, and a
+footer baseline at y=752.
 
     /Users/fujd/.espressif/tools/python/v6.1/venv/bin/python tools/preview_calendar.py
 
@@ -23,6 +25,30 @@ COMPONENT = ROOT / "components" / "onepage_c61"
 W, H = 480, 800
 CJK_PX = 24
 LARGE_PX = 48
+
+# Layout system, kept in sync with main/calendar_ui.c.
+MARGIN = 30
+CONTENT_W = W - 2 * MARGIN
+BODY_H = 24
+GAP_S = 8
+GAP_M = 12
+GAP_L = 16
+HEADER_TEXT_Y = 14
+HEADER_RULE_Y = 52
+TITLE_Y = 68
+FOOTER_TEXT_Y = H - 24 - BODY_H
+FOOTER_RULE_Y = FOOTER_TEXT_Y - GAP_L
+CONTENT_BOTTOM = FOOTER_RULE_Y - GAP_L
+LIST_TIME_W = 5 * 18
+MONTH_GRID_Y = 140
+MONTH_GRID_H = 420
+MONTH_CELL_W = 60
+PEEK_CARD_Y = MONTH_GRID_Y + MONTH_GRID_H + GAP_M
+PEEK_CARD_ROWS = 3
+
+
+def month_cell_h(rows):
+    return 84 if rows == 5 else 70
 
 
 def load_font5x7():
@@ -183,6 +209,9 @@ class Screen:
     def centered(self, y, s, black=True):
         self.text_utf8((W - self.text_width(s)) // 2, y, s, black)
 
+    def text_right(self, y, s, black=True):
+        self.text_utf8(W - MARGIN - self.text_width(s), y, s, black)
+
     def save(self, name):
         img = Image.new("L", (W, H), 255)
         px = img.load()
@@ -246,57 +275,58 @@ def ble_warning(s, x, y):
 
 
 def header(s, clock="15:57", battery="78%", connected=True, available=True):
-    icon_x = 12
+    icon_x = MARGIN
     if not available:
-        ble_warning(s, 12, 11)
-        icon_x = 20
-    ble_icon(s, icon_x, 10, available, connected)
-    s.text5x7(icon_x + 22, 14, battery, 2)
-    s.text5x7(W - 12 - s.text5x7_width(clock, 3), 10, clock, 3)
-    s.hline(12, 40, W - 24)
+        ble_warning(s, MARGIN, HEADER_TEXT_Y + 1)
+        icon_x = MARGIN + GAP_S
+    ble_icon(s, icon_x, HEADER_TEXT_Y, available, connected)
+    s.text5x7(icon_x + 26, HEADER_TEXT_Y, battery, 3)
+    s.text5x7(W - MARGIN - s.text5x7_width(clock, 3), HEADER_TEXT_Y, clock, 3)
+    s.hline(MARGIN, HEADER_RULE_Y, CONTENT_W)
 
 
 def footer(s, back, left_right, confirm):
-    s.hline(12, 744, W - 24)
-    s.text_utf8(12, 750, back)
+    s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
+    s.text_utf8(MARGIN, FOOTER_TEXT_Y, back)
     lw = s.text_width(left_right)
-    s.text_utf8((W - lw) // 2, 750, left_right)
+    s.text_utf8((W - lw) // 2, FOOTER_TEXT_Y, left_right)
     cw = s.text_width(confirm)
-    s.text_utf8(W - 12 - cw, 750, confirm)
+    s.text_utf8(W - MARGIN - cw, FOOTER_TEXT_Y, confirm)
 
 
-def peek_card(s, day, events, first_day, rows):
-    x, w = 16, W - 32
-    cell_h = 110 if rows == 5 else 96
-    shown = min(len(events), 5)
-    h = 54 + shown * 30
-    row = max(0, min((day - first_day).days // 7, rows - 1))
-    cell_top = 116 + row * cell_h
-    y = cell_top + cell_h + 6
-    if y + h > 738:
-        y = max(116, cell_top - h - 6)
+def peek_card(s, day, events):
+    x, w = MARGIN, CONTENT_W
+    shown = min(len(events), PEEK_CARD_ROWS)
+    h = 58 + max(shown, 1) * 30
+    y = PEEK_CARD_Y
     s.fill_rect(x, y, w, h, False)
     s.rect(x, y, w, h)
     s.rect(x + 3, y + 3, w - 6, h - 6)
     weekday = WEEK_FULL[(day.weekday() + 1) % 7]
-    s.text_utf8(x + 12, y + 8, f"{day.month}月{day.day}日 {weekday}")
-    total = f"{len(events)} 条"
-    s.text_utf8(x + w - 12 - s.text_width(total), y + 8, total)
-    s.hline(x + 12, y + 38, w - 24)
+    s.text_utf8(x + GAP_L, y + GAP_M, f"{day.month}月{day.day}日 {weekday}")
+    if events:
+        total = f"{len(events)} 条"
+        s.text_utf8(x + w - GAP_L - s.text_width(total), y + GAP_M, total)
+    s.hline(x + GAP_L, y + 44, w - 2 * GAP_L)
+    if not shown:
+        s.text_utf8(x + GAP_L, y + 52, "这天没有日程")
+        return
     for i, (_when, start, _end, title, _note) in enumerate(events[:shown]):
-        ey = y + 44 + i * 30
-        s.text5x7(x + 12, ey, start, 3)
-        s.text_clipped(x + 112, ey, title or "(无标题)", w - 112 - 12)
+        ey = y + 52 + i * 30
+        s.text5x7(x + GAP_L, ey, start, 3)
+        s.text_clipped(x + GAP_L + LIST_TIME_W + GAP_M, ey, title or "(无标题)",
+                       w - (GAP_L + LIST_TIME_W + GAP_M) - GAP_L)
 
 
 def month_preview():
     s = Screen()
     header(s)
-    title_y, weekday_y, grid_y = 52, 86, 116
-    grid_x, cell_w, cell_h = 30, 60, 110
-    s.text_utf8(grid_x, title_y, "2026年11月")
-    count = "12 条日程"
-    s.text_utf8(W - grid_x - s.text_width(count), title_y, count)
+    grid_x, cell_w, rows = MARGIN, MONTH_CELL_W, 5
+    cell_h = month_cell_h(rows)
+    s.text_utf8(MARGIN, TITLE_Y, "2026年11月")
+    count = f"{len(EVENTS)} 条"
+    s.text_right(TITLE_Y, count)
+    weekday_y = TITLE_Y + BODY_H + GAP_L
     for i, ch in enumerate(WEEK_SHORT):
         s.text_utf8(grid_x + i * cell_w + (cell_w - 25) // 2, weekday_y, ch)
 
@@ -306,38 +336,38 @@ def month_preview():
     for when, *_rest in EVENTS:
         counts[when] = counts.get(when, 0) + 1
 
-    for row in range(5):
-        s.dither_rect(grid_x, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 1)
-        s.dither_rect(grid_x + 6 * cell_w, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 1)
+    for row in range(rows):
+        s.dither_rect(grid_x, MONTH_GRID_Y + row * cell_h, cell_w - 1, cell_h - 1, 1)
+        s.dither_rect(grid_x + 6 * cell_w, MONTH_GRID_Y + row * cell_h, cell_w - 1,
+                      cell_h - 1, 1)
 
-    for row in range(1, 5):
-        s.hline(grid_x, grid_y + row * cell_h, cell_w * 7)
+    for row in range(1, rows):
+        s.hline(grid_x, MONTH_GRID_Y + row * cell_h, CONTENT_W)
     for col in range(1, 7):
-        s.vline(grid_x + col * cell_w, grid_y, 5 * cell_h)
+        s.vline(grid_x + col * cell_w, MONTH_GRID_Y, rows * cell_h)
 
-    for row in range(5):
+    for row in range(rows):
         for col in range(7):
             day = grid_start + dt.timedelta(days=row * 7 + col)
             x = grid_x + col * cell_w
-            y = grid_y + row * cell_h
+            y = MONTH_GRID_Y + row * cell_h
             selected = day == dt.date(2026, 11, 9)
             today = day == dt.date(2026, 11, 9)
             if selected:
                 s.fill_rect(x, y, cell_w - 1, cell_h - 1)
             elif today:
-                s.rect(x + 1, y + 1, cell_w - 3, cell_h - 3)
-                s.rect(x + 2, y + 2, cell_w - 5, cell_h - 5)
+                s.rect(x + 2, y + 2, cell_w - 4, cell_h - 4)
+                s.rect(x + 4, y + 4, cell_w - 8, cell_h - 8)
             if day.month != 11:
                 continue
-            s.text5x7(x + 6, y + 8, str(day.day), 3, not selected)
+            s.text5x7(x + GAP_S, y + GAP_S, str(day.day), 3, not selected)
             if selected and today:
-                s.rect(x + 3, y + 3, cell_w - 7, cell_h - 7, False)
+                s.rect(x + 6, y + 6, cell_w - 12, cell_h - 12, False)
             for d in range(min(counts.get(day, 0), 4)):
-                s.fill_rect(x + 6 + d * 7, y + cell_h - 15, 4, 4, not selected)
+                s.fill_rect(x + GAP_S + d * 8, y + cell_h - 16, 4, 4, not selected)
     selected_day = dt.date(2026, 11, 9)
     day_events = [ev for ev in EVENTS if ev[0] == selected_day]
-    if day_events:
-        peek_card(s, selected_day, day_events, grid_start, 5)
+    peek_card(s, selected_day, day_events)
     footer(s, "返回:今天", "左右:换天", "确认:查看")
     s.save("preview_month.png")
 
@@ -345,23 +375,27 @@ def month_preview():
 def day_preview():
     s = Screen()
     header(s)
-    s.text_utf8(12, 52, "11月9日")
-    s.text_utf8(12 + s.text_width("11月9日") + 12, 52, "星期一")
-    s.hline(12, 88, W - 24)
-    s.text_utf8(12, 96, "3 条日程")
+    s.text_utf8(MARGIN, TITLE_Y, "11月9日")
+    s.text_utf8(MARGIN + s.text_width("11月9日") + GAP_M, TITLE_Y, "星期一")
     events = [e for e in EVENTS if e[0] == dt.date(2026, 11, 9)]
+    s.text_right(TITLE_Y, f"{len(events)} 条")
+    s.hline(MARGIN, TITLE_Y + BODY_H + GAP_M, CONTENT_W)
+
+    list_y = TITLE_Y + BODY_H + GAP_M + GAP_L
+    row_h = 72
+    text_x = MARGIN + LIST_TIME_W + GAP_M
     for i, (_, start, end, title, note) in enumerate(events):
-        y = 128 + i * 64
+        y = list_y + i * row_h
         selected = i == 1
         if selected:
-            s.fill_rect(12, y, W - 24, 60)
-        s.text5x7(20, y + 4, start, 3, not selected)
-        s.text5x7(20, y + 33, end, 2, not selected)
-        s.text_clipped(120, y + 4, title, W - 120 - 12, not selected)
+            s.fill_rect(MARGIN, y, CONTENT_W, row_h)
+        s.text5x7(MARGIN, y + GAP_S, start, 3, not selected)
+        s.text5x7(MARGIN, y + GAP_S + 32, end, 3, not selected)
+        s.text_clipped(text_x, y + GAP_S, title, W - text_x - MARGIN, not selected)
         if note:
-            s.text_clipped(120, y + 33, note, W - 120 - 12, not selected)
-        if not selected:
-            s.hline(12, y + 63, W - 24)
+            s.text_clipped(text_x, y + GAP_S + 32, note, W - text_x - MARGIN, not selected)
+        if not selected and i < len(events) - 1:
+            s.hline(MARGIN, y + row_h - 1, CONTENT_W)
     footer(s, "返回:月历", "左右:换天", "确认:详情")
     s.save("preview_day.png")
 
@@ -369,52 +403,59 @@ def day_preview():
 def detail_preview(confirm=False):
     s = Screen()
     header(s)
-    s.text_utf8(12, 52, "项目评审")
-    meta_y = 52 + 32 + 8
-    s.text_utf8(12, meta_y, "2026年11月9日  09:00-10:30")
-    line_y = meta_y + 34
-    s.hline(12, line_y, W - 24)
-    s.text_utf8(12, line_y + 8, "备注")
-    s.text_utf8(12, line_y + 40, "会议室 A，带上上周的测试报告。")
-    s.hline(12, 720, W - 24)
-    s.text_utf8(12, 738, "返回:列表")
+    s.text_utf8(MARGIN, TITLE_Y, "项目评审")
+    meta_y = TITLE_Y + 32 + GAP_S
+    s.text_utf8(MARGIN, meta_y, "2026年11月9日")
+    s.text_utf8(MARGIN + s.text_width("2026年11月9日") + GAP_M, meta_y, "星期一")
+    s.text_utf8(MARGIN, meta_y + 32, "09:00-10:30")
+    line_y = meta_y + 32 + BODY_H + GAP_M
+    s.hline(MARGIN, line_y, CONTENT_W)
+    s.text_utf8(MARGIN, line_y + GAP_L, "备注")
+    s.text_utf8(MARGIN, line_y + GAP_L + BODY_H + GAP_M, "会议室 A，带上上周的测试报告。")
+    s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
+    s.text_utf8(MARGIN, FOOTER_TEXT_Y, "返回:列表")
     delete = "确认:删除"
-    dw = s.text_width(delete) + 24
-    s.fill_rect(W - 12 - dw, 730, dw, 40)
-    s.text_utf8(W - 12 - dw + 12, 738, delete, False)
+    dw = s.text_width(delete) + 2 * GAP_L
+    chip_x = W - MARGIN - dw
+    fill_round_rect(s, chip_x, FOOTER_TEXT_Y - 6, dw, 30)
+    s.text_utf8(chip_x + GAP_L, FOOTER_TEXT_Y, delete, False)
     if confirm:
-        x, y, w, h = 50, 250, 380, 300
-        s.fill_rect(x, y, w, h, False)
-        s.rect(x, y, w, h)
-        s.rect(x + 3, y + 3, w - 6, h - 6)
-        s.fill_rect(x + 6, y + 6, w - 12, 44)
-        s.text_utf8(x + 20, y + 16, "删除日程", False)
-        s.text_clipped(x + 20, y + 68, "项目评审", w - 40)
-        s.text_utf8(x + 20, y + 120, "确定要删除这个日程吗?")
-        s.text_utf8(x + 20, y + 184, "再次按确认删除")
-        s.text_utf8(x + 20, y + 224, "按返回取消")
+        box_w, box_h = CONTENT_W, 196
+        box_x = MARGIN
+        box_y = (HEADER_RULE_Y + CONTENT_BOTTOM - box_h) // 2
+        s.fill_rect(box_x, box_y, box_w, box_h, False)
+        s.rect(box_x, box_y, box_w, box_h)
+        s.rect(box_x + 3, box_y + 3, box_w - 6, box_h - 6)
+        s.fill_rect(box_x + 3, box_y + 3, box_w - 6, 44)
+        s.text_utf8(box_x + GAP_L, box_y + 12, "删除日程", False)
+        s.text_clipped(box_x + GAP_L, box_y + 64, "项目评审", box_w - 2 * GAP_L)
+        s.text_utf8(box_x + GAP_L, box_y + 104, "确定要删除这个日程吗?")
+        s.text_utf8(box_x + GAP_L, box_y + 148, "再次按确认删除  返回取消")
     s.save("preview_delete.png" if confirm else "preview_detail.png")
 
 
 def sleep_preview():
     s = Screen()
     for i, ch in enumerate("休眠中"):
-        s.large(30 + i * 50, 30, ch)
-    s.text5x7(W - 30 - s.text5x7_width("15:57", 4), 30, "15:57", 4)
-    s.text5x7(W - 30 - s.text5x7_width("11/09", 3), 72, "11/09", 3)
-    s.hline(30, 118, W - 60)
-    s.text_utf8(30, 132, "接下来的日程")
+        s.large(MARGIN + i * 50, 30, ch)
+    s.text5x7(W - MARGIN - s.text5x7_width("15:57", 4), 30, "15:57", 4)
+    s.text5x7(W - MARGIN - s.text5x7_width("11/09", 3), 70, "11/09", 3)
+    s.hline(MARGIN, 114, CONTENT_W)
+    s.text_utf8(MARGIN, 128, "接下来的日程")
     upcoming = EVENTS[:5]
     for i, (when, start, _end, title, note) in enumerate(upcoming):
-        y = 172 + i * 96
-        s.text5x7(30, y + 12, f"{when.month:02d}/{when.day:02d}", 2)
-        s.text5x7(30, y + 34, start, 3)
-        s.text_clipped(130, y + 10, title, W - 130 - 24)
+        y = 168 + i * 104
+        s.text5x7(MARGIN, y + GAP_L, f"{when.month:02d}/{when.day:02d}", 3)
+        s.text5x7(MARGIN, y + 48, start, 3)
+        s.text_clipped(MARGIN + LIST_TIME_W + GAP_M, y + GAP_L, title,
+                       W - MARGIN - LIST_TIME_W - GAP_M - MARGIN)
         if note:
-            s.text_clipped(130, y + 42, note, W - 130 - 24)
-        s.hline(30, y + 84, W - 60)
-    s.hline(30, 744, W - 60)
-    s.centered(750, "按 POWER 唤醒  蓝牙日历")
+            s.text_clipped(MARGIN + LIST_TIME_W + GAP_M, y + 48, note,
+                           W - MARGIN - LIST_TIME_W - GAP_M - MARGIN)
+        if i < len(upcoming) - 1:
+            s.hline(MARGIN, y + 103, CONTENT_W)
+    s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
+    s.centered(FOOTER_TEXT_Y, "按 POWER 唤醒  蓝牙日历")
     s.save("preview_sleep.png")
 
 
