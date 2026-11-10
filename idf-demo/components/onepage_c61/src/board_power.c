@@ -177,6 +177,26 @@ uint8_t board_battery_percent(uint16_t millivolts) {
 }
 
 void board_power_enter_deep_sleep(void) {
+  /* POWER is a level-triggered deep-sleep wake source. The 2 s hold fires the
+   * sleep request while the finger is still down, and arming the wake with the
+   * key already low makes the chip wake up again immediately (the lock screen
+   * flashes, then the calendar flashes back). Wait for the release first; the
+   * timeout only stops a stuck key from keeping us awake forever. */
+  const gpio_config_t power_cfg = {
+      .pin_bit_mask = 1ULL << ONEPAGE_PIN_BTN_POWER,
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = GPIO_PULLUP_ENABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE,
+  };
+  gpio_config(&power_cfg);
+  for (int waited_ms = 0; waited_ms < 3000; waited_ms += 20) {
+    if (gpio_get_level((gpio_num_t)ONEPAGE_PIN_BTN_POWER) != 0) {
+      break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+
   /* Cutting the rail while the shared bus and the microphone lines are still
    * driven would back-power the card through its ESD diodes (and can latch it),
    * so every line that reaches a peripheral on that rail is parked first. The

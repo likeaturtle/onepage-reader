@@ -185,10 +185,10 @@ timezone does not shift existing events.
   While USB power is present the idle timer is skipped (the battery is not at
   risk and this keeps the desk-calendar/serial-monitor use case alive); POWER
   and the web page still lock it explicitly.
-  Before sleeping it stops BLE, draws the next-events screen with a full
-  refresh, parks the panel (`epd_sleep()`), saves the clock and cuts the shared
-  EPD/SD/mic rail. The e-ink image keeps showing the schedule while the chip is
-  off.
+  Before sleeping it stops BLE, draws the next-events screen with a half
+  (fast full-frame) refresh, parks the panel (`epd_sleep()`), saves the clock
+  and cuts the shared EPD/SD/mic rail. The e-ink image keeps showing the
+  schedule while the chip is off.
 - **While awake** the app uses DFS (160/40 MHz) and slows BLE advertising to
   ~300 ms; the connection interval is 30–50 ms for responsive form submits.
   **Automatic light sleep is disabled**: on this board the C61 SAR ADC (front
@@ -197,7 +197,9 @@ timezone does not shift existing events.
   the primary low-power state. See [Known board issue](#known-board-issue).
 - **The panel is only repainted when something changed**; there is no periodic
   clock tick. A differential refresh is used for navigation and a stronger
-  `HALF` pass every 12 refreshes. Boot and the lock screen use `FULL`.
+  `HALF` pass every 12 refreshes. Cold boot uses `FULL`; a wake from deep sleep
+  and the lock screen use `HALF` (both RAM planes, sped-up waveform), so the
+  panel flashes once briefly instead of cycling black/white for ~2 s.
 - **Peripheral power-down in light sleep is deliberately disabled**, and
   automatic light sleep itself is currently disabled at runtime. On the C61 the
   SAR ADC (front keys, battery) and USB-Serial/JTAG console are not light-sleep

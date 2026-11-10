@@ -396,7 +396,8 @@ static void draw_current(epd_refresh_mode_t mode) {
 
 static epd_refresh_mode_t next_refresh_mode(void) {
   /* Differential refreshes are fast but accumulate ghosting; insert a stronger
-   * HALF pass every few updates. Boot and the sleep screen use FULL. */
+   * HALF pass every few updates. Cold boot, the wake frame and the lock screen
+   * pick their mode explicitly instead. */
   if (s_app.refresh_count != 0 && (s_app.refresh_count % CLEAN_REFRESH_EVERY) == 0) {
     return EPD_REFRESH_HALF;
   }
@@ -445,7 +446,11 @@ static void enter_sleep(void) {
   uint8_t *fb = epd_framebuffer();
   if (fb) {
     ui_draw_sleep(fb, &view);
-    epd_refresh(EPD_REFRESH_FULL);
+    /* HALF still writes both RAM planes and drives every pixel, so the parked
+     * image is clean; the high-temperature waveform just finishes before the
+     * panel has cycled black/white as many times as FULL does. The vendor's
+     * sleep screen uses the same mode. */
+    epd_refresh(EPD_REFRESH_HALF);
   }
 
   calendar_save_clock();
@@ -635,6 +640,11 @@ void app_main(void) {
   const esp_reset_reason_t reset_reason = esp_reset_reason();
   ESP_LOGI(TAG, "OnePage C61 calendar starting (reset reason %d%s)", (int)reset_reason,
            reset_reason == ESP_RST_DEEPSLEEP ? ", wake from deep sleep" : "");
+  /* Waking from deep sleep is the vendor's "panel was off" case: the frame on
+   * the glass is our own lock screen, so HALF (both RAM planes, sped-up
+   * waveform) repaints it cleanly without the long black/white cycling of
+   * FULL. A cold boot starts from an unknown panel state and keeps FULL. */
+  const bool panel_was_parked = reset_reason == ESP_RST_DEEPSLEEP;
 
   ESP_ERROR_CHECK(init_nvs());
   ESP_ERROR_CHECK(board_power_init());
@@ -681,7 +691,7 @@ void app_main(void) {
   ESP_LOGI(TAG, "ready: %d events, %d calendars, clock %s", calendar_event_count(),
            calendar_count(), calendar_time_valid() ? "valid" : "not synced");
 
-  draw_current(EPD_REFRESH_FULL);
+  draw_current(panel_was_parked ? EPD_REFRESH_HALF : EPD_REFRESH_FULL);
 
   for (;;) {
     key_event_t event;

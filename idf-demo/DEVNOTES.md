@@ -268,16 +268,21 @@ app 还不存在，挂在 app 上没有意义（本项目早期版本就犯过�
     -70..-20 映射），所以改成上面的自动定标。
   - **音频不落盘**：当前只做实时电平检测，没有 WAV。要加录音，可在这个任务里把
     PCM 样本写进环形缓冲，再由单独的写卡任务落成 WAV，避免 SD 写阻塞 DMA。
-- **刷新模式选择**：`EPD_REFRESH_FULL`（~2 s，干净）、`EPD_REFRESH_HALF`、`EPD_REFRESH_FAST`（差分，快但有残影）。
+- **刷新模式选择**：`EPD_REFRESH_FULL`（~2 s，干净）、`EPD_REFRESH_HALF`（写双 RAM、高温快波形，
+  画面同样干净但闪得少）、`EPD_REFRESH_FAST`（差分，快但有残影）。
   进深睡前调 `epd_sleep()` 把面板 park 住（图像留在屏上），唤醒后重新 init。
+  2026-11-10 真机反馈「休眠/唤醒时屏幕黑白闪好几次」：原因是这两处都走 FULL，每次要黑白反转
+  三四下；现在和厂商固件一致，**冷启动用 FULL，唤醒首帧和锁屏用 HALF**（厂商 `displayBuffer()`
+  对「panel was off」也是强制 HALF）。要更干净可以把这两处改回 `EPD_REFRESH_FULL`。
 - **重绘策略（踩过的坑）**：早期版本每 2 秒必然重绘一次 —— 电池是**单次 ADC 采样**（抖动远超 1 mV），
   而主循环用 `previous_mv != bat_mv` 精确比较，于是"活值更新"变成了"每两秒闪一次"，残影也跟着累积。
   现在：`ONEPAGE_BATTERY_SAMPLES=8` 平均 + 变化 ≥ `BAT_REDRAW_MV`(25 mV) 才算变 + 慢变量最多每
   `SLOW_REDRAW_US`(30 s) 重绘一次；按键重绘仍是 120 ms 节流。**新增任何"活值"显示时，请照这个约定来**
   （带阈值 + 限频），否则面板会一直闪。
-- **休眠交互**：`POWER` 单击或长按 2 s 都进深睡（长按到 2 s 立即执行，不等松手）；按下时长
-  < `POWER_CLICK_MIN_US`(30 ms) 视为毛刺忽略。进深睡前先 `onepage_mic_stop()` 停掉 PDM 采集，
-  再用 `EPD_REFRESH_FULL` 画好「休眠中」画面、`epd_sleep()`，这样静止图像能挂几个小时不掉字、不留残影。
+- **休眠交互**：`POWER` 单击或长按 2 s 都进深睡（长按到 2 s 立即开始锁屏，但会等按键松开再
+  真正 `esp_deep_sleep_start()`：POWER 是低电平唤醒源，攥着不放会让设备刚睡下就被自己叫醒）。
+  按下时长 < `POWER_CLICK_MIN_US`(30 ms) 视为毛刺忽略。进深睡前先 `onepage_mic_stop()` 停掉 PDM 采集，
+  再用 `EPD_REFRESH_HALF` 画好「休眠中」画面、`epd_sleep()`，这样静止图像能挂几个小时不掉字、不留残影。
 - **加组件依赖**：6.x 里用了谁的头就必须在 `idf_component_register` 的
   `REQUIRES`/`PRIV_REQUIRES` 里声明，否则直接构建失败（这正是最初那个报错的原因）。
 - **改配置**：`sdkconfig.defaults` 只对新生成的 `sdkconfig` 生效；已经存在的
