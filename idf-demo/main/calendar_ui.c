@@ -14,6 +14,8 @@
 #define MONTH_GRID_X 30
 #define MONTH_GRID_Y 116
 #define MONTH_CELL_W 60
+/* Bayer level (0..16) for the Saturday/Sunday cell shading. */
+#define WEEKEND_SHADE 3
 #define FOOTER_LINE_Y 744
 #define FOOTER_TEXT_Y 750
 
@@ -271,6 +273,16 @@ void ui_draw_month(uint8_t *fb, const ui_month_t *view) {
     const int w = gfx_text_utf8_width(kWeekdayShort[i]);
     gfx_text_utf8(fb, grid_x + i * cell_w + (cell_w - w) / 2, weekday_y, kWeekdayShort[i],
                   true);
+  }
+
+  /* Weekend columns get a light dither so they read apart from weekdays. It is
+   * painted before the grid lines, the selected-cell fill, the date numbers and
+   * the event dots, so none of those lose contrast. */
+  for (int row = 0; row < rows; row++) {
+    gfx_dither_rect(fb, grid_x, grid_y + row * cell_h, cell_w - 1, cell_h - 1,
+                    WEEKEND_SHADE);
+    gfx_dither_rect(fb, grid_x + 6 * cell_w, grid_y + row * cell_h, cell_w - 1,
+                    cell_h - 1, WEEKEND_SHADE);
   }
 
   for (int row = 1; row < rows; row++) {

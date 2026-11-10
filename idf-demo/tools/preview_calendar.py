@@ -106,6 +106,12 @@ class Screen:
                 err += dx
                 y0 += sy
 
+    def dither_rect(self, x, y, w, h, level):
+        bayer = ((0, 8, 2, 10), (12, 4, 14, 6), (3, 11, 1, 9), (15, 7, 13, 5))
+        for row in range(h):
+            for col in range(w):
+                self.pixel(x + col, y + row, bayer[(y + row) & 3][(x + col) & 3] < level)
+
     def text5x7(self, x, y, s, scale=1, black=True):
         cur = x
         for ch in s:
@@ -299,6 +305,10 @@ def month_preview():
     counts = {}
     for when, *_rest in EVENTS:
         counts[when] = counts.get(when, 0) + 1
+
+    for row in range(5):
+        s.dither_rect(grid_x, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 3)
+        s.dither_rect(grid_x + 6 * cell_w, grid_y + row * cell_h, cell_w - 1, cell_h - 1, 3)
 
     for row in range(1, 5):
         s.hline(grid_x, grid_y + row * cell_h, cell_w * 7)
