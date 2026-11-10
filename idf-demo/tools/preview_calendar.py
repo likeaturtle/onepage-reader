@@ -200,10 +200,20 @@ EVENTS = [
 ]
 
 
+def fill_round_rect(s, x, y, w, h, r=3):
+    s.fill_rect(x, y, w, h)
+    for i in range(r):
+        cut = r - i - 1
+        s.hline(x, y + i, cut, False)
+        s.hline(x + w - cut, y + i, cut, False)
+        s.hline(x, y + h - 1 - i, cut, False)
+        s.hline(x + w - cut, y + h - 1 - i, cut, False)
+
+
 def ble_icon(s, x, y, available=True, connected=True):
     inverted = available and connected
     if inverted:
-        s.fill_rect(x - 2, y - 3, 18, 28)
+        fill_round_rect(s, x - 2, y - 3, 18, 28)
     ink = not inverted
     cx, right = x + 7, x + 13
     top, bottom = y, y + 21
@@ -214,7 +224,10 @@ def ble_icon(s, x, y, available=True, connected=True):
                            (cx, mid, x + 1, q1 - 1), (cx, mid, x + 1, q3 + 1)):
         s.line(x0, y0, x1, y1, 2, ink)
     if not available:
-        s.line(x, y + 2, x + 13, y + 19, 2)
+        for j in range(24):
+            for i in range(16):
+                if (i + j) % 2 == 0:
+                    s.pixel(x - 1 + i, y - 1 + j, False)
 
 
 def header(s, clock="15:57", battery="78%", connected=True, available=True):

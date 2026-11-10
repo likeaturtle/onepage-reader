@@ -72,14 +72,28 @@ static void draw_centered(uint8_t *fb, int y, const char *text, bool black) {
 
 /* --- shared chrome ------------------------------------------------------ */
 
+/* Rounded-corner fill; the badge behind the connected BLE glyph uses a small
+ * radius so it reads as a soft chip instead of a hard rectangle. */
+static void fill_round_rect(uint8_t *fb, int x, int y, int w, int h, bool black) {
+  const int r = 3;
+  gfx_fill_rect(fb, x, y, w, h, black);
+  for (int i = 0; i < r; i++) {
+    const int cut = r - i - 1;
+    gfx_hline(fb, x, y + i, cut, !black);
+    gfx_hline(fb, x + w - cut, y + i, cut, !black);
+    gfx_hline(fb, x, y + h - 1 - i, cut, !black);
+    gfx_hline(fb, x + w - cut, y + h - 1 - i, cut, !black);
+  }
+}
+
 /* Bluetooth glyph for the header: plain outline while advertising, white on a
- * black badge while a phone is connected, slashed when the radio failed. It
- * replaces the old text label so the top bar carries no status text. */
+ * black rounded badge while a phone is connected, and a 50% dither (the only
+ * "gray" a 1-bit panel can show) when the radio failed to start. It replaces
+ * the old text label so the top bar carries no status text. */
 static void draw_ble_icon(uint8_t *fb, int x, int y, bool available, bool connected) {
   const bool inverted = available && connected;
   if (inverted) {
-    /* Black badge behind the glyph; the rune is then drawn in white. */
-    gfx_fill_rect(fb, x - 2, y - 3, 18, 28, true);
+    fill_round_rect(fb, x - 2, y - 3, 18, 28, true);
   }
   const bool ink = !inverted;
   const int cx = x + 7;
@@ -89,19 +103,24 @@ static void draw_ble_icon(uint8_t *fb, int x, int y, bool available, bool connec
   const int q1 = y + 5;
   const int mid = y + 11;
   const int q3 = y + 16;
-  const int thickness = 2;
 
-  gfx_line(fb, cx, top, cx, bottom, thickness, ink);
-  gfx_line(fb, cx, top, right, q1, thickness, ink);
-  gfx_line(fb, right, q1, cx, mid, thickness, ink);
-  gfx_line(fb, cx, mid, right, q3, thickness, ink);
-  gfx_line(fb, right, q3, cx, bottom, thickness, ink);
+  gfx_line(fb, cx, top, cx, bottom, 2, ink);
+  gfx_line(fb, cx, top, right, q1, 2, ink);
+  gfx_line(fb, right, q1, cx, mid, 2, ink);
+  gfx_line(fb, cx, mid, right, q3, 2, ink);
+  gfx_line(fb, right, q3, cx, bottom, 2, ink);
   /* Left half of the bind-rune cross. */
-  gfx_line(fb, cx, mid, x + 1, q1 - 1, thickness, ink);
-  gfx_line(fb, cx, mid, x + 1, q3 + 1, thickness, ink);
+  gfx_line(fb, cx, mid, x + 1, q1 - 1, 2, ink);
+  gfx_line(fb, cx, mid, x + 1, q3 + 1, 2, ink);
 
   if (!available) {
-    gfx_line(fb, x, y + 2, x + 13, y + 19, 2, true);
+    for (int j = 0; j < 24; j++) {
+      for (int i = 0; i < 16; i++) {
+        if (((i + j) & 1) == 0) {
+          gfx_pixel(fb, x - 1 + i, y - 1 + j, false);
+        }
+      }
+    }
   }
 }
 

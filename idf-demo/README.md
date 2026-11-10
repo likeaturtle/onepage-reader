@@ -53,8 +53,8 @@ confirmation box, so a single accidental click cannot remove an event.
 
 On the panel: the top bar keeps the BLE icon and battery percentage on the
 left and the clock on the right (no title text). The BLE state is icon-only:
-outline while advertising, white-on-black while connected, slashed when the
-radio failed.
+outline while advertising, white-on-black on a rounded badge while connected,
+and a 50% dither (fake gray) when the radio failed.
 The portrait month grid has 5 or 6 week rows and seven columns. A black cell is the
 selected day, a double outline is today, and up to four dots show that day's
 events. When the selected day has events, a floating card next to its cell
