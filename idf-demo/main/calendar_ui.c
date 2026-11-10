@@ -15,8 +15,7 @@
 #define MONTH_GRID_Y 116
 #define MONTH_CELL_W 60
 #define FOOTER_LINE_Y 744
-#define FOOTER_LINE1_Y 750
-#define FOOTER_LINE2_Y 774
+#define FOOTER_TEXT_Y 750
 
 static const char *const kWeekdayShort[7] = {"日", "一", "二", "三", "四", "五", "六"};
 static const char *const kWeekdayFull[7] = {"星期日", "星期一", "星期二", "星期三",
@@ -111,19 +110,22 @@ static void draw_header(uint8_t *fb, const ui_status_t *status) {
   gfx_hline(fb, MARGIN, HEADER_LINE_Y, UI_W - 2 * MARGIN, true);
 }
 
-/* Two short hint lines instead of the landscape footer. The second line is
- * shared with the PWR hint, so it is clipped if the text grows. */
-static void draw_footer(uint8_t *fb, const char *line1, const char *line2) {
+/* One line of key hints laid out like the front panel: BACK on the left, the
+ * LEFT/RIGHT pair in the middle, CONFIRM on the right. */
+static void draw_footer(uint8_t *fb, const char *back, const char *left_right,
+                        const char *confirm) {
   gfx_hline(fb, MARGIN, FOOTER_LINE_Y, UI_W - 2 * MARGIN, true);
-  if (line1 && line1[0]) {
-    gfx_text_utf8_clipped(fb, MARGIN, FOOTER_LINE1_Y, line1, UI_W - 2 * MARGIN, true);
+  if (back && back[0]) {
+    gfx_text_utf8(fb, MARGIN, FOOTER_TEXT_Y, back, true);
   }
-  if (line2 && line2[0]) {
-    gfx_text_utf8_clipped(fb, MARGIN, FOOTER_LINE2_Y, line2, UI_W - 2 * MARGIN, true);
+  if (left_right && left_right[0]) {
+    const int w = gfx_text_utf8_width(left_right);
+    gfx_text_utf8(fb, (UI_W - w) / 2, FOOTER_TEXT_Y, left_right, true);
   }
-  const char *power = "PWR:休眠";
-  const int power_w = gfx_text_utf8_width(power);
-  gfx_text_utf8(fb, UI_W - MARGIN - power_w, FOOTER_LINE2_Y, power, true);
+  if (confirm && confirm[0]) {
+    const int w = gfx_text_utf8_width(confirm);
+    gfx_text_utf8(fb, UI_W - MARGIN - w, FOOTER_TEXT_Y, confirm, true);
+  }
 }
 
 /* --- month view --------------------------------------------------------- */
@@ -267,7 +269,7 @@ void ui_draw_month(uint8_t *fb, const ui_month_t *view) {
     draw_peek_card(fb, view);
   }
 
-  draw_footer(fb, "上下:切周  左右:换天", "确认:查看  返回:今天");
+  draw_footer(fb, "返回:今天", "左右:换天", "确认:查看");
 }
 
 /* --- day view ----------------------------------------------------------- */
@@ -296,7 +298,7 @@ void ui_draw_day(uint8_t *fb, const ui_day_t *view) {
   if (view->count == 0) {
     draw_centered(fb, 260, "今天没有日程", true);
     draw_centered(fb, 300, "打开手机网页，通过蓝牙添加", true);
-    draw_footer(fb, "左右:换天  返回:月历", "确认:查看");
+    draw_footer(fb, "返回:月历", "左右:换天", "确认:详情");
     return;
   }
 
@@ -345,7 +347,7 @@ void ui_draw_day(uint8_t *fb, const ui_day_t *view) {
     gfx_text(fb, UI_W - MARGIN - pw, 98, position, 2, true);
   }
 
-  draw_footer(fb, "上下:选择  左右:换天", "确认:详情  返回:月历");
+  draw_footer(fb, "返回:月历", "左右:换天", "确认:详情");
 }
 
 /* --- detail view -------------------------------------------------------- */
@@ -381,10 +383,10 @@ void ui_draw_detail(uint8_t *fb, const ui_detail_t *view) {
   }
 
   gfx_hline(fb, MARGIN, 720, UI_W - 2 * MARGIN, true);
-  gfx_fill_rect(fb, MARGIN, 730, 176, 40, true);
-  gfx_text_utf8(fb, MARGIN + 12, 738, "确认:删除", false);
-  const int back_w = gfx_text_utf8_width("返回:列表");
-  gfx_text_utf8(fb, UI_W - MARGIN - back_w, 738, "返回:列表", true);
+  gfx_text_utf8(fb, MARGIN, 738, "返回:列表", true);
+  const int delete_w = gfx_text_utf8_width("确认:删除") + 24;
+  gfx_fill_rect(fb, UI_W - MARGIN - delete_w, 730, delete_w, 40, true);
+  gfx_text_utf8(fb, UI_W - MARGIN - delete_w + 12, 738, "确认:删除", false);
 
   if (!view->confirm_delete) {
     return;
@@ -452,7 +454,7 @@ void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view) {
   }
 
   gfx_hline(fb, 30, FOOTER_LINE_Y, UI_W - 60, true);
-  draw_centered(fb, FOOTER_LINE1_Y, "按 POWER 唤醒  蓝牙日历", true);
+  draw_centered(fb, FOOTER_TEXT_Y, "按 POWER 唤醒  蓝牙日历", true);
 }
 
 void ui_draw_toast(uint8_t *fb, const char *text) {

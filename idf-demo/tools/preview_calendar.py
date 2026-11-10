@@ -199,12 +199,13 @@ def header(s, clock="15:57", battery="78%", connected=True):
     s.hline(12, 40, W - 24)
 
 
-def footer(s, line1, line2):
+def footer(s, back, left_right, confirm):
     s.hline(12, 744, W - 24)
-    s.text_clipped(12, 750, line1, W - 24)
-    s.text_clipped(12, 774, line2, W - 24)
-    power = "PWR:休眠"
-    s.text_utf8(W - 12 - s.text_width(power), 774, power)
+    s.text_utf8(12, 750, back)
+    lw = s.text_width(left_right)
+    s.text_utf8((W - lw) // 2, 750, left_right)
+    cw = s.text_width(confirm)
+    s.text_utf8(W - 12 - cw, 750, confirm)
 
 
 def peek_card(s, day, events, first_day, rows):
@@ -276,7 +277,7 @@ def month_preview():
     day_events = [ev for ev in EVENTS if ev[0] == selected_day]
     if day_events:
         peek_card(s, selected_day, day_events, grid_start, 5)
-    footer(s, "上下:切周  左右:换天", "确认:查看  返回:今天")
+    footer(s, "返回:今天", "左右:换天", "确认:查看")
     s.save("preview_month.png")
 
 
@@ -300,7 +301,7 @@ def day_preview():
             s.text_clipped(120, y + 33, note, W - 120 - 12, not selected)
         if not selected:
             s.hline(12, y + 63, W - 24)
-    footer(s, "上下:选择  左右:换天", "确认:详情  返回:月历")
+    footer(s, "返回:月历", "左右:换天", "确认:详情")
     s.save("preview_day.png")
 
 
@@ -315,10 +316,11 @@ def detail_preview(confirm=False):
     s.text_utf8(12, line_y + 8, "备注")
     s.text_utf8(12, line_y + 40, "会议室 A，带上上周的测试报告。")
     s.hline(12, 720, W - 24)
-    s.fill_rect(12, 730, 176, 40)
-    s.text_utf8(24, 738, "确认:删除", False)
-    back = "返回:列表"
-    s.text_utf8(W - 12 - s.text_width(back), 738, back)
+    s.text_utf8(12, 738, "返回:列表")
+    delete = "确认:删除"
+    dw = s.text_width(delete) + 24
+    s.fill_rect(W - 12 - dw, 730, dw, 40)
+    s.text_utf8(W - 12 - dw + 12, 738, delete, False)
     if confirm:
         x, y, w, h = 50, 250, 380, 300
         s.fill_rect(x, y, w, h, False)

@@ -58,7 +58,9 @@ events. When the selected day has events, a floating card next to its cell
 shows the date, the day's event count and up to five entries (time + title).
 The card sits below the cell when the lower half of the grid has room and above
 it otherwise, so it never covers the selection; CONFIRM still opens the full
-day agenda. There is no calendar-category row or selector anymore.
+day agenda. The single footer line maps the front keys: BACK on the left,
+LEFT/RIGHT in the middle and CONFIRM on the right. There is no
+calendar-category row or selector anymore.
 
 ---
 
