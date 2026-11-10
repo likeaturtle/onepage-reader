@@ -17,6 +17,11 @@ CONFIG_SPIRAM_SPEED_40M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_BOOT_INIT=y
 CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
+# Skip the boot-time full-SPI-RAM test: it writes and verifies the whole part
+# (~1.5 s on 8 MB @ 40 MHz) on every reset, and a deep-sleep wake is a reset.
+# That test is the single largest part of the wake latency; re-enable it on a
+# brand-new board when validating the PSRAM.
+CONFIG_SPIRAM_MEMTEST=n
 
 # --- Console ------------------------------------------------------------------
 # The console must go to the ROM USB-Serial/JTAG device, never UART0: GPIO10 is
