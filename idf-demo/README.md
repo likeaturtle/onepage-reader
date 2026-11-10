@@ -54,7 +54,10 @@ confirmation box, so a single accidental click cannot remove an event.
 On the panel: the top bar shows the current time, battery and BLE state. The
 portrait month grid has 5 or 6 week rows and seven columns. A black cell is the
 selected day, a double outline is today, and up to four dots show that day's
-events. There is no calendar-category row or selector anymore.
+events. When the selected day has events, a floating card at the bottom of the
+grid shows its date, total event count and the first two entries (time + title);
+CONFIRM still opens the full day agenda. There is no calendar-category row or
+selector anymore.
 
 ---
 

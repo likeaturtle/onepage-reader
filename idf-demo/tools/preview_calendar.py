@@ -207,6 +207,22 @@ def footer(s, line1, line2):
     s.text_utf8(W - 12 - s.text_width(power), 774, power)
 
 
+def peek_card(s, day, events):
+    x, y, w, h = 16, 628, W - 32, 108
+    s.fill_rect(x, y, w, h, False)
+    s.rect(x, y, w, h)
+    s.rect(x + 3, y + 3, w - 6, h - 6)
+    weekday = WEEK_FULL[(day.weekday() + 1) % 7]
+    s.text_utf8(x + 12, y + 8, f"{day.month}月{day.day}日 {weekday}")
+    total = f"{len(events)} 条"
+    s.text_utf8(x + w - 12 - s.text_width(total), y + 8, total)
+    s.hline(x + 12, y + 38, w - 24)
+    for i, (_when, start, _end, title, _note) in enumerate(events[:2]):
+        ey = y + 44 + i * 30
+        s.text5x7(x + 12, ey, start, 3)
+        s.text_clipped(x + 112, ey, title or "(无标题)", w - 112 - 12)
+
+
 def month_preview():
     s = Screen()
     header(s)
@@ -248,6 +264,10 @@ def month_preview():
                 s.rect(x + 3, y + 3, cell_w - 7, cell_h - 7, False)
             for d in range(min(counts.get(day, 0), 4)):
                 s.fill_rect(x + 6 + d * 7, y + cell_h - 15, 4, 4, not selected)
+    selected_day = dt.date(2026, 11, 9)
+    day_events = [ev for ev in EVENTS if ev[0] == selected_day]
+    if day_events:
+        peek_card(s, selected_day, day_events)
     footer(s, "上下:切周  左右:换天", "确认:查看  返回:今天")
     s.save("preview_month.png")
 

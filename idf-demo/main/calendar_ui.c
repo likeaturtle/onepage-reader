@@ -125,6 +125,44 @@ static void draw_footer(uint8_t *fb, const char *line1, const char *line2) {
 
 /* --- month view --------------------------------------------------------- */
 
+/* Floating preview of the selected day, over the bottom of the month grid.
+ * Only drawn while the selected day has events; the opaque white body hides
+ * the grid lines (and the event dots of the last row) underneath. */
+static void draw_peek_card(uint8_t *fb, const ui_month_t *view) {
+  const int x = 16;
+  const int y = 628;
+  const int w = UI_W - 2 * x;
+  const int h = 108;
+
+  gfx_fill_rect(fb, x, y, w, h, false);
+  gfx_rect(fb, x, y, w, h, true);
+  gfx_rect(fb, x + 3, y + 3, w - 6, h - 6, true);
+
+  int cy = 1970, cm = 1, cd = 1;
+  calendar_civil_from_days(view->selected_day, &cy, &cm, &cd);
+  char title[48];
+  snprintf(title, sizeof(title), "%d月%d日 %s", cm, cd,
+           kWeekdayFull[calendar_weekday(view->selected_day)]);
+  gfx_text_utf8(fb, x + 12, y + 8, title, true);
+
+  char total[16];
+  snprintf(total, sizeof(total), "%d 条", view->peek_total);
+  gfx_text_utf8(fb, x + w - 12 - gfx_text_utf8_width(total), y + 8, total, true);
+
+  gfx_hline(fb, x + 12, y + 38, w - 24, true);
+
+  const int shown = view->peek_shown > 2 ? 2 : view->peek_shown;
+  for (int i = 0; i < shown; i++) {
+    const cal_event_t *event = &view->peek_events[i];
+    const int ey = y + 44 + i * 30;
+    char start[6];
+    format_hhmm(event->start_min, start, sizeof(start));
+    gfx_text(fb, x + 12, ey, start, 3, true);
+    gfx_text_utf8_clipped(fb, x + 112, ey, event->title[0] ? event->title : "(无标题)",
+                          w - 112 - 12, true);
+  }
+}
+
 void ui_draw_month(uint8_t *fb, const ui_month_t *view) {
   gfx_clear(fb, true);
   draw_header(fb, &view->status);
@@ -201,6 +239,10 @@ void ui_draw_month(uint8_t *fb, const ui_month_t *view) {
         gfx_fill_rect(fb, x + 6 + d * 7, y + cell_h - 15, 4, 4, !selected);
       }
     }
+  }
+
+  if (view->peek_total > 0 && view->peek_shown > 0 && view->peek_events) {
+    draw_peek_card(fb, view);
   }
 
   draw_footer(fb, "上下:切周  左右:换天", "确认:查看  返回:今天");
