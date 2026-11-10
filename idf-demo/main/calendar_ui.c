@@ -141,11 +141,11 @@ static void draw_ble_warning(uint8_t *fb, int x, int y) {
 
 static void draw_header(uint8_t *fb, const ui_status_t *status) {
   /* Left: radio state icon + battery percentage. A failed radio gets a gray
-   * "!" in front of the icon, which shifts the rest of the group right. */
+   * "!" in front of the icon, which shifts the rest of the group right a bit. */
   int icon_x = MARGIN;
   if (!status->ble_available) {
     draw_ble_warning(fb, MARGIN, 11);
-    icon_x = MARGIN + 14;
+    icon_x = MARGIN + 8;
   }
   draw_ble_icon(fb, icon_x, 10, status->ble_available, status->ble_connected);
 

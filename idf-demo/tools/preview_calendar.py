@@ -243,7 +243,7 @@ def header(s, clock="15:57", battery="78%", connected=True, available=True):
     icon_x = 12
     if not available:
         ble_warning(s, 12, 11)
-        icon_x = 26
+        icon_x = 20
     ble_icon(s, icon_x, 10, available, connected)
     s.text5x7(icon_x + 22, 14, battery, 2)
     s.text5x7(W - 12 - s.text5x7_width(clock, 3), 10, clock, 3)
