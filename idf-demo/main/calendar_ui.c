@@ -124,9 +124,30 @@ static void draw_ble_icon(uint8_t *fb, int x, int y, bool available, bool connec
   }
 }
 
+/* Dithered "!" shown to the left of the BLE glyph when the radio failed. The
+ * 50% checkerboard makes it gray like the icon, so it reads as a warning
+ * rather than a second status symbol. */
+static void draw_ble_warning(uint8_t *fb, int x, int y) {
+  gfx_fill_rect(fb, x, y, 4, 12, true);
+  gfx_fill_rect(fb, x, y + 16, 4, 4, true);
+  for (int j = 0; j < 22; j++) {
+    for (int i = 0; i < 6; i++) {
+      if (((i + j) & 1) == 0) {
+        gfx_pixel(fb, x - 1 + i, y - 1 + j, false);
+      }
+    }
+  }
+}
+
 static void draw_header(uint8_t *fb, const ui_status_t *status) {
-  /* Left: radio state icon + battery percentage. */
-  draw_ble_icon(fb, MARGIN, 10, status->ble_available, status->ble_connected);
+  /* Left: radio state icon + battery percentage. A failed radio gets a gray
+   * "!" in front of the icon, which shifts the rest of the group right. */
+  int icon_x = MARGIN;
+  if (!status->ble_available) {
+    draw_ble_warning(fb, MARGIN, 11);
+    icon_x = MARGIN + 14;
+  }
+  draw_ble_icon(fb, icon_x, 10, status->ble_available, status->ble_connected);
 
   char battery[8];
   if (status->battery_valid) {
@@ -134,7 +155,7 @@ static void draw_header(uint8_t *fb, const ui_status_t *status) {
   } else {
     snprintf(battery, sizeof(battery), "--%%");
   }
-  gfx_text(fb, MARGIN + 22, 14, battery, 2, true);
+  gfx_text(fb, icon_x + 22, 14, battery, 2, true);
 
   /* Right: clock. */
   char clock[8];

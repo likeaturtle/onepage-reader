@@ -230,9 +230,22 @@ def ble_icon(s, x, y, available=True, connected=True):
                     s.pixel(x - 1 + i, y - 1 + j, False)
 
 
+def ble_warning(s, x, y):
+    s.fill_rect(x, y, 4, 12)
+    s.fill_rect(x, y + 16, 4, 4)
+    for j in range(22):
+        for i in range(6):
+            if (i + j) % 2 == 0:
+                s.pixel(x - 1 + i, y - 1 + j, False)
+
+
 def header(s, clock="15:57", battery="78%", connected=True, available=True):
-    ble_icon(s, 12, 10, available, connected)
-    s.text5x7(34, 14, battery, 2)
+    icon_x = 12
+    if not available:
+        ble_warning(s, 12, 11)
+        icon_x = 26
+    ble_icon(s, icon_x, 10, available, connected)
+    s.text5x7(icon_x + 22, 14, battery, 2)
     s.text5x7(W - 12 - s.text5x7_width(clock, 3), 10, clock, 3)
     s.hline(12, 40, W - 24)
 
