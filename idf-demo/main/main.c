@@ -671,27 +671,38 @@ void app_main(void) {
 
   init_power_management();
 
+  s_key_queue = xQueueCreate(32, sizeof(key_event_t));
+  if (!s_key_queue || xTaskCreate(key_task, "keys", 3072, NULL, 2, NULL) != pdPASS) {
+    ESP_LOGE(TAG, "key scanner failed to start");
+  }
+
   static const ble_calendar_callbacks_t callbacks = {
       .on_change = on_ble_change,
       .on_conn = on_ble_conn,
       .on_sleep_request = on_ble_sleep_request,
   };
   ble_calendar_set_callbacks(&callbacks);
-  const esp_err_t ble_err = ble_calendar_init();
-  s_app.ble_started = ble_err == ESP_OK;
-  if (!s_app.ble_started) {
-    ESP_LOGE(TAG, "BLE unavailable; the calendar still works offline");
-  }
 
-  s_key_queue = xQueueCreate(32, sizeof(key_event_t));
-  if (!s_key_queue || xTaskCreate(key_task, "keys", 3072, NULL, 2, NULL) != pdPASS) {
-    ESP_LOGE(TAG, "key scanner failed to start");
-  }
+  /* Paint before bringing BLE up: the controller bring-up blocks for a few
+   * hundred milliseconds and the calendar frame does not depend on it. The
+   * first frame claims "可连接" optimistically; if the init fails it is
+   * repainted with "蓝牙失败" right after. */
+  s_app.ble_started = true;
 
   ESP_LOGI(TAG, "ready: %d events, %d calendars, clock %s", calendar_event_count(),
            calendar_count(), calendar_time_valid() ? "valid" : "not synced");
 
+  ESP_LOGI(TAG, "first frame: drawing at %lld ms", (long long)(now_us() / 1000));
   draw_current(panel_was_parked ? EPD_REFRESH_HALF : EPD_REFRESH_FULL);
+  ESP_LOGI(TAG, "first frame: on screen at %lld ms (BLE starts next)",
+           (long long)(now_us() / 1000));
+
+  const esp_err_t ble_err = ble_calendar_init();
+  if (ble_err != ESP_OK) {
+    s_app.ble_started = false;
+    s_app.dirty = true;
+    ESP_LOGE(TAG, "BLE unavailable; the calendar still works offline");
+  }
 
   for (;;) {
     key_event_t event;
