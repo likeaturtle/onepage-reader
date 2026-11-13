@@ -1,0 +1,45 @@
+<view class="page">
+  <view class="card profile-card">
+    <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" loading="{{uploading}}">
+      <image wx:if="{{avatarUrl}}" class="avatar big" src="{{avatarUrl}}" mode="aspectFill" />
+      <view wx:else class="avatar big avatar-text">{{initial}}</view>
+      <view class="avatar-tip">点击更换头像</view>
+    </button>
+
+    <view class="name-row">
+      <input
+        class="input"
+        type="nickname"
+        placeholder="设置昵称"
+        value="{{nickname}}"
+        maxlength="20"
+        bindinput="onNickname"
+      />
+      <button class="btn primary" bindtap="save" loading="{{saving}}" disabled="{{saving}}">保存</button>
+    </view>
+
+    <view wx:if="{{error}}" class="banner error">{{error}}</view>
+
+    <view class="muted small user-id">用户 ID：{{user.id || '—'}}</view>
+  </view>
+
+  <view class="card">
+    <view class="kv"><text>应用</text><text>{{appName}}</text></view>
+    <view class="kv"><text>登录方式</text><text>微信登录</text></view>
+    <view class="kv"><text>接口地址</text><text class="mono">{{apiBase}}</text></view>
+    <view class="kv"><text>客户端版本</text><text>{{version}}</text></view>
+    <view class="kv"><text>设备协议</text><text>proto 1</text></view>
+  </view>
+
+  <view class="card explain">
+    <view class="explain-title">关于登录</view>
+    <view class="explain-text">
+      登录用于识别账号。日程同时保存在云端，没带设备时也能在手机上查看；连接设备后会双向同步：云端有、设备没有的会推下去，设备有、云端没有的会导上来，设备上删除的也会删云端。
+    </view>
+    <view class="explain-text">
+      设备没有配对或密码，附近任何蓝牙中心设备都能读写。请只在可信环境中使用。
+    </view>
+  </view>
+
+  <button class="btn danger block" bindtap="logout">退出登录</button>
+</view>

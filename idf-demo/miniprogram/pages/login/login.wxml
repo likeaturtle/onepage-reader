@@ -1,0 +1,28 @@
+<view class="login-page">
+  <view class="hero">
+    <image class="logo" src="/CalCal_logo.png" mode="aspectFit" />
+    <view class="title">{{appName}}</view>
+    <view class="subtitle">{{tagline}}</view>
+  </view>
+
+  <view class="panel">
+    <view class="panel-title">登录后开始连接设备</view>
+    <view class="panel-desc">用微信身份识别你的账号，日程会同时保存在云端，没带设备也能查看。</view>
+
+    <button class="btn primary block" bindtap="wechatLogin" loading="{{busy}}" disabled="{{busy}}">
+      微信一键登录
+    </button>
+
+    <button wx:if="{{devLogin}}" class="btn block dev" bindtap="devLogin" disabled="{{busy}}">
+      开发模式登录
+    </button>
+
+    <view wx:if="{{error}}" class="error">{{error}}</view>
+
+    <view class="note">
+      首次在真机上使用时，请允许微信访问蓝牙。登录状态保存在本机，可在「我的」中退出。
+    </view>
+  </view>
+
+  <view class="foot">接口 {{apiBase}}</view>
+</view>

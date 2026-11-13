@@ -29,7 +29,7 @@ void ble_store_config_init(void);
 
 static const char *TAG = "ble_cal";
 
-#define DEVICE_NAME "OnePage Calendar"
+#define DEVICE_NAME "Mochen CalCal"
 #define FW_VERSION "1.0.0"
 #define PROTO_VERSION 1
 #define RX_BUF_SIZE 2048
@@ -116,7 +116,7 @@ static int gatt_access(uint16_t conn_handle, uint16_t attr_handle,
   if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR && attr_handle == s_info_handle) {
     char json[256];
     const int n = snprintf(json, sizeof(json),
-                           "{\"name\":\"OnePage C61\",\"fw\":\"%s\",\"proto\":%d,"
+                           "{\"name\":\"Mochen CalCal\",\"fw\":\"%s\",\"proto\":%d,"
                            "\"events\":%d,\"calendars\":%d,\"time_valid\":%s}",
                            FW_VERSION, PROTO_VERSION, calendar_event_count(), calendar_count(),
                            calendar_time_valid() ? "true" : "false");
@@ -317,7 +317,7 @@ static void send_hello(void) {
   char json[700];
   const int n = snprintf(
       json, sizeof(json),
-      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"OnePage C61\","
+      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"Mochen CalCal\","
       "\"now\":%u,\"tz\":%d,\"time_valid\":%s,\"time_synced\":%s,\"events\":%d,"
       "\"calendars\":%d,\"cals\":[%s]}",
       PROTO_VERSION, FW_VERSION, (unsigned)calendar_now_epoch(), calendar_tz_minutes(),

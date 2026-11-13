@@ -1,0 +1,179 @@
+<view class="page">
+  <view class="topbar">
+    <view class="brand">
+      <image class="brand-logo" src="/CalCal_logo.png" mode="aspectFit" />
+      <view class="brand-copy">
+        <view class="brand-name">{{appName}}</view>
+        <view class="brand-sub">墨水屏日历</view>
+      </view>
+    </view>
+    <view class="user" bindtap="goProfile">
+      <image wx:if="{{userAvatar}}" class="avatar" src="{{userAvatar}}" mode="aspectFill" />
+      <view wx:else class="avatar avatar-text">{{userInitial}}</view>
+      <text class="user-name">{{user.nickname || '微信用户'}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{!adapterAvailable}}" class="banner error">
+    系统蓝牙不可用。请打开蓝牙，并允许微信使用蓝牙后重试。
+  </view>
+  <view wx:if="{{error}}" class="banner error">{{error}}</view>
+  <view wx:if="{{syncError}}" class="banner warn">{{syncError}}</view>
+  <view wx:if="{{!connected}}" class="banner cloud">
+    未连接设备 · 日程保存在云端，连接设备后自动同步
+  </view>
+
+  <view class="card">
+    <view class="card-head">
+      <view class="card-heading">
+        <text class="card-title">设备</text>
+        <text class="hint">{{connected ? '已连接' : (connecting ? '连接中…' : '未连接')}}</text>
+      </view>
+      <view class="dot {{connected ? 'on' : ''}}"></view>
+    </view>
+
+    <block wx:if="{{!connected}}">
+      <view class="muted">先按设备 POWER 键唤醒，再扫描并连接。</view>
+      <view class="row actions">
+        <button class="btn primary grow" bindtap="startScan" loading="{{scanning}}" disabled="{{connecting}}">
+          {{scanning ? '正在扫描…' : '扫描设备'}}
+        </button>
+        <button wx:if="{{scanning}}" class="btn" bindtap="stopScan">停止</button>
+      </view>
+
+      <view class="switch-row">
+        <view>
+          <view class="switch-title">显示全部蓝牙设备</view>
+          <view class="switch-desc">找不到设备时打开，手动选择 Mochen CalCal</view>
+        </view>
+        <switch checked="{{showAllDevices}}" color="#22345a" bindchange="toggleAllDevices" />
+      </view>
+
+      <view wx:if="{{devices.length}}" class="device-list">
+        <view
+          wx:for="{{devices}}"
+          wx:key="deviceId"
+          class="device"
+          bindtap="connect"
+          data-id="{{item.deviceId}}"
+        >
+          <view class="device-main">
+            <view class="device-name">{{item.name}}</view>
+            <view class="device-meta">信号 {{item.RSSI}} dBm</view>
+          </view>
+          <button class="btn small" catchtap="connect" data-id="{{item.deviceId}}">连接</button>
+        </view>
+      </view>
+      <view wx:elif="{{scanning}}" class="empty">正在搜索附近的蓝牙设备…</view>
+      <view wx:elif="{{hasScanned}}" class="empty">没有发现设备。请确认设备已唤醒，或打开“显示全部蓝牙设备”。</view>
+    </block>
+
+    <block wx:else>
+      <view class="device-info">
+        <view class="kv"><text>名称</text><text>{{hello.name || 'Mochen CalCal'}}</text></view>
+        <view class="kv"><text>固件</text><text>{{hello.fw || '—'}}</text></view>
+        <view class="kv"><text>设备日程</text><text>{{hello.events || 0}} 条</text></view>
+        <view class="kv"><text>设备时间</text><text>{{deviceTime || '未同步'}}</text></view>
+      </view>
+      <view class="row actions">
+        <button class="btn grow" bindtap="refresh" loading="{{syncing}}">同步</button>
+        <button class="btn grow" bindtap="sleepDevice">锁屏休眠</button>
+        <button class="btn danger grow" bindtap="disconnect">断开</button>
+      </view>
+    </block>
+  </view>
+
+  <view class="card">
+    <view class="card-head">
+      <view class="card-heading">
+        <text class="card-title">添加日程</text>
+        <text class="hint">{{connected ? '同时写入设备' : '先保存到云端'}}</text>
+      </view>
+    </view>
+
+    <view class="pick-row">
+      <picker class="pick-item date" mode="date" start="2021-01-01" end="2100-12-31" value="{{form.date}}" bindchange="onDate">
+        <view class="field pick">{{form.date}}</view>
+      </picker>
+      <picker class="pick-item time" mode="time" value="{{form.start}}" bindchange="onStart">
+        <view class="field pick">{{form.start}}</view>
+      </picker>
+      <text class="dash">—</text>
+      <picker class="pick-item time" mode="time" value="{{form.end}}" bindchange="onEnd">
+        <view class="field pick">{{form.end}}</view>
+      </picker>
+    </view>
+
+    <input
+      class="input"
+      placeholder="日程标题，例如 项目评审"
+      value="{{form.title}}"
+      maxlength="30"
+      bindinput="onTitle"
+      confirm-type="done"
+    />
+    <view class="counter">{{titleBytes}} / 47 字节（超出会被设备截断）</view>
+
+    <textarea
+      class="input area"
+      placeholder="备注（可选）"
+      value="{{form.note}}"
+      maxlength="60"
+      bindinput="onNote"
+    />
+    <view class="counter">{{noteBytes}} / 95 字节（超出会被设备截断）</view>
+
+    <view wx:if="{{!connected}}" class="inline-tip">
+      未连接蓝牙设备：保存后先存在云端，连接设备时自动同步。
+    </view>
+
+    <button class="btn primary block" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">
+      保存日程
+    </button>
+  </view>
+
+  <view class="card">
+    <view class="card-head">
+      <view class="card-heading">
+        <text class="card-title">本月日程</text>
+        <text class="hint">{{eventCount}} 条</text>
+      </view>
+      <text class="hint status">{{syncing ? '同步中…' : (connected ? '设备已连接' : '云端')}}</text>
+    </view>
+
+    <view class="month-bar">
+      <view class="month-btn" bindtap="prevMonth" hover-class="month-btn-hover" aria-role="button" aria-label="上个月">‹</view>
+      <text class="month-label">{{monthLabel}}</text>
+      <view class="month-btn" bindtap="nextMonth" hover-class="month-btn-hover" aria-role="button" aria-label="下个月">›</view>
+    </view>
+
+    <view wx:if="{{loading}}" class="empty">正在读取云端…</view>
+    <view wx:elif="{{!groups.length && error}}" class="empty">云端日程加载失败，请检查网络后重试。</view>
+    <view wx:elif="{{!groups.length}}" class="empty">本月还没有日程，先在上方添加一条。</view>
+
+    <view wx:for="{{groups}}" wx:key="date" class="day-group">
+      <view class="day-head">{{item.label}}</view>
+      <view wx:for="{{item.items}}" wx:for-item="event" wx:key="id" class="event">
+        <view class="event-time">
+          <view>{{event.start}}</view>
+          <view class="event-end">{{event.end}}</view>
+        </view>
+        <view class="event-main">
+          <view class="event-title">{{event.title}}</view>
+          <view wx:if="{{event.note}}" class="event-note">{{event.note}}</view>
+        </view>
+        <button class="btn tiny danger" catchtap="remove" data-id="{{event.id}}">删除</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="log-wrap">
+    <view class="log-toggle" bindtap="toggleLog">
+      {{logOpen ? '收起协议日志' : '查看蓝牙协议日志'}}
+    </view>
+    <scroll-view wx:if="{{logOpen}}" class="log" scroll-y>
+      <view wx:for="{{logs}}" wx:key="id" class="log-line">{{item.line}}</view>
+      <view wx:if="{{!logs.length}}" class="log-line">（连接设备后显示）</view>
+    </scroll-view>
+  </view>
+</view>

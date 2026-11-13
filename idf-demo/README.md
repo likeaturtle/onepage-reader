@@ -111,7 +111,7 @@ not implement Web Bluetooth; use a browser that does (for example Bluefy).
 Then:
 
 1. Wake the device with POWER.
-2. Tap **连接蓝牙设备** and pick **OnePage Calendar**.
+2. Tap **连接蓝牙设备** and pick **Mochen CalCal**.
 3. Pick a date, start/end time and title, then **发送到设备**.
 4. The page syncs the clock automatically and lists the selected month.
 5. **让设备锁屏** draws the lock screen and puts the board into deep sleep;
@@ -119,6 +119,33 @@ Then:
 
 See [`web/README.md`](web/README.md) for the page details and
 [`docs/ble-protocol.md`](docs/ble-protocol.md) for the wire protocol.
+
+### 微信小程序客户端
+
+`miniprogram/` 是名为 **墨程CalCal** 的原生小程序客户端，复用同一套 BLE 协议，Android 和 iOS 都能用
+（iOS 不依赖 Web Bluetooth）。它额外带微信登录和**云端日程**：`wx.login` 的 code
+交给 `server/` 换取 openid，服务端签发 token，昵称、头像和日程都存在服务端。
+没带设备时也能在手机上查看/添加/删除日程；连接设备后，云端与设备双向补齐：
+设备有、云端没有的导入云端；云端有、设备没有的推到设备；**设备端删除的日程也会删除
+云端记录**。设备为空（可能是重置）或一次消失多条时会先弹窗确认，避免误删云端数据。
+
+```bash
+cd idf-demo/server
+cp .env.example .env
+npm start                     # 登录 + 云端日程服务，默认 :8787
+
+# 另开微信开发者工具，导入 idf-demo/miniprogram
+```
+
+本地调试用「开发模式登录」（`ALLOW_DEV_LOGIN=1`），不需要先申请 AppID。导入项目后
+在开发者工具里勾选「不校验合法域名」，真机调试时把 `miniprogram/config.js` 的
+`apiBase` 改成电脑的局域网地址。正式环境需要 HTTPS 域名、`WX_APPID`/`WX_SECRET`
+和微信后台的 `request 合法域名` 配置。
+
+完整配置步骤（导入开发者工具、AppID、`.env`、常见登录错误）见
+[`微信小程序配置说明.md`](微信小程序配置说明.md)；其余细节见
+[`miniprogram/README.md`](miniprogram/README.md) 和
+[`server/README.md`](server/README.md)。
 
 ---
 
@@ -279,6 +306,9 @@ idf-demo/
 ├── web/
 │   ├── index.html          phone page (Web Bluetooth)
 │   └── README.md
+├── miniprogram/            native WeChat mini program (BLE + cloud schedule)
+├── server/                 Node login + cloud schedule backend for the mini program
+├── 微信小程序配置说明.md     DevTools import, AppID/.env, login troubleshooting
 ├── docs/
 │   ├── ble-protocol.md     wire protocol reference
 │   ├── bringup-demo.md     historical self-test/mic demo notes
@@ -345,7 +375,7 @@ power-management docs for SARADC and USB-Serial/JTAG.
 
 | Symptom | Likely cause |
 |:---|:---|
-| Phone page says the browser does not support Web Bluetooth | page is not HTTPS/localhost, or the browser is not Chromium-based (iOS Safari) |
+| Phone page says the browser does not support Web Bluetooth | page is not HTTPS/localhost, or the browser is not Chromium-based (iOS Safari); use the mini program on iOS instead |
 | Device is not listed | device is in deep sleep (press POWER), or the page's service filter does not match; check the UUIDs in `ble_calendar.h` / `web/index.html` |
 | Connect succeeds but no events | TX notifications not subscribed; the page must call `startNotifications()`; check the console log |
 | `bad json` / `missing cmd` | a write was truncated or split without a newline; the page chunks at 20 bytes and appends `\n` once |

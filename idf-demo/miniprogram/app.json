@@ -1,0 +1,33 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/login/login",
+    "pages/profile/profile"
+  ],
+  "window": {
+    "navigationBarTitleText": "墨程CalCal",
+    "navigationBarBackgroundColor": "#f4f0e6",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f4f0e6",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#8b8778",
+    "selectedColor": "#22345a",
+    "backgroundColor": "#fbf9f3",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "日程"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

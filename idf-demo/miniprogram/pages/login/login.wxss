@@ -1,0 +1,88 @@
+.login-page {
+  min-height: 100vh;
+  padding: calc(env(safe-area-inset-top) + 140rpx) 48rpx 60rpx;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(34, 52, 90, 0.12), transparent 48%),
+    radial-gradient(circle at 100% 30%, rgba(193, 154, 74, 0.16), transparent 42%),
+    #f4f0e6;
+  display: flex;
+  flex-direction: column;
+}
+
+.hero {
+  margin-bottom: 72rpx;
+}
+
+.logo {
+  display: block;
+  width: 176rpx;
+  height: 176rpx;
+  margin-bottom: 24rpx;
+}
+
+.title {
+  font-size: 62rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: #1b2a44;
+}
+
+.subtitle {
+  margin-top: 12rpx;
+  font-size: 28rpx;
+  color: #6e6958;
+  letter-spacing: 3rpx;
+}
+
+.panel {
+  background: rgba(255, 253, 248, 0.88);
+  border: 1rpx solid #e5ddcb;
+  border-radius: 32rpx;
+  padding: 40rpx 32rpx 32rpx;
+}
+
+.panel-title {
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.panel-desc {
+  margin: 10rpx 0 34rpx;
+  font-size: 26rpx;
+  line-height: 1.7;
+  color: #7c7664;
+}
+
+.btn.dev {
+  margin-top: 18rpx;
+  background: #eee7d7;
+  color: #5a5546;
+}
+
+.error {
+  margin-top: 24rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 16rpx;
+  background: #f9e5df;
+  border: 1rpx solid #edc8bd;
+  color: #9c3427;
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.note {
+  margin-top: 28rpx;
+  font-size: 23rpx;
+  line-height: 1.7;
+  color: #9a9482;
+}
+
+.foot {
+  margin-top: auto;
+  padding-top: 40rpx;
+  text-align: center;
+  font-size: 21rpx;
+  color: #b0aa98;
+  word-break: break-all;
+}

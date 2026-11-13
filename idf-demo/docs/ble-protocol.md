@@ -15,14 +15,14 @@ the default MTU of 23 because the client writes 20-byte chunks.
 | INFO | `6f6e6570-6167-6531-6361-000000000003` | Read |
 
 The advertised data contains the 128-bit service UUID; the scan response
-contains the name `OnePage Calendar`. No pairing or bonding is required. This
+contains the name `Mochen CalCal`. No pairing or bonding is required. This
 means any BLE central in radio range can modify the calendar; the protocol is
 intended for a personal device on a desk, not for an untrusted environment.
 
 The INFO characteristic is a convenience for generic BLE apps:
 
 ```json
-{"name":"OnePage C61","fw":"1.0.0","proto":1,"events":12,"calendars":1,"time_valid":true}
+{"name":"Mochen CalCal","fw":"1.0.0","proto":1,"events":12,"calendars":1,"time_valid":true}
 ```
 
 ## Framing
@@ -55,7 +55,7 @@ instead of a single ack.
 Response:
 
 ```json
-{"ev":"hello","proto":1,"fw":"1.0.0","name":"OnePage C61","now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
+{"ev":"hello","proto":1,"fw":"1.0.0","name":"Mochen CalCal","now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
 ```
 
 This build exposes a single calendar. `cals` still exists for protocol
@@ -190,7 +190,7 @@ Useful for checking that the link and the command task are alive.
 
 Use nRF Connect (Android/desktop) or `bleak` on a computer:
 
-1. Connect to `OnePage Calendar`.
+1. Connect to `Mochen CalCal`.
 2. Enable notifications on TX.
 3. Write the UTF-8 bytes of `{"cmd":"hello"}\n` to RX (with response).
 4. Read the notification stream; then try `{"cmd":"time","epoch":...,"tz":480}\n`.

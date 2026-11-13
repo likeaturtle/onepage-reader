@@ -1,0 +1,9 @@
+{
+  "desc": "墨程CalCal calendar mini program",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "*"
+    }
+  ]
+}

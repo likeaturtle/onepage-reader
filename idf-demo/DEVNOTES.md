@@ -393,7 +393,7 @@ app 还不存在，挂在 app 上没有意义（本项目早期版本就犯过�
 - 服务/特征 UUID 和 canonical 字符串见 `components/ble_calendar/include/ble_calendar.h`
   与 `docs/ble-protocol.md`。`BLE_UUID128_INIT` 收的是**小端**字节序，写反了
   手机会扫不到服务。
-- 广播包放 128-bit service UUID，扫描响应放名字 `OnePage Calendar`；广播间隔
+- 广播包放 128-bit service UUID，扫描响应放名字 `Mochen CalCal`；广播间隔
   300–350ms，连接间隔 30–50ms（手机提交表单的体验优先）。
 - 手机写入按 20 字节分块，设备按换行重组（2KB RX buffer）；设备通知按
   `min(MTU-3, 180)` 分块，网页按换行重组。协议是“行 JSON”，没有 request id，

@@ -36,7 +36,7 @@ Android Chrome.
 
 ## Use
 
-1. Tap **连接蓝牙设备** and choose **OnePage Calendar**.
+1. Tap **连接蓝牙设备** and choose **Mochen CalCal**.
 2. The page reads `hello`, shows the device time, then syncs the phone clock
    and timezone (`time` command) and loads the current month (`list`).
 3. Pick a date, start/end time and title, then **发送到设备**. The device

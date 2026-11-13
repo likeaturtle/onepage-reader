@@ -1,0 +1,327 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.brand-logo {
+  display: block;
+  flex: none;
+  width: 68rpx;
+  height: 68rpx;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-name {
+  font-size: 30rpx;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #1b2a44;
+  white-space: nowrap;
+}
+
+.brand-sub {
+  font-size: 21rpx;
+  color: #8b8778;
+  letter-spacing: 2rpx;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  max-width: 300rpx;
+}
+
+.avatar {
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 50%;
+  background: #e8dfcb;
+  flex: none;
+}
+
+.avatar-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6d6551;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.user-name {
+  font-size: 25rpx;
+  color: #5f5a4b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actions {
+  margin-top: 24rpx;
+}
+
+.actions .btn {
+  flex: 1 1 0;
+  width: auto !important;
+  min-width: 0;
+  padding: 0 12rpx;
+  font-size: 27rpx;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-top: 28rpx;
+  padding: 20rpx 22rpx;
+  background: #f7f2e7;
+  border-radius: 18rpx;
+}
+
+.switch-title {
+  font-size: 26rpx;
+}
+
+.switch-row > view:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.switch-desc {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  color: #98917d;
+}
+
+.device-list {
+  margin-top: 22rpx;
+  border-top: 1rpx solid #efe8d8;
+}
+
+.device .btn {
+  flex: 0 0 auto;
+  width: auto !important;
+}
+
+.device {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid #efe8d8;
+}
+
+.device-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-name {
+  font-size: 28rpx;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-meta {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #9a9482;
+}
+
+.device-info {
+  background: #f7f2e7;
+  border-radius: 18rpx;
+  padding: 12rpx 22rpx;
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 6rpx;
+}
+
+.pick-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.pick-item.date {
+  flex: 1.35;
+}
+
+.pick {
+  width: 100%;
+  height: 80rpx;
+  line-height: 80rpx;
+  padding: 0 8rpx;
+  font-size: 27rpx;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dash {
+  color: #a49d89;
+  flex: none;
+  font-size: 26rpx;
+}
+
+.inline-tip {
+  margin-top: 18rpx;
+  padding: 14rpx 18rpx;
+  border-left: 5rpx solid #cfd8c2;
+  background: #f4f6ef;
+  border-radius: 8rpx;
+  color: #737c63;
+  font-size: 23rpx;
+  line-height: 1.6;
+}
+
+.month-bar {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  width: 100%;
+  margin: 2rpx 0 20rpx;
+  padding: 8rpx;
+  background: #f7f2e7;
+  border-radius: 16rpx;
+  box-sizing: border-box;
+}
+
+.month-btn {
+  flex: 0 0 64rpx;
+  width: 64rpx;
+  min-width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #efe8d9;
+  border-radius: 12rpx;
+  color: #3f3b31;
+  font-size: 38rpx;
+  line-height: 1;
+}
+
+.month-btn-hover {
+  background: #e4d9c3;
+}
+
+.month-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: #3f3b31;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.day-group {
+  margin-top: 26rpx;
+}
+
+.day-head {
+  font-size: 23rpx;
+  color: #8b8778;
+  letter-spacing: 1rpx;
+  padding-bottom: 8rpx;
+  border-bottom: 1rpx solid #f0e9da;
+}
+
+.event {
+  display: flex;
+  align-items: flex-start;
+  gap: 20rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f4eee1;
+}
+
+.event:last-child {
+  border-bottom: none;
+}
+
+.event-time {
+  flex: none;
+  width: 108rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #22345a;
+  font-variant-numeric: tabular-nums;
+}
+
+.event-end {
+  margin-top: 2rpx;
+  font-size: 22rpx;
+  font-weight: 400;
+  color: #a29b87;
+}
+
+.event-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-title {
+  font-size: 28rpx;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.event-note {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  line-height: 1.5;
+  color: #8b8778;
+  word-break: break-all;
+}
+
+.event .btn {
+  align-self: center;
+  flex: 0 0 auto;
+  width: auto !important;
+}
+
+.log-wrap {
+  margin-top: 10rpx;
+}
+
+.log-toggle {
+  text-align: center;
+  font-size: 23rpx;
+  color: #9a9482;
+  padding: 18rpx 0;
+}
+
+.log {
+  height: 320rpx;
+  background: #26251f;
+  border-radius: 18rpx;
+  padding: 18rpx 20rpx;
+  box-sizing: border-box;
+}
+
+.log-line {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 20rpx;
+  line-height: 1.6;
+  color: #d8d2c2;
+  word-break: break-all;
+}

@@ -159,7 +159,7 @@
 
   <section class="card">
     <h2>连接设备</h2>
-    <p class="lead">先唤醒设备（按 POWER），再点击连接。设备名称：<strong>OnePage Calendar</strong>。</p>
+    <p class="lead">先唤醒设备（按 POWER），再点击连接。设备名称：<strong>Mochen CalCal</strong>。</p>
     <div class="row">
       <button id="connectBtn" class="grow">连接蓝牙设备</button>
       <button id="sleepBtn" class="ghost" disabled>让设备锁屏</button>
@@ -406,7 +406,7 @@
 
   // --- device state -----------------------------------------------------
   function applyHello(message) {
-    $("devName").textContent = message.name || "OnePage C61";
+    $("devName").textContent = message.name || "Mochen CalCal";
     $("devFw").textContent = message.fw || "—";
     $("devEvents").textContent = Number.isFinite(message.events) ? `${message.events} 条` : "—";
     if (message.time_valid && Number.isFinite(message.now) && Number.isFinite(message.tz)) {
