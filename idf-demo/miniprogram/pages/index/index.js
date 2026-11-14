@@ -9,6 +9,7 @@ const fmt = require('../../utils/format');
 const SYNC_PAST_DAYS = 7;
 const SYNC_FUTURE_DAYS = 120;
 const BULK_DELETE_THRESHOLD = 3;
+const SCAN_DURATION_MS = 5000;
 
 function defaultForm() {
   const now = new Date();
@@ -168,10 +169,15 @@ Page({
   },
 
   onHide() {
+    this.scanSession = (this.scanSession || 0) + 1;
+    this.clearScanTimer();
     if (this.data.scanning) this.stopScan();
   },
 
   onUnload() {
+    this.scanSession = (this.scanSession || 0) + 1;
+    this.clearScanTimer();
+    ble.stopScan().catch(() => {});
     if (this.offState) this.offState();
     if (this.offMessage) this.offMessage();
   },
@@ -190,26 +196,60 @@ Page({
   },
 
   // --- device -----------------------------------------------------------
+  clearScanTimer() {
+    if (this.scanTimer) {
+      clearTimeout(this.scanTimer);
+      this.scanTimer = null;
+    }
+  },
+
+  sortScannedDevices() {
+    const devices = this.data.devices.slice().sort(
+      (a, b) => (b.RSSI || -100) - (a.RSSI || -100)
+    );
+    this.setData({ devices });
+  },
+
   startScan() {
     if (this.data.scanning || this.data.connecting) return;
+    this.clearScanTimer();
+    const session = (this.scanSession || 0) + 1;
+    this.scanSession = session;
     this.setData({ devices: [], error: '', hasScanned: true });
+
     ble.startScan({
       all: this.data.showAllDevices,
-      onDevices: (devices) => this.setData({ devices }),
+      onDevices: (devices) => {
+        if (session !== this.scanSession) return;
+        this.setData({ devices });
+      },
+    }).then(() => {
+      // A filter toggle or page hide can invalidate this scan while the
+      // native discovery call is still in flight.
+      if (session !== this.scanSession) {
+        ble.stopScan().catch(() => {});
+        return;
+      }
+      this.scanTimer = setTimeout(() => this.stopScan(), SCAN_DURATION_MS);
     }).catch((err) => {
+      if (session !== this.scanSession) return;
       this.setData({ error: err.message, scanning: false });
     });
   },
 
   stopScan() {
-    ble.stopScan().catch(() => {});
+    this.scanSession = (this.scanSession || 0) + 1;
+    this.clearScanTimer();
+    return ble.stopScan()
+      .then(() => this.sortScannedDevices())
+      .catch(() => this.sortScannedDevices());
   },
 
   toggleAllDevices(event) {
     const value = Boolean(event.detail.value);
     this.setData({ showAllDevices: value, devices: [] });
     if (this.data.scanning) {
-      ble.stopScan()
+      this.stopScan()
         .then(() => this.startScan())
         .catch(() => {});
     }
@@ -218,6 +258,8 @@ Page({
   connect(event) {
     const deviceId = event.currentTarget.dataset.id;
     if (!deviceId || this.data.connecting) return;
+    this.scanSession = (this.scanSession || 0) + 1;
+    this.clearScanTimer();
     this.setData({ connecting: true, error: '' });
     ble.connect(deviceId)
       .then((hello) => {

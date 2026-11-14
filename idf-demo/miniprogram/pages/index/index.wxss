@@ -81,6 +81,13 @@
   font-size: 27rpx;
 }
 
+.scan-tip {
+  margin-top: 12rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: #9a9482;
+}
+
 .switch-row {
   display: flex;
   align-items: center;

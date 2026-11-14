@@ -35,11 +35,13 @@
     <block wx:if="{{!connected}}">
       <view class="muted">先按设备 POWER 键唤醒，再扫描并连接。</view>
       <view class="row actions">
-        <button class="btn primary grow" bindtap="startScan" loading="{{scanning}}" disabled="{{connecting}}">
-          {{scanning ? '正在扫描…' : '扫描设备'}}
+        <button class="btn primary grow" bindtap="startScan" loading="{{scanning}}" disabled="{{connecting || scanning}}">
+          {{scanning ? '正在扫描…' : (hasScanned ? '重新扫描' : '扫描设备')}}
         </button>
         <button wx:if="{{scanning}}" class="btn" bindtap="stopScan">停止</button>
       </view>
+      <view wx:if="{{scanning}}" class="scan-tip">扫描约 5 秒后自动停止</view>
+      <view wx:elif="{{hasScanned}}" class="scan-tip">扫描完成 · {{devices.length}} 个设备</view>
 
       <view class="switch-row">
         <view>
@@ -65,7 +67,7 @@
         </view>
       </view>
       <view wx:elif="{{scanning}}" class="empty">正在搜索附近的蓝牙设备…</view>
-      <view wx:elif="{{hasScanned}}" class="empty">没有发现设备。请确认设备已唤醒，或打开“显示全部蓝牙设备”。</view>
+      <view wx:elif="{{hasScanned}}" class="empty">没有发现设备。请确认设备已唤醒，或点“重新扫描”。</view>
     </block>
 
     <block wx:else>

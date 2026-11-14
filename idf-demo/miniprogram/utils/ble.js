@@ -225,9 +225,6 @@ function matchesDevice(device, all) {
   return services.some((uuid) => String(uuid).toLowerCase() === SERVICE);
 }
 
-function sortDevices(devices) {
-  return devices.slice().sort((a, b) => (b.RSSI || -100) - (a.RSSI || -100));
-}
 
 async function startScan(options) {
   const opts = options || {};
@@ -253,7 +250,10 @@ async function startScan(options) {
         RSSI: Number(device.RSSI) || -100,
       });
     });
-    if (changed) opts.onDevices(sortDevices(Array.from(found.values())));
+    // Keep discovery order stable while scanning; the page sorts once after
+    // the scan window closes. Re-sorting on every RSSI update makes the whole
+    // list jump under the user's finger.
+    if (changed) opts.onDevices(Array.from(found.values()));
   };
 
   wx.onBluetoothDeviceFound(state.scanHandler);
