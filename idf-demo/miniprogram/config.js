@@ -11,7 +11,7 @@
  * `devLogin` must be false in production.
  */
 module.exports = {
-  apiBase: 'http://127.0.0.1:8787',
+  apiBase: 'http://192.168.66.39:8787',
   devLogin: true,
   appName: '墨程CalCal',
   tagline: '把日程写进墨水屏',
