@@ -11,8 +11,8 @@
  * `devLogin` must be false in production.
  */
 module.exports = {
-  apiBase: 'http://192.168.66.39:8787',
-  devLogin: true,
+  apiBase: 'https://calcal.acenova.tech',
+  devLogin: false,
   appName: '墨程CalCal',
   tagline: '把日程写进墨水屏',
   deviceNamePrefix: 'Mochen',

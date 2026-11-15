@@ -3,82 +3,294 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { isBox } = require('./crypto');
+
+const SCHEMA_VERSION = 3;
+const AVATAR_RE = /^[A-Za-z0-9_-]+\.(png|jpg|jpeg|webp)$/i;
+
+function userAad(userId, field) {
+  return `user:${userId}:${field}`;
+}
+
+function eventAad(userId, eventId, field) {
+  return `event:${userId}:${eventId}:${field}`;
+}
+
+function cleanProfile(value) {
+  const profile = value && typeof value === 'object' ? value : {};
+  return {
+    nickname: String(profile.nickname || ''),
+    avatarId: String(profile.avatarId || ''),
+  };
+}
 
 /**
- * Tiny JSON-file store. The demo only needs a handful of users, so a database
- * would add operational weight without buying anything. Writes are atomic
- * (tmp + rename) and synchronous, which is fine at this scale and keeps the
- * request handlers simple.
+ * Tiny JSON-file store. This pre-release build only reads/writes schema v3:
+ *
+ *   users:  { id, openidHash, openidEnc, profile, createdAt, lastLoginAt }
+ *   events: { id, seq, payload }
+ *
+ * There is deliberately no v1/v2 migration path. If an older file is found the
+ * process refuses to start instead of silently rewriting data; the project has
+ * not shipped yet, so the right move is to delete the old data directory.
  */
 class Store {
-  constructor(dataDir) {
+  constructor(dataDir, keyrings) {
+    if (!keyrings || !keyrings.data || !keyrings.index) {
+      throw new Error('Store requires data and index keyrings');
+    }
+
     this.dataDir = dataDir;
+    this.keys = keyrings;
     this.file = path.join(dataDir, 'users.json');
     this.eventsFile = path.join(dataDir, 'events.json');
     this.avatarDir = path.join(dataDir, 'avatars');
-    fs.mkdirSync(this.avatarDir, { recursive: true });
+
+    fs.mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(this.avatarDir, { recursive: true, mode: 0o700 });
+    this.tightenPermissions();
+
     this.data = this.load();
     this.events = this.loadEvents();
+    this.verifyKeyMaterial();
   }
 
-  load() {
+  // --- files ------------------------------------------------------------
+
+  readJson(file) {
     try {
-      const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      return {
-        users: raw.users || {},
-        byOpenid: raw.byOpenid || {},
-      };
+      return JSON.parse(fs.readFileSync(file, 'utf8'));
     } catch (err) {
-      if (err.code !== 'ENOENT') {
-        console.warn('[store] cannot read users.json:', err.message);
-      }
-      return { users: {}, byOpenid: {} };
+      if (err.code === 'ENOENT') return null;
+      console.warn(`[store] cannot read ${path.basename(file)}:`, err.message);
+      this.quarantine(file);
+      return null;
     }
   }
 
+  load() {
+    const raw = this.readJson(this.file);
+    if (!raw) return { users: {}, byOpenidHash: {} };
+    if (raw.v !== SCHEMA_VERSION) {
+      throw new Error(
+        `[store] users.json schema v${raw.v} is unsupported; this build only reads v${SCHEMA_VERSION}. ` +
+        'Delete the old data directory instead of migrating pre-release data.',
+      );
+    }
+
+    const normalized = this.normalizeUsers(raw);
+    if (normalized.changed) {
+      this.writeAtomic(this.file, {
+        v: SCHEMA_VERSION,
+        users: normalized.users,
+        byOpenidHash: normalized.byOpenidHash,
+      });
+    }
+    return { users: normalized.users, byOpenidHash: normalized.byOpenidHash };
+  }
+
+  loadEvents() {
+    const raw = this.readJson(this.eventsFile);
+    if (!raw) return { byUser: {} };
+    if (raw.v !== SCHEMA_VERSION) {
+      throw new Error(
+        `[store] events.json schema v${raw.v} is unsupported; this build only reads v${SCHEMA_VERSION}. ` +
+        'Delete the old data directory instead of migrating pre-release data.',
+      );
+    }
+
+    const normalized = this.normalizeEvents(raw);
+    if (normalized.changed) {
+      this.writeAtomic(this.eventsFile, { v: SCHEMA_VERSION, byUser: normalized.byUser });
+    }
+    return { byUser: normalized.byUser };
+  }
+
   save() {
-    this.writeAtomic(this.file, this.data);
+    this.writeAtomic(this.file, {
+      v: SCHEMA_VERSION,
+      users: this.data.users,
+      byOpenidHash: this.data.byOpenidHash,
+    });
+  }
+
+  saveEvents() {
+    this.writeAtomic(this.eventsFile, { v: SCHEMA_VERSION, byUser: this.events.byUser });
   }
 
   writeAtomic(file, value) {
     const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, file);
-  }
-
-  loadEvents() {
     try {
-      return JSON.parse(fs.readFileSync(this.eventsFile, 'utf8'));
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        console.warn('[store] cannot read events.json:', err.message);
-      }
-      return {};
+      fs.chmodSync(file, 0o600);
+    } catch (_) {
+      // Platforms without POSIX modes (e.g. Windows) are not supported for a
+      // production deploy; do not fail the write.
     }
   }
 
-  saveEvents() {
-    this.writeAtomic(this.eventsFile, this.events);
+  /** Keep an unreadable file instead of letting the next save overwrite it. */
+  quarantine(file) {
+    const target = `${file}.corrupt-${Date.now()}`;
+    try {
+      fs.renameSync(file, target);
+      console.warn(`[store] moved unreadable ${path.basename(file)} to ${target}`);
+    } catch (err) {
+      console.warn(`[store] cannot quarantine ${file}:`, err.message);
+    }
+  }
+
+  tightenPermissions() {
+    const chmod = (target, mode) => {
+      try {
+        fs.chmodSync(target, mode);
+      } catch (_) {
+        // Best effort; the process may not own the file.
+      }
+    };
+
+    chmod(this.dataDir, 0o700);
+    chmod(this.avatarDir, 0o700);
+    for (const file of [this.file, this.eventsFile]) {
+      if (fs.existsSync(file)) chmod(file, 0o600);
+    }
+
+    try {
+      for (const name of fs.readdirSync(this.avatarDir)) {
+        const full = path.join(this.avatarDir, name);
+        try {
+          if (fs.statSync(full).isFile()) chmod(full, 0o600);
+        } catch (_) {
+          // Ignore a file that disappeared between readdir and stat.
+        }
+      }
+    } catch (_) {
+      // Avatar directory is created above; ignore a transient read error.
+    }
+  }
+
+  // --- users ------------------------------------------------------------
+
+  normalizeUsers(raw) {
+    const users = { ...(raw.users || {}) };
+    const byOpenidHash = { ...(raw.byOpenidHash || {}) };
+    let changed = false;
+
+    for (const [id, user] of Object.entries(users)) {
+      if (!user || typeof user !== 'object' || Array.isArray(user)) {
+        delete users[id];
+        changed = true;
+        continue;
+      }
+
+      if (!user.id) {
+        user.id = id;
+        changed = true;
+      }
+
+      // The encrypted copy lets a later INDEX_KEY rotation rehash every
+      // account at startup without asking users to log in again.
+      if (isBox(user.openidEnc)) {
+        try {
+          const openid = this.keys.data.unseal(user.openidEnc, userAad(user.id, 'openid'));
+          if (user.openidEnc.kid !== this.keys.data.currentId) {
+            user.openidEnc = this.keys.data.seal(openid, userAad(user.id, 'openid'));
+            changed = true;
+          }
+          const hash = this.keys.index.hash(openid);
+          if (user.openidHash !== hash) {
+            if (user.openidHash && byOpenidHash[user.openidHash] === user.id) {
+              delete byOpenidHash[user.openidHash];
+            }
+            user.openidHash = hash;
+            changed = true;
+          }
+        } catch (err) {
+          console.warn(`[store] cannot refresh openid index for user ${id}: ${err.message}`);
+        }
+      }
+
+      if (!user.openidHash) {
+        console.warn(`[store] user ${id} has no openid hash and cannot be looked up by login`);
+      } else if (byOpenidHash[user.openidHash] !== user.id) {
+        byOpenidHash[user.openidHash] = user.id;
+        changed = true;
+      }
+
+      if (!isBox(user.profile)) {
+        throw new Error(`[store] user ${id} has no profile payload; data is not schema v${SCHEMA_VERSION}`);
+      }
+      if (user.profile.kid !== this.keys.data.currentId) {
+        try {
+          const profile = this.openProfileBox(user, user.profile);
+          this.sealProfile(user, profile);
+          changed = true;
+        } catch (err) {
+          throw new Error(`DATA_KEY cannot decrypt users.json: ${err.message}`);
+        }
+      }
+    }
+
+    return { users, byOpenidHash, changed };
+  }
+
+  // --- profile ----------------------------------------------------------
+
+  openProfileBox(user, box) {
+    const parsed = JSON.parse(this.keys.data.unseal(box, userAad(user.id, 'profile')));
+    return cleanProfile(parsed);
+  }
+
+  openProfile(user) {
+    return this.openProfileBox(user, user.profile);
+  }
+
+  sealProfile(user, profile) {
+    user.profile = this.keys.data.seal(
+      JSON.stringify(cleanProfile(profile)),
+      userAad(user.id, 'profile'),
+    );
   }
 
   findByOpenid(openid) {
-    const id = this.data.byOpenid[openid];
-    return id ? this.data.users[id] || null : null;
+    const found = this.keys.index.lookup(openid, this.data.byOpenidHash);
+    if (!found) return null;
+
+    const user = this.data.users[found.id] || null;
+    if (!user) {
+      delete this.data.byOpenidHash[found.hash];
+      this.save();
+      return null;
+    }
+
+    if (!this.keys.index.isCurrent(found.hash)) {
+      const hash = this.keys.index.hash(openid);
+      delete this.data.byOpenidHash[found.hash];
+      this.data.byOpenidHash[hash] = user.id;
+      user.openidHash = hash;
+      this.save();
+    }
+
+    return user;
   }
 
   createUser(openid, extra = {}) {
     const now = new Date().toISOString();
+    const id = crypto.randomUUID();
     const user = {
-      id: crypto.randomUUID(),
-      openid,
-      nickname: '',
-      avatar: '',
+      id,
+      openidHash: this.keys.index.hash(openid),
+      openidEnc: this.keys.data.seal(String(openid), userAad(id, 'openid')),
+      profile: this.keys.data.seal(
+        JSON.stringify({ nickname: String(extra.nickname || ''), avatarId: '' }),
+        userAad(id, 'profile'),
+      ),
       createdAt: now,
       lastLoginAt: now,
-      ...extra,
     };
     this.data.users[user.id] = user;
-    this.data.byOpenid[openid] = user.id;
+    this.data.byOpenidHash[user.openidHash] = user.id;
     this.save();
     return user;
   }
@@ -96,18 +308,42 @@ class Store {
   update(id, patch) {
     const user = this.data.users[id];
     if (!user) return null;
-    Object.assign(user, patch);
+
+    const profile = this.openProfile(user);
+    if (Object.prototype.hasOwnProperty.call(patch, 'nickname')) {
+      profile.nickname = String(patch.nickname || '');
+    }
+    this.sealProfile(user, profile);
     this.save();
     return user;
   }
 
+  // --- avatar -----------------------------------------------------------
+
+  avatarPath(name) {
+    const base = path.basename(String(name || ''));
+    if (!AVATAR_RE.test(base)) return null;
+    const file = path.join(this.avatarDir, base);
+    return fs.existsSync(file) ? file : null;
+  }
+
+  avatarFile(user) {
+    const profile = this.openProfile(user);
+    return this.avatarPath(profile.avatarId);
+  }
+
   saveAvatar(user, buffer, ext) {
-    const name = `${user.id}-${Date.now()}.${ext}`;
-    const previous = user.avatar;
-    fs.writeFileSync(path.join(this.avatarDir, name), buffer);
-    user.avatar = `/avatars/${name}`;
+    const name = `${crypto.randomBytes(16).toString('hex')}.${ext}`;
+    const file = path.join(this.avatarDir, name);
+    fs.writeFileSync(file, buffer, { mode: 0o600 });
+
+    const profile = this.openProfile(user);
+    const previous = profile.avatarId;
+    profile.avatarId = name;
+    this.sealProfile(user, profile);
     this.save();
-    if (previous && previous.startsWith('/avatars/')) {
+
+    if (previous) {
       try {
         fs.unlinkSync(path.join(this.avatarDir, path.basename(previous)));
       } catch (_) {
@@ -117,17 +353,94 @@ class Store {
     return user;
   }
 
-  avatarPath(name) {
-    if (!/^[a-f0-9-]+-\d+\.(png|jpg|jpeg|webp)$/.test(name)) return null;
-    const file = path.join(this.avatarDir, name);
-    return fs.existsSync(file) ? file : null;
-  }
-
   // --- events -----------------------------------------------------------
 
+  normalizeEvents(raw) {
+    const byUser = { ...(raw.byUser || {}) };
+    let changed = false;
+
+    for (const [userId, list] of Object.entries(byUser)) {
+      if (!Array.isArray(list)) {
+        byUser[userId] = [];
+        changed = true;
+        continue;
+      }
+
+      const events = [];
+      for (const event of list) {
+        if (!event || typeof event !== 'object' || Array.isArray(event)) {
+          changed = true;
+          continue;
+        }
+        if (!event.id) {
+          event.id = crypto.randomUUID();
+          changed = true;
+        }
+        if (!isBox(event.payload)) {
+          throw new Error(`[store] event ${event.id} has no payload; data is not schema v${SCHEMA_VERSION}`);
+        }
+        if (event.payload.kid !== this.keys.data.currentId) {
+          try {
+            const plain = this.keys.data.unseal(event.payload, eventAad(userId, event.id, 'payload'));
+            event.payload = this.keys.data.seal(plain, eventAad(userId, event.id, 'payload'));
+            changed = true;
+          } catch (err) {
+            throw new Error(`DATA_KEY cannot decrypt events.json: ${err.message}`);
+          }
+        }
+        events.push(event);
+      }
+
+      let maxSeq = 0;
+      for (const event of events) {
+        if (Number.isInteger(event.seq) && event.seq > maxSeq) maxSeq = event.seq;
+      }
+      for (const event of events) {
+        if (!Number.isInteger(event.seq) || event.seq <= 0) {
+          event.seq = ++maxSeq;
+          changed = true;
+        }
+      }
+
+      byUser[userId] = events;
+    }
+
+    return { byUser, changed };
+  }
+
   userEvents(userId) {
-    if (!this.events[userId]) this.events[userId] = [];
-    return this.events[userId];
+    if (!this.events.byUser[userId]) this.events.byUser[userId] = [];
+    return this.events.byUser[userId];
+  }
+
+  nextSeq(userId) {
+    let max = 0;
+    for (const event of this.userEvents(userId)) {
+      if (Number.isInteger(event.seq) && event.seq > max) max = event.seq;
+    }
+    return max + 1;
+  }
+
+  openEventPayload(userId, event) {
+    const parsed = JSON.parse(
+      this.keys.data.unseal(event.payload, eventAad(userId, event.id, 'payload')),
+    );
+    return {
+      date: String(parsed.date || ''),
+      start: String(parsed.start || ''),
+      end: String(parsed.end || ''),
+      title: String(parsed.title || ''),
+      note: String(parsed.note || ''),
+      deviceId: Number.isFinite(parsed.deviceId) ? parsed.deviceId : null,
+      createdAt: parsed.createdAt || '',
+      updatedAt: parsed.updatedAt || '',
+      deletedAt: parsed.deletedAt || null,
+    };
+  }
+
+  decryptEvent(userId, event) {
+    const data = this.openEventPayload(userId, event);
+    return { id: event.id, seq: event.seq, ...data };
   }
 
   listEvents(userId, options = {}) {
@@ -135,27 +448,26 @@ class Store {
     const to = options.to || '';
     const includeDeleted = Boolean(options.includeDeleted);
     return this.userEvents(userId)
+      .map((event) => this.decryptEvent(userId, event))
       .filter((event) => includeDeleted || !event.deletedAt)
       .filter((event) => !from || event.date >= from)
       .filter((event) => !to || event.date <= to)
-      .slice()
       .sort((a, b) => {
         const left = `${a.date} ${a.start} ${a.createdAt}`;
         const right = `${b.date} ${b.start} ${b.createdAt}`;
         return left < right ? -1 : left > right ? 1 : 0;
-      })
-      .map((event) => ({ ...event }));
+      });
   }
 
   getEvent(userId, id) {
     const event = this.userEvents(userId).find((item) => item.id === id);
-    return event ? { ...event } : null;
+    return event ? this.decryptEvent(userId, event) : null;
   }
 
   createEvent(userId, data) {
     const now = new Date().toISOString();
-    const event = {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    const payload = {
       date: data.date,
       start: data.start,
       end: data.end,
@@ -166,17 +478,32 @@ class Store {
       updatedAt: now,
       deletedAt: null,
     };
+    const event = {
+      id,
+      seq: this.nextSeq(userId),
+      payload: this.keys.data.seal(
+        JSON.stringify(payload),
+        eventAad(userId, id, 'payload'),
+      ),
+    };
     this.userEvents(userId).push(event);
     this.saveEvents();
-    return { ...event };
+    return this.decryptEvent(userId, event);
   }
 
   updateEvent(userId, id, patch) {
     const event = this.userEvents(userId).find((item) => item.id === id);
     if (!event) return null;
-    Object.assign(event, patch, { updatedAt: new Date().toISOString() });
+
+    const next = { ...this.openEventPayload(userId, event), ...patch };
+    next.updatedAt = new Date().toISOString();
+    event.payload = this.keys.data.seal(
+      JSON.stringify(next),
+      eventAad(userId, id, 'payload'),
+    );
+    event.seq = this.nextSeq(userId);
     this.saveEvents();
-    return { ...event };
+    return this.decryptEvent(userId, event);
   }
 
   softDeleteEvent(userId, id) {
@@ -192,15 +519,42 @@ class Store {
     return true;
   }
 
+  // --- output -----------------------------------------------------------
+
+  verifyKeyMaterial() {
+    const user = Object.values(this.data.users)[0];
+    if (user) {
+      try {
+        this.openProfile(user);
+      } catch (err) {
+        throw new Error(`DATA_KEY cannot decrypt users.json: ${err.message}`);
+      }
+    }
+
+    for (const [userId, list] of Object.entries(this.events.byUser)) {
+      const event = list[0];
+      if (!event) continue;
+      try {
+        this.openEventPayload(userId, event);
+      } catch (err) {
+        throw new Error(`DATA_KEY cannot decrypt events.json: ${err.message}`);
+      }
+      break;
+    }
+  }
+
   /** Never let openid or internal timestamps leak to the client. */
   publicUser(user) {
+    const profile = this.openProfile(user);
     return {
       id: user.id,
-      nickname: user.nickname || '',
-      avatar: user.avatar || '',
+      nickname: profile.nickname,
+      avatar: profile.avatarId
+        ? `/api/me/avatar?v=${encodeURIComponent(profile.avatarId)}`
+        : '',
       createdAt: user.createdAt,
     };
   }
 }
 
-module.exports = { Store };
+module.exports = { Store, SCHEMA_VERSION };

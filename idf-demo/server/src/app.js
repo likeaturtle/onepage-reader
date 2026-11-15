@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { Store } = require('./store');
+const { createKeyrings } = require('./crypto');
 const { signToken, verifyToken } = require('./auth');
 const { exchangeCode, httpError } = require('./wechat');
 
@@ -63,6 +64,21 @@ async function readJson(req, limit = JSON_LIMIT) {
   } catch (_) {
     throw httpError(400, '请求体不是合法的 JSON');
   }
+}
+
+function clientIp(req, trustProxy) {
+  if (trustProxy) {
+    // nginx runs on loopback and overwrites X-Real-IP with $remote_addr.
+    // Read the length-capped value so a client cannot grow the limiter map
+    // with an arbitrarily long header.
+    const real = req.headers['x-real-ip'];
+    if (typeof real === 'string' && real.trim()) return real.trim().slice(0, 64);
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.trim()) {
+      return forwarded.split(',')[0].trim().slice(0, 64);
+    }
+  }
+  return req.socket.remoteAddress || 'unknown';
 }
 
 function createLoginLimiter() {
@@ -161,7 +177,8 @@ function normalizeEvent(body) {
   return { date, start, end, title, note, deviceId };
 }
 
-function createApp(config, store = new Store(config.dataDir)) {
+function createApp(config, store) {
+  if (!store) store = new Store(config.dataDir, createKeyrings(config));
   const allowLogin = createLoginLimiter();
 
   function authenticate(req) {
@@ -188,7 +205,7 @@ function createApp(config, store = new Store(config.dataDir)) {
       return;
     }
 
-    if (req.method === 'GET' && pathname === '/api/health') {
+    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/api/health') {
       sendJson(res, 200, {
         ok: true,
         wechat: Boolean(config.wxAppId && config.wxSecret),
@@ -198,7 +215,7 @@ function createApp(config, store = new Store(config.dataDir)) {
     }
 
     if (req.method === 'POST' && pathname === '/api/login') {
-      const ip = req.socket.remoteAddress || 'unknown';
+      const ip = clientIp(req, config.trustProxy);
       if (!allowLogin(ip)) throw httpError(429, '登录太频繁，请一分钟后再试');
 
       const body = await readJson(req);
@@ -253,6 +270,27 @@ function createApp(config, store = new Store(config.dataDir)) {
       if (nickname.length > 20) throw httpError(400, '昵称最多 20 个字符');
       const updated = store.update(user.id, { nickname });
       sendJson(res, 200, { user: store.publicUser(updated) });
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/me/avatar') {
+      const user = requireUser(req);
+      const file = store.avatarFile(user);
+      if (!file) {
+        sendJson(res, 404, { error: '头像不存在' });
+        return;
+      }
+      const ext = path.extname(file).slice(1).toLowerCase();
+      const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      const stat = fs.statSync(file);
+      res.writeHead(200, {
+        'content-type': mime,
+        'content-length': stat.size,
+        // Private content: never let a shared cache keep one user's avatar.
+        'cache-control': 'private, max-age=300',
+        vary: 'Authorization',
+      });
+      fs.createReadStream(file).pipe(res);
       return;
     }
 
@@ -339,23 +377,6 @@ function createApp(config, store = new Store(config.dataDir)) {
       // Tokens are stateless; the client drops its copy. Kept as an explicit
       // endpoint so a future revocation list can be added without a client change.
       sendJson(res, 200, { ok: true });
-      return;
-    }
-
-    if (req.method === 'GET' && pathname.startsWith('/avatars/')) {
-      const name = path.basename(decodeURIComponent(pathname.slice('/avatars/'.length)));
-      const file = store.avatarPath(name);
-      if (!file) {
-        sendJson(res, 404, { error: '头像不存在' });
-        return;
-      }
-      const ext = path.extname(file).slice(1).toLowerCase();
-      const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      res.writeHead(200, {
-        'content-type': mime,
-        'cache-control': 'public, max-age=31536000, immutable',
-      });
-      fs.createReadStream(file).pipe(res);
       return;
     }
 

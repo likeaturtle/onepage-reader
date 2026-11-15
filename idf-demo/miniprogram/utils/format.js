@@ -1,6 +1,5 @@
 'use strict';
 
-const config = require('../config');
 const utf8 = require('./utf8');
 
 const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
@@ -77,12 +76,6 @@ function initial(name) {
   return chars.length ? chars[0] : '页';
 }
 
-function avatarUrl(avatar) {
-  if (!avatar) return '';
-  if (/^https?:\/\//.test(avatar)) return avatar;
-  return config.apiBase.replace(/\/+$/, '') + (avatar.charAt(0) === '/' ? '' : '/') + avatar;
-}
-
 function utf8Len(text) {
   return utf8.byteLength(text || '');
 }
@@ -97,6 +90,5 @@ module.exports = {
   groupEvents,
   deviceTime,
   initial,
-  avatarUrl,
   utf8Len,
 };

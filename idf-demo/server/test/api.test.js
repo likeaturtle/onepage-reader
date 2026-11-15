@@ -34,7 +34,10 @@ async function withServer(config, fn) {
   try {
     await fn(base, config);
   } finally {
-    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => {
+      server.close(resolve);
+      server.closeAllConnections();
+    });
     fs.rmSync(config.dataDir, { recursive: true, force: true });
   }
 }
@@ -57,6 +60,10 @@ test('health, dev login, profile update and avatar upload', async () => {
     assert.equal(health.body.ok, true);
     assert.equal(health.body.devLogin, true);
 
+    const head = await fetch(base + '/api/health', { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(await head.text(), '');
+
     const login = await json(base, 'POST', '/api/login', { dev: true });
     assert.equal(login.status, 200);
     assert.ok(login.body.token);
@@ -77,11 +84,18 @@ test('health, dev login, profile update and avatar upload', async () => {
       data: `data:image/png;base64,${png.toString('base64')}`,
     }, login.body.token);
     assert.equal(uploaded.status, 200);
-    assert.match(uploaded.body.user.avatar, /^\/avatars\/.+\.png$/);
+    assert.match(uploaded.body.user.avatar, /^\/api\/me\/avatar\?v=[a-f0-9]{32}\.png$/);
 
-    const image = await fetch(base + uploaded.body.user.avatar);
+    const unauth = await fetch(base + uploaded.body.user.avatar);
+    assert.equal(unauth.status, 401);
+    await unauth.arrayBuffer();
+
+    const image = await fetch(base + uploaded.body.user.avatar, {
+      headers: { authorization: `Bearer ${login.body.token}` },
+    });
     assert.equal(image.status, 200);
     assert.equal(image.headers.get('content-type'), 'image/png');
+    assert.match(image.headers.get('cache-control') || '', /private/);
     assert.ok((await image.arrayBuffer()).byteLength >= 256);
   });
 });

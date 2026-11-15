@@ -139,8 +139,8 @@ npm start                     # 登录 + 云端日程服务，默认 :8787
 
 本地调试用「开发模式登录」（`ALLOW_DEV_LOGIN=1`），不需要先申请 AppID。导入项目后
 在开发者工具里勾选「不校验合法域名」，真机调试时把 `miniprogram/config.js` 的
-`apiBase` 改成电脑的局域网地址。正式环境需要 HTTPS 域名、`WX_APPID`/`WX_SECRET`
-和微信后台的 `request 合法域名` 配置。
+`apiBase` 改成电脑的局域网地址。正式环境需要 HTTPS 域名、`WX_APPID`/`WX_SECRET`、
+`DATA_KEY`/`INDEX_KEY`/`BACKUP_KEY` 和微信后台的 `request 合法域名` 配置。
 
 完整配置步骤（导入开发者工具、AppID、`.env`、常见登录错误）见
 [`微信小程序配置说明.md`](微信小程序配置说明.md)；其余细节见

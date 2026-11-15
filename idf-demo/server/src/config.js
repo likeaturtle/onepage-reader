@@ -26,8 +26,24 @@ function loadConfig(env = process.env) {
     tokenTtlDays: Math.max(1, Number(env.TOKEN_TTL_DAYS || 7)),
     maxAvatarBytes: Math.max(1024, Number(env.MAX_AVATAR_BYTES || 512 * 1024)),
     corsOrigin: env.CORS_ORIGIN || '*',
+    // Only enable behind a local reverse proxy that overwrites X-Real-IP.
+    trustProxy: env.TRUST_PROXY === '1',
     isProd: env.NODE_ENV === 'production',
     defaultSecret: DEFAULT_SECRET,
+
+    // At-rest encryption. Explicit keys are required in production; in
+    // development crypto.js derives stable fallbacks from SESSION_SECRET.
+    // Old keys are decrypt-only; Store re-encrypts records with the current
+    // key at startup, so rotation does not require downtime or user action.
+    dataKey: (env.DATA_KEY || '').trim(),
+    dataKeyId: (env.DATA_KEY_ID || 'k1').trim(),
+    dataOldKeys: (env.DATA_OLD_KEYS || '').trim(),
+    indexKey: (env.INDEX_KEY || '').trim(),
+    indexKeyId: (env.INDEX_KEY_ID || 'k1').trim(),
+    indexOldKeys: (env.INDEX_OLD_KEYS || '').trim(),
+
+    // Used by scripts/backup.js, never by the request path.
+    backupKey: (env.BACKUP_KEY || '').trim(),
   };
 }
 

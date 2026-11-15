@@ -7,13 +7,18 @@
 ```text
 server/
 ├── src/
-│   ├── server.js    进程入口（读 .env、监听、优雅退出）
+│   ├── server.js    进程入口（读 .env、密钥校验、监听、优雅退出）
 │   ├── app.js       HTTP 路由、鉴权、头像存储
 │   ├── config.js    环境变量
+│   ├── crypto.js    AES-256-GCM 字段加密 + openid HMAC 索引 + 密钥环
 │   ├── auth.js      HMAC token 签发/校验
-│   ├── store.js     JSON 文件用户/日程存储（原子写）
+│   ├── store.js     JSON 文件 v3 用户/日程存储（原子写、payload 加密）
+│   ├── backup.js    加密快照的创建/恢复
 │   └── wechat.js    code2session
-├── test/api.test.js node:test 用例
+├── scripts/
+│   ├── backup.js    npm run backup
+│   └── restore.js   npm run restore
+├── test/            node:test 用例（API / 加密 / 备份 / schema）
 ├── .env.example
 └── data/            users.json + events.json + avatars/（自动创建，已 gitignore）
 ```
@@ -24,10 +29,17 @@ server/
 
 ```bash
 cp .env.example .env
+openssl rand -base64 32   # DATA_KEY
+openssl rand -base64 32   # INDEX_KEY
+openssl rand -base64 32   # BACKUP_KEY
 npm start          # node --env-file-if-exists=.env src/server.js
 npm run dev        # 监听文件变化
 npm test
 ```
+
+开发环境不填 `DATA_KEY` / `INDEX_KEY` 时，会从 `SESSION_SECRET` 派生稳定密钥并打印警告；
+因此开发环境改 `SESSION_SECRET` 也会让旧数据无法解密。`NODE_ENV=production` 缺少任一密钥会
+拒绝启动。中途更换密钥必须把旧密钥放进 `DATA_OLD_KEYS` / `INDEX_OLD_KEYS`，否则已有数据无法解密。
 
 默认监听 `0.0.0.0:8787`。
 
@@ -42,9 +54,15 @@ npm test
 | `TOKEN_TTL_DAYS` | 登录有效期，默认 7 天 |
 | `DATA_DIR` | 用户数据目录，默认 `./data` |
 | `MAX_AVATAR_BYTES` | 头像大小上限，默认 512 KB |
-| `CORS_ORIGIN` | 浏览器测试时的 CORS 来源，默认 `*` |
+| `CORS_ORIGIN` | 浏览器测试时的 CORS 来源，默认 `*`；生产建议固定域名 |
+| `TRUST_PROXY` | `1` 时信任反代写入的 `X-Real-IP`，用于登录限流；仅在 Node 只监听回环地址时开启 |
+| `DATA_KEY` / `DATA_KEY_ID` | 昵称、日程标题/备注的 AES-256-GCM 密钥；生产必填 |
+| `DATA_OLD_KEYS` | 轮换时旧密钥，格式 `k0:<base64>,k1:<base64>`，只读解密 |
+| `INDEX_KEY` / `INDEX_KEY_ID` | openid HMAC 索引密钥；生产必填 |
+| `INDEX_OLD_KEYS` | 轮换时旧索引密钥，格式同上 |
+| `BACKUP_KEY` | `npm run backup` / `restore` 的独立备份密钥 |
 
-`WX_SECRET` 只放在服务端；小程序里只有 `apiBase`。
+`WX_SECRET`、`DATA_KEY`、`INDEX_KEY`、`BACKUP_KEY` 只放在服务端；小程序里只有 `apiBase`。
 
 ## API
 
@@ -56,6 +74,8 @@ npm test
 ```json
 {"ok":true,"wechat":false,"devLogin":true}
 ```
+
+也支持 `HEAD`，方便 `curl -I` 或只取状态码的探活。
 
 ### `POST /api/login`
 
@@ -75,12 +95,12 @@ npm test
 {"token":"...","user":{"id":"uuid","nickname":"","avatar":"","createdAt":"..."},"expiresIn":604800}
 ```
 
-`openid` 只保存在服务端，不返回给客户端。
+`openid` 只在服务端以 HMAC 索引 + 加密副本存在，不返回给客户端。
 
 ### `GET /api/me`
 
 ```json
-{"user":{"id":"uuid","nickname":"小页","avatar":"/avatars/uuid-176...png","createdAt":"..."}}
+{"user":{"id":"uuid","nickname":"小页","avatar":"/api/me/avatar?v=76884ac1...jpg","createdAt":"..."}}
 ```
 
 ### `POST /api/me`
@@ -98,7 +118,14 @@ npm test
 ```
 
 只接受 PNG / JPEG / WebP，解码后 100 B–512 KB，并校验文件头。返回更新后的 `user`。
-头像通过 `GET /avatars/<file>` 访问，带一年缓存头。
+服务端用随机文件名保存，`user.avatar` 是 `/api/me/avatar?v=<opaque-id>`。
+
+### `GET /api/me/avatar`
+
+需要 `Authorization`。只返回当前登录用户自己的头像，响应头是
+`cache-control: private, max-age=300`，不再是公开 URL。小程序端用
+`wx.downloadFile` 带 token 下载到临时文件，再交给 `<image>` 显示；
+正式环境还要把 API 域名加入微信后台的 `downloadFile 合法域名`。
 
 ### `GET /api/events`
 
@@ -113,7 +140,7 @@ GET /api/events?includeDeleted=1
 
 ```json
 {"events":[
-  {"id":"uuid","date":"2026-11-10","start":"09:00","end":"10:00",
+  {"id":"uuid","seq":1,"date":"2026-11-10","start":"09:00","end":"10:00",
    "title":"项目评审","note":"","deviceId":7,
    "createdAt":"...","updatedAt":"...","deletedAt":null}
 ]}
@@ -177,34 +204,115 @@ token 是无状态的，服务端不维护会话；客户端删除本地 token �
 一个账号按一台设备设计：`deviceId` 是设备固件分配的数字 id，固件没有序列号，
 多设备场景需要先增加设备绑定/唯一标识。
 
+## 加密与备份
+
+### 静态加密
+
+`users.json` / `events.json` 是 v3 格式：
+
+- `users`：`{ id, openidHash, openidEnc, profile, createdAt, lastLoginAt }`；
+  `profile` 是一个 AES-256-GCM 密文，里面是 `{ nickname, avatarId }`；
+- `events`：`{ id, seq, payload }`；`payload` 是一个密文，里面是
+  `{ date, start, end, title, note, deviceId, createdAt, updatedAt, deletedAt }`；
+  `seq` 是每个用户的同步游标，更新/删除也会递增；
+- `openid` 不落明文：只存 `INDEX_KEY` 的 HMAC 索引（`k1:<digest>`）和一份 `DATA_KEY` 加密的副本；
+- AAD 绑定 `user:<id>:profile` / `event:<userId>:<eventId>:payload`，把密文挪到别的用户或记录会解密失败；
+- 服务端现在只剩 `id`、`seq`、用户级时间戳这类元数据；日程时间、deviceId 已经进入密文。
+
+这个项目还没发布，所以只支持 v3，**没有 v1/v2 迁移代码**。如果读到旧 schema，
+服务进程会拒绝启动并提示删除旧数据目录，而不是猜测着改写。数据目录和文件权限会被收紧到
+`0700` / `0600`（含头像文件），头像使用随机文件名。
+
+### 密钥轮换
+
+1. 生成新 key，设为 `DATA_KEY` / `INDEX_KEY`，`*_KEY_ID` 改成新 id；
+2. 旧 key 放进 `*_OLD_KEYS`（格式 `k0:<base64>,k1:<base64>`）；
+3. 重启后旧记录仍可读；`openid` 索引在启动时用加密副本批量重算成新 key，不依赖用户重新登录；
+   profile、event payload、openid 副本会在同一次启动中被解密并用新 key 重写；
+4. 确认启动日志没有 `cannot re-encrypt` / `cannot refresh openid index` 警告后，移除 `*_OLD_KEYS`。
+
+`*_OLD_KEYS` 只用于解密，不会用旧 key 加密新数据。`INDEX_OLD_KEYS` 主要是给
+没有 `openidEnc` 的历史记录兜底；新数据在启动时就能重算索引。
+
+### 加密备份
+
+```bash
+npm run backup                    # 写到 backups/onepage-<timestamp>.backup.json
+npm run backup -- /path/to/dir    # 指定输出目录
+npm run restore -- backups/onepage-....backup.json [dataDir] [--force]
+```
+
+备份是 gzip + AES-256-GCM 的单文件，包含 `DATA_DIR` 下所有内容（含头像）。
+`BACKUP_KEY` 与 `DATA_KEY` 分开保管：备份泄露不会泄露在线数据，反之亦然。
+备份里不含密钥；换机器或灾难恢复时，必须同时取回 `DATA_KEY` / `INDEX_KEY`
+（否则恢复出来的密文无法解密）和 `BACKUP_KEY`。
+恢复前先停服务；建议恢复到空目录，目标目录非空需要 `--force`（不会删除目标里多出来的文件）。
+备份文件和密钥不要放在同一块盘上。
+日常建议用 cron 每天跑一次，并把 `backups/` 同步到异地加密存储。
+
+### 已知边界
+
+- 头像文件是私有鉴权访问，但字节仍是原图、未做服务端加密；E2EE 阶段会改成客户端加密；
+- `DATA_KEY` 在进程内存里，能读进程内存或拿到 root 的人仍能解密；
+- JSON 文件适合单实例小规模；多实例或更大规模应换数据库，并保留 payload 结构；
+- 只有端到端加密（E2EE）才能对客户宣称“服务端看不到日程”，当前方案没有做到这一点。
+
+### 下一步演进边界
+
+- **换数据库**：`users(id, openid_hash, profile, ...)`、`events(id, user_id, seq, payload)`、
+  `avatars(id, user_id, data)`。event 不要再加 `date` 明文列，否则 E2EE 时还要拆。
+- **做 E2EE**：`profile` / `payload` 改由客户端生成，服务端只存 opaque blob；
+  服务端不再解密，`from/to` 筛选移到客户端，改用 `seq` 做增量同步。
+- **头像**：现在是私有鉴权的原图；E2EE 时换成客户端密文，服务端仍然只负责存取。
+
 ## 安全说明
 
-- `ALLOW_DEV_LOGIN` 必须在生产关闭，否则任何人都能免密登录；
+- `ALLOW_DEV_LOGIN` 必须在生产关闭；`NODE_ENV=production` 且为 `1` 时直接拒绝启动；
 - `SESSION_SECRET` 使用默认值时，`NODE_ENV=production` 会拒绝启动；
+- 生产缺少 `DATA_KEY` / `INDEX_KEY` 时拒绝启动；开发环境的派生密钥只适合本机；
 - token 7 天过期，payload 只含用户 id 和 exp；签名用 `timingSafeEqual` 比较；
 - 登录接口有按 IP 的简单限流（30 次/分钟），内存实现，重启清零；
 - 小程序请求域名必须是 HTTPS 并加入 `request 合法域名`。本地 HTTP 只能在开发者工具
   勾选「不校验合法域名」后使用；
 - 用户数据是 JSON 文件（`users.json` / `events.json`），适合个人/小规模。要多实例部署时
   替换 `store.js` 为数据库，并给登录接口加分布式限流；
-- 事件接口都按 `user.id` 过滤，不能通过 id 读取别人的日程。
+- 事件接口都按 `user.id` 过滤，不能通过 id 读取别人的日程；
+- `GET /api/me/avatar` 需要 token，公开的 `/avatars/...` 已移除。
 
 ## 部署建议
 
 ```nginx
 server {
-  listen 443 ssl;
+  listen 80;
   server_name calendar.example.com;
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name calendar.example.com;
+
+  ssl_certificate     /etc/letsencrypt/live/calendar.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/calendar.example.com/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+
+  client_max_body_size 4m;  # avatar JSON body is capped at 3 MB by the app
 
   location / {
     proxy_pass http://127.0.0.1:8787;
+    proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 30s;
   }
 }
 ```
 
-- 用 systemd / pm2 守护进程，`NODE_ENV=production`；
-- 备份 `data/`（用户资料、云端日程和头像）；
-- 反向代理负责 HTTPS；Node 进程只监听回环地址或内网。
-- 如果小程序和网页同时使用，CORS 默认 `*` 足够（token 在 Header，不用 cookie）。
+- 用 systemd / pm2 守护进程，`NODE_ENV=production`，进程使用独立系统用户；
+- `HOST=127.0.0.1`、`TRUST_PROXY=1`，只让 nginx 访问 Node；不要直接暴露 8787；
+- 用 `npm run backup` 做加密备份，不要直接 `tar data/`；
+- 反向代理负责 HTTPS；Node 进程只监听回环地址或内网；
+- 如果小程序和网页同时使用，CORS 默认 `*` 足够（token 在 Header，不用 cookie），
+  生产建议收紧到固定域名。

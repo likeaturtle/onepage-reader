@@ -4,6 +4,7 @@ const auth = require('../../utils/auth');
 const api = require('../../utils/api');
 const ble = require('../../utils/ble');
 const fmt = require('../../utils/format');
+const avatar = require('../../utils/avatar');
 const config = require('../../config');
 
 const MAX_AVATAR_BYTES = 512 * 1024;
@@ -38,11 +39,16 @@ Page({
 
   sync() {
     const user = auth.getUser() || {};
+    const path = user.avatar || '';
     this.setData({
       user,
       initial: fmt.initial(user.nickname || '微信用户'),
-      avatarUrl: fmt.avatarUrl(user.avatar),
+      avatarUrl: '',
       nickname: user.nickname || '',
+    });
+    avatar.resolve(path).then((url) => {
+      const current = auth.getUser() || {};
+      if ((current.avatar || '') === path) this.setData({ avatarUrl: url });
     });
   },
 
@@ -110,6 +116,7 @@ Page({
         api.logout()
           .then(() => ble.disconnect().catch(() => null))
           .then(() => {
+            avatar.clear();
             auth.clear();
             wx.reLaunch({ url: '/pages/login/login' });
           });

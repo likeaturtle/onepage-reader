@@ -39,7 +39,8 @@ miniprogram/
 │   ├── frame.js                   按 \n 切行的增量解码器
 │   ├── api.js                     wx.request 封装、401 处理
 │   ├── auth.js                    登录态存储
-│   └── format.js                  日期、月份、事件分组、头像 URL
+│   ├── avatar.js                  带 token 下载头像，供 <image> 使用
+│   └── format.js                  日期、月份、事件分组
 ├── test/
 │   ├── protocol.test.js          UTF-8/分帧/20 字节分片
 │   ├── ble.mock.test.js          模拟微信 BLE 栈的端到端测试
@@ -89,10 +90,11 @@ npm start
 
 1. 在微信公众平台配置 `request 合法域名` 为登录服务的 HTTPS 域名；
 2. 服务端 `.env` 填 `WX_APPID`、`WX_SECRET`、随机 `SESSION_SECRET`，并把
-   `ALLOW_DEV_LOGIN` 设为 `0`；
+   `ALLOW_DEV_LOGIN` 设为 `0`；再生成 `DATA_KEY`、`INDEX_KEY`、`BACKUP_KEY`
+   （`openssl rand -base64 32`），缺少前两个生产环境会拒绝启动；
 3. `config.js` 的 `apiBase` 改为 `https://你的域名`，`devLogin` 改为 `false`；
-4. 头像使用 `<image>` 加载服务端 `/avatars/...`，如果使用独立图片域名，还要配置
-   `downloadFile 合法域名`（或直接把头像域名放在同一 API 域名下，本项目默认如此）。
+4. 头像走需要登录的 `GET /api/me/avatar`，小程序用 `wx.downloadFile` 带 token 下载到
+   临时文件再显示；该 API 域名要加入微信后台的 `downloadFile 合法域名`。
 
 ## 云端与设备的同步
 
@@ -133,8 +135,9 @@ npm start
 | POST | `/api/login` | `{code}` 微信登录，或 `{dev:true}` 开发登录；返回 `{token,user}` |
 | GET | `/api/me` | 读取当前用户 |
 | POST | `/api/me` | 修改昵称 `{nickname}` |
+| GET | `/api/me/avatar` | 下载自己的头像（需要 token） |
 | POST | `/api/me/avatar` | 上传头像 `{data:"data:image/png;base64,..."}` |
-| GET | `/api/events` | 云端日程列表，支持 `from`/`to`/`includeDeleted` |
+| GET | `/api/events` | 云端日程列表，支持 `from`/`to`/`includeDeleted`；每条带 `seq` |
 | POST | `/api/events` | 新增云端日程；返回 `{event}` |
 | DELETE | `/api/events/:id` | 软删除，保留 tombstone |
 | POST | `/api/events/:id/device` | 关联设备上的数字 id |

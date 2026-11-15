@@ -4,6 +4,7 @@ const config = require('../../config');
 const ble = require('../../utils/ble');
 const auth = require('../../utils/auth');
 const api = require('../../utils/api');
+const avatar = require('../../utils/avatar');
 const fmt = require('../../utils/format');
 
 const SYNC_PAST_DAYS = 7;
@@ -184,10 +185,15 @@ Page({
 
   syncUser() {
     const user = auth.getUser() || {};
+    const path = user.avatar || '';
     this.setData({
       user,
       userInitial: fmt.initial(user.nickname || '微信用户'),
-      userAvatar: fmt.avatarUrl(user.avatar),
+      userAvatar: '',
+    });
+    avatar.resolve(path).then((url) => {
+      const current = auth.getUser() || {};
+      if ((current.avatar || '') === path) this.setData({ userAvatar: url });
     });
   },
 
