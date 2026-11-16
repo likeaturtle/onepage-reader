@@ -22,6 +22,9 @@
   `tools/gen_brand_assets.py` 生成到 `components/brand/src/brand_logo.c`，不要手改
   （wordmark 从 `brand.h` 的名称 + Noto Sans CJK SC 渲染）。换 logo 或名称后重新跑
   生成脚本和 `tools/preview_calendar.py`。
+- 锁屏空状态的小程序码由 `tools/gen_qrcode.py` 从
+  `miniprogram/miniprogram_qrcode.jpg` 生成到 `components/brand/src/brand_qrcode.c`，
+  同样不要手改；换码或换链接后重新跑脚本和 `tools/preview_calendar.py`。
 - 电子墨水屏的三处品牌露出：冷启动 splash、锁屏、月/日/详情页顶栏；
   改布局时先用预览图确认 logo 不糊、名称不被挤压。
 - 顶栏固定用 30 px logo + 22 px wordmark（两者墨迹高都是 21 px，与 5x7 scale 3

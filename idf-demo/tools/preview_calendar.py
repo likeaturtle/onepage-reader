@@ -10,9 +10,9 @@ footer baseline at y=752.
     /Users/fujd/.espressif/tools/python/v6.1/venv/bin/python tools/preview_calendar.py
 
 Outputs tools/preview_month.png, preview_day.png, preview_detail.png,
-preview_delete.png, preview_sleep.png and preview_boot.png. It also reads the
-generated brand logo bitmaps so the top bar, lock screen and boot splash match
-the firmware exactly.
+preview_delete.png, preview_sleep.png, preview_sleep_empty.png and
+preview_boot.png. It also reads the generated brand logo bitmaps so the top
+bar, lock screen and boot splash match the firmware exactly.
 """
 
 import datetime as dt
@@ -59,7 +59,12 @@ PEEK_CARD_Y = MONTH_GRID_Y + MONTH_GRID_H + GAP_M
 PEEK_CARD_ROWS = 3
 BRAND_NAME = "墨程CalCal"
 BRAND_TAGLINE = "蓝牙墨水屏日历"
+BRAND_LOCK_SUBTITLE = "墨水屏日程表"
 LOCK_LOGO_Y = 24
+LOCK_TITLE_Y = 148
+LOCK_LIST_TOP = LOCK_TITLE_Y + BODY_H
+LOCK_EMPTY_QR_GAP = 32
+LOCK_EMPTY_LINE_GAP = 36
 BOOT_LOGO_Y = 230
 
 
@@ -98,19 +103,21 @@ def load_large():
 
 
 def load_brand_logos():
-    src = (BRAND_DIR / "src" / "brand_logo.c").read_text()
-    arrays = {}
-    for match in re.finditer(r"static const uint8_t k_(\w+)_bits\[\] = \{(.*?)\};",
-                             src, re.S):
-        arrays[match.group(1)] = bytes(
-            int(b, 16) for b in re.findall(r"0x([0-9A-Fa-f]{2})", match.group(2)))
     logos = {}
-    for match in re.finditer(
-            r"const brand_bitmap_t brand_(\w+) = "
-            r"\{(\d+), (\d+), k_(\w+)_bits\};", src):
-        name, width, height, key = match.groups()
-        logos[name.replace("logo_", "")] = (int(width), int(height), arrays[key])
-    assert {"boot", "lock", "header", "wordmark"} <= set(logos), "regenerate brand_logo.c"
+    arrays = {}
+    for src_path in sorted((BRAND_DIR / "src").glob("*.c")):
+        src = src_path.read_text()
+        for match in re.finditer(r"static const uint8_t k_(\w+)_bits\[\] = \{(.*?)\};",
+                                 src, re.S):
+            arrays[match.group(1)] = bytes(
+                int(b, 16) for b in re.findall(r"0x([0-9A-Fa-f]{2})", match.group(2)))
+        for match in re.finditer(
+                r"const brand_bitmap_t brand_(\w+) = "
+                r"\{(\d+), (\d+), k_(\w+)_bits\};", src):
+            name, width, height, key = match.groups()
+            logos[name.replace("logo_", "")] = (int(width), int(height), arrays[key])
+    assert {"boot", "lock", "header", "wordmark", "qrcode"} <= set(logos), \
+        "regenerate brand_logo.c / brand_qrcode.c"
     return logos
 
 
@@ -489,31 +496,40 @@ def detail_preview(confirm=False):
     s.save("preview_delete.png" if confirm else "preview_detail.png")
 
 
-def sleep_preview():
+def sleep_preview(empty=False):
     s = Screen()
     w, h, bits = BRAND["lock"]
     s.bitmap(MARGIN, LOCK_LOGO_Y, w, h, bits)
     s.text5x7(W - MARGIN - s.text5x7_width("15:57", 4), 26, "15:57", 4)
     s.text5x7(W - MARGIN - s.text5x7_width("11/09", 3), 68, "11/09", 3)
     s.text_utf8(MARGIN, 100, BRAND_NAME)
-    s.text_right(100, BRAND_TAGLINE)
+    s.text_right(100, BRAND_LOCK_SUBTITLE)
     s.hline(MARGIN, 136, CONTENT_W)
-    s.text_utf8(MARGIN, 148, "接下来的日程")
-    upcoming = EVENTS[:5]
-    for i, (when, start, _end, title, note) in enumerate(upcoming):
-        y = 184 + i * 104
-        s.text5x7(MARGIN, y + GAP_L, f"{when.month:02d}/{when.day:02d}", 3)
-        s.text5x7(MARGIN, y + 48, start, 3)
-        s.text_clipped(MARGIN + LIST_TIME_W + GAP_M, y + GAP_L, title,
-                       W - MARGIN - LIST_TIME_W - GAP_M - MARGIN)
-        if note:
-            s.text_clipped(MARGIN + LIST_TIME_W + GAP_M, y + 48, note,
+    s.text_utf8(MARGIN, LOCK_TITLE_Y, "接下来的日程")
+    if empty:
+        qr_w, qr_h, qr_bits = BRAND["qrcode"]
+        block_h = qr_h + LOCK_EMPTY_QR_GAP + LOCK_EMPTY_LINE_GAP + BODY_H
+        top = (LOCK_LIST_TOP + CONTENT_BOTTOM - block_h) // 2
+        s.bitmap((W - qr_w) // 2, top, qr_w, qr_h, qr_bits)
+        s.centered(top + qr_h + LOCK_EMPTY_QR_GAP, "近期没有日程")
+        s.centered(top + qr_h + LOCK_EMPTY_QR_GAP + LOCK_EMPTY_LINE_GAP,
+                   "手机网页可通过蓝牙添加")
+    else:
+        upcoming = EVENTS[:5]
+        for i, (when, start, _end, title, note) in enumerate(upcoming):
+            y = 184 + i * 104
+            s.text5x7(MARGIN, y + GAP_L, f"{when.month:02d}/{when.day:02d}", 3)
+            s.text5x7(MARGIN, y + 48, start, 3)
+            s.text_clipped(MARGIN + LIST_TIME_W + GAP_M, y + GAP_L, title,
                            W - MARGIN - LIST_TIME_W - GAP_M - MARGIN)
-        if i < len(upcoming) - 1:
-            s.hline(MARGIN, y + 103, CONTENT_W)
+            if note:
+                s.text_clipped(MARGIN + LIST_TIME_W + GAP_M, y + 48, note,
+                               W - MARGIN - LIST_TIME_W - GAP_M - MARGIN)
+            if i < len(upcoming) - 1:
+                s.hline(MARGIN, y + 103, CONTENT_W)
     s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
     power_hint(s, FOOTER_TEXT_Y)
-    s.save("preview_sleep.png")
+    s.save("preview_sleep_empty.png" if empty else "preview_sleep.png")
 
 
 def boot_preview():
@@ -534,6 +550,7 @@ def main():
     detail_preview(False)
     detail_preview(True)
     sleep_preview()
+    sleep_preview(empty=True)
     boot_preview()
 
 

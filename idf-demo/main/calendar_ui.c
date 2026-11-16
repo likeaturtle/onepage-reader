@@ -556,8 +556,34 @@ static void draw_power_hint(uint8_t *fb, int y) {
   gfx_text_utf8(fb, x, y, "唤醒", true);
 }
 
+/* Section title and the top of the list band on the lock screen; the empty
+ * state centers its block between this and CONTENT_BOTTOM. */
+#define LOCK_TITLE_Y 148
+#define LOCK_LIST_TOP (LOCK_TITLE_Y + BODY_H) /* 172 */
+/* Empty state: 32 px between the mini program code and the first hint, 36 px
+ * between the hints (the same line step as the event rows). */
+#define LOCK_EMPTY_QR_GAP 32
+#define LOCK_EMPTY_LINE_GAP 36
+
+/* Nothing upcoming: the phone can add events by scanning the mini program
+ * code, so the code sits above the two hints and the whole block is centered
+ * in the list band instead of sitting at the top of a page with no rows. */
+static void draw_lock_empty(uint8_t *fb) {
+  const int qr_w = (int)brand_qrcode.width;
+  const int qr_h = (int)brand_qrcode.height;
+  const int block_h = qr_h + LOCK_EMPTY_QR_GAP + LOCK_EMPTY_LINE_GAP + BODY_H;
+  const int top = (LOCK_LIST_TOP + CONTENT_BOTTOM - block_h) / 2;
+
+  gfx_bitmap(fb, (UI_W - qr_w) / 2, top, qr_w, qr_h, brand_qrcode.bits, true);
+  draw_centered(fb, top + qr_h + LOCK_EMPTY_QR_GAP, "近期没有日程", true);
+  draw_centered(fb, top + qr_h + LOCK_EMPTY_QR_GAP + LOCK_EMPTY_LINE_GAP,
+                "手机网页可通过蓝牙添加", true);
+}
+
 /* The lock screen is the brand's hero surface: the mark and the product name
- * stay on the glass while the device is parked, followed by the next events. */
+ * stay on the glass while the device is parked, followed by the next events.
+ * The line next to the name is the short lock-screen subtitle, not the
+ * tagline, so it still fits beside it at 24 px. */
 void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view) {
   gfx_clear(fb, true);
 
@@ -575,13 +601,12 @@ void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view) {
   gfx_text(fb, UI_W - MARGIN - date_w, 68, date, 3, true);
 
   gfx_text_utf8(fb, MARGIN, 100, BRAND_NAME, true);
-  draw_right(fb, 100, BRAND_TAGLINE, true);
+  draw_right(fb, 100, BRAND_LOCK_SUBTITLE, true);
   gfx_hline(fb, MARGIN, 136, CONTENT_W, true);
-  gfx_text_utf8(fb, MARGIN, 148, "接下来的日程", true);
+  gfx_text_utf8(fb, MARGIN, LOCK_TITLE_Y, "接下来的日程", true);
 
   if (view->count == 0) {
-    draw_centered(fb, 414, "近期没有日程", true);
-    draw_centered(fb, 450, "手机网页可通过蓝牙添加", true);
+    draw_lock_empty(fb);
   } else {
     const int max_rows = view->count > 5 ? 5 : view->count;
     for (int i = 0; i < max_rows; i++) {

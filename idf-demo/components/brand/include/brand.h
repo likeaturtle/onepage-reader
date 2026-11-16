@@ -16,6 +16,9 @@
  * reports BRAND_NAME. */
 #define BRAND_DEVICE_NAME "Mochen CalCal"
 #define BRAND_TAGLINE "蓝牙墨水屏日历"
+/* Shorter, schedule-oriented line drawn next to BRAND_NAME on the lock
+ * screen; the full tagline stays on the cold-boot splash. */
+#define BRAND_LOCK_SUBTITLE "墨水屏日程表"
 #define BRAND_FW_VERSION "1.0.0"
 
 /* 1-bit, row-major brand bitmap. MSB is the leftmost pixel and a set bit
@@ -40,3 +43,6 @@ extern const brand_bitmap_t brand_logo_header;
  * brand keeps a proper pixel baseline at a smaller size than the 24 px CJK
  * table. */
 extern const brand_bitmap_t brand_wordmark;
+/* 248x248 WeChat mini program code shown on the empty lock screen; generated
+ * by tools/gen_qrcode.py from miniprogram/miniprogram_qrcode.jpg. */
+extern const brand_bitmap_t brand_qrcode;

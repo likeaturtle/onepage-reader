@@ -746,3 +746,34 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
 - 新增 `draw_power_hint()`：把“按 / POWER / 唤醒”分三段画，前间距 18 px、后间距
   15 px 补偿 R 的尾部空白，两侧墨迹间隙都变成 20 px。
 - `tools/preview_calendar.py` 的 `power_hint()` 同步实现。
+
+### 16.16 锁屏副标题改为“墨水屏日程表”
+
+- 锁屏名称行右侧原先是 `BRAND_TAGLINE`（“蓝牙墨水屏日历”，24 px，7 字 = 175 px）。
+  现在改为新增的 `BRAND_LOCK_SUBTITLE = "墨水屏日程表"`（6 字 = 150 px，右对齐后
+  x=300..450），与左侧 `墨程CalCal`（x=30..188）之间留 112 px，不挤压。
+- 冷启动 splash 仍然用 `BRAND_TAGLINE`；`BRAND_LOCK_SUBTITLE` 只在锁屏使用，
+  两个字符串都只定义在 `brand.h`。
+- 时钟/日期保持原样（scale 4 在 y=26、scale 3 在 y=68）。中间试过“删掉副标题、
+  时钟/日期放大到 scale 6/5 填满右上角”的方案：右侧墨块过重、和左边 96x67 的 logo
+  不均衡，已回退，不要再放大。
+- `tools/preview_calendar.py` 的锁屏预览同步。
+
+### 16.17 锁屏空状态加小程序码
+
+- 没有待办日程时，锁屏在“接下来的日程”下方居中显示小程序码（248x248）加原来的
+  两行提示；有日程时列表布局完全不变。
+- 码源是 `miniprogram/miniprogram_qrcode.jpg`（258x258 的微信小程序码）。新增
+  `tools/gen_qrcode.py`，生成 `components/brand/src/brand_qrcode.c`（1-bit，
+  7.5 KB）和供眼睛检查的 `tools/preview_qrcode.png`（2x 最近邻放大）。
+- 生成脚本先按墨迹 bbox 取正方形（bbox 因右下角绿色小程序角标略偏，直接裁会
+  偏心），再按 `gen_brand_assets.py` 的阈值 160 二值化，JPEG 的白边被裁掉——面板上
+  码四周的白画布就是扫码需要的静区。
+- 版式：`LOCK_TITLE_Y = 148`、`LOCK_LIST_TOP = 172`，码与提示间距 32 px、两行提示
+  间距 36 px；整块高 248 + 32 + 36 + 24 = 340，居中于 172..732 得 QR 282..530、
+  提示 562/598，上下各留 110 px。`draw_lock_empty()` 只算一次 `top`。
+- `brand_qrcode` 在 `brand.h` 声明、由 `components/brand/CMakeLists.txt` 编进
+  `brand` 组件；`tools/preview_calendar.py` 改为扫描 `brand/src/*.c`，并新增
+  `preview_sleep_empty.png`。
+- 未验证：面板 4.26"、480 px 宽约 55.7 mm，248 px 的码约 **2.9 cm**，尺寸够扫码但
+  必须真机用微信实测；1-bit 二值化把中间的 logo 和小程序角标画成实心，属于预期。

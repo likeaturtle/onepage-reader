@@ -54,8 +54,10 @@ confirmation box, so a single accidental click cannot remove an event.
 
 On the panel: the top bar carries the brand lockup (logo + `墨程CalCal`) on
 the left; battery, clock and the BLE icon form a right-aligned cluster, with
-the BLE icon at the far right and 14 px between the three. The lock screen repeats the large logo, product name and tagline above
-the next five events. The BLE state is icon-only:
+the BLE icon at the far right and 14 px between the three. The lock screen
+repeats the large logo, the product name and the `墨水屏日程表` subtitle
+above the next five events; with nothing upcoming it shows the mini program
+code instead, centered above the two hint lines. The BLE state is icon-only:
 outline while advertising, white-on-black on a rounded badge while connected,
 and a 50% dither (fake gray) when the radio failed.
 Every screen uses one 30 px margin on the 480 px canvas (420 px of content).
@@ -408,14 +410,16 @@ The following is what to verify on a real board. Compilation cannot cover these:
    The expected dominant state is deep sleep. Also measure advertising-only
    current while advertising (light sleep is disabled on this board).
 7. **Sleep screen** — POWER, idle timeout and the web page's sleep button all
-   show the logo, `墨程CalCal`, the tagline and the next 5 events, and wake on
-   POWER with the month view.
+   show the logo, `墨程CalCal`, the `墨水屏日程表` subtitle and the next 5
+   events, and wake on POWER with the month view. With no upcoming events the
+   list area shows the mini program code plus the two hints, vertically
+   centered; check it scans with WeChat.
 8. **NVS capacity** — add events until pruning starts; confirm the newest /
    upcoming events survive and the phone sees `pruned` / `calendar full` as
    appropriate.
 9. **Brand rendering** — cold boot shows the logo splash, the top bar keeps the
    logo + `墨程CalCal` legible next to BLE/battery/clock, and the lock screen
-   shows the logo/name/tagline without clipping; `CalCal` keeps its
+   shows the logo/name/subtitle without clipping; `CalCal` keeps its
    capitalisation.
 
 The validation status in this repository is **build + offline UI preview**.
