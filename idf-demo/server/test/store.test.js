@@ -24,7 +24,7 @@ function makeKeys(overrides = {}) {
 }
 
 function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'onepage-store-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'mocheng-calcal-store-'));
 }
 
 function readJson(file) {

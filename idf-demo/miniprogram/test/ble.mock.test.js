@@ -81,7 +81,7 @@ class FakeWx {
     setTimeout(() => {
       options.success({});
       // The firmware sends hello as soon as TX notifications are enabled.
-      this.notify({ ev: 'hello', proto: 1, fw: '1.0.0', name: 'Mochen CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
+      this.notify({ ev: 'hello', proto: 1, fw: '1.0.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
     }, 0);
   }
 
@@ -103,7 +103,7 @@ class FakeWx {
   handleCommand(command) {
     this.commands.push(command);
     if (command.cmd === 'hello') {
-      this.notify({ ev: 'hello', proto: 1, fw: '1.0.0', name: 'Mochen CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
+      this.notify({ ev: 'hello', proto: 1, fw: '1.0.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
     } else if (command.cmd === 'time') {
       this.notify({ ok: true, cmd: 'time', local: '2026-11-10 10:00', persist: true });
     } else if (command.cmd === 'add') {
@@ -167,7 +167,7 @@ test('BLE client connects, parses streamed events and chunks writes at 20 bytes'
   const ble = require('../utils/ble');
 
   const hello = await ble.connect('device-1');
-  assert.equal(hello.name, 'Mochen CalCal');
+  assert.equal(hello.name, '墨程CalCal');
   assert.equal(ble.isConnected(), true);
 
   const events = await ble.list('2026-11-01', '2026-11-30');

@@ -19,7 +19,13 @@ void gfx_grid(uint8_t *fb, int x, int y, int w, int h, int cell, bool black);
 /* 0..16: number of lit pixels out of 16 in a 4x4 dither block (screen tone). */
 void gfx_dither_rect(uint8_t *fb, int x, int y, int w, int h, int level);
 
-/* 5x7 bitmap text. `scale` 1..4 (each glyph cell is 6*scale x 8*scale). */
+/* Draws a 1-bit row-major bitmap (MSB first, set bit = ink) whose rows are
+ * padded to a whole byte. Used for the brand logo. */
+void gfx_bitmap(uint8_t *fb, int x, int y, int w, int h, const uint8_t *bits, bool black);
+
+/* 5x7 bitmap text. `scale` 1..4 (each glyph cell is 6*scale x 8*scale). The
+ * ink is drawn on the bottom 7 rows of that cell, so ASCII/digits share the
+ * 24 px CJK baseline instead of sitting one row high. */
 void gfx_text(uint8_t *fb, int x, int y, const char *s, int scale, bool black);
 int gfx_text_width(const char *s, int scale);
 

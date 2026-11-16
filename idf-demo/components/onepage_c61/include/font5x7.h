@@ -2,15 +2,16 @@
 
 #include <stdint.h>
 
-/* Classic 5x7 bitmap font covering ASCII 0x20..0x5F (space, digits, uppercase
- * letters and punctuation).
+/* Classic 5x7 bitmap font covering ASCII 0x20..0x7A (space, digits, upper and
+ * lower case letters and punctuation). Lower case is included so the product
+ * name "CalCal" keeps its capitalisation on the panel.
  *
  * Layout: one 5-byte column per glyph, least significant bit is the top row.
  * A glyph occupies a 6x8 cell (5 columns plus one spacing column, 7 rows plus
  * one spacing row) so scaled text stays on a clean grid. */
 
 #define FONT5X7_FIRST_CHAR 0x20
-#define FONT5X7_LAST_CHAR 0x5F
+#define FONT5X7_LAST_CHAR 0x7A
 #define FONT5X7_WIDTH 5
 #define FONT5X7_HEIGHT 7
 

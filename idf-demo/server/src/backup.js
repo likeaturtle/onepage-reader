@@ -98,7 +98,7 @@ function restoreBackup({ file, dataDir, key, force = false }) {
   const envelope = JSON.parse(fs.readFileSync(file, 'utf8'));
 
   if (!envelope || envelope.magic !== MAGIC || envelope.v !== VERSION) {
-    throw new Error('not a OnePage backup file');
+    throw new Error('not a 墨程CalCal backup file (expected the ONEPAGE-BACKUP magic)');
   }
 
   const iv = Buffer.from(envelope.iv, 'base64');

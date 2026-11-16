@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "gfx.h"
+#include "brand.h"
 #include "onepage_pins.h"
 
 #define UI_W ONEPAGE_UI_WIDTH
@@ -17,11 +18,11 @@
  *
  * Type: one body size of 24 px (ASCII 5x7 at scale 3, CJK 24 px bitmap) for
  * every label, title, number and footer hint. Only the lock screen steps out
- * of it: 48 px headline and 32 px clock.
+ * of it: the brand logo/name and a 32 px clock.
  *
- * Vertical rhythm: body line 24 px, gaps of 8 / 12 / 16 px, and a shared
- * footer baseline 24 px above the bottom edge. Content never enters the
- * band between CONTENT_BOTTOM and the footer rule. */
+ * Vertical rhythm: body line 24 px, gaps of 8 / 12 / 16 px, a taller 64 px
+ * top bar and a shorter footer with its baseline 12 px above the bottom edge.
+ * The scrollable content band keeps the same height as before. */
 #define MARGIN 30
 #define CONTENT_W (UI_W - 2 * MARGIN)
 #define BODY_H 24
@@ -29,19 +30,32 @@
 #define GAP_M 12
 #define GAP_L 16
 
-#define HEADER_TEXT_Y 14
-#define HEADER_RULE_Y 52
-#define TITLE_Y 68
+#define HEADER_RULE_Y 64
+/* Ink baseline shared by the header logo, wordmark and status text. */
+#define HEADER_BASELINE_Y 48
+#define HEADER_STATUS_SCALE 3
+#define HEADER_STATUS_Y (HEADER_BASELINE_Y - 8 * HEADER_STATUS_SCALE) /* 18 */
+#define HEADER_STATUS_INK_H (7 * HEADER_STATUS_SCALE)                /* 21 */
+#define HEADER_BLE_Y (HEADER_BASELINE_Y - HEADER_STATUS_INK_H)       /* 27 */
+#define HEADER_WORD_GAP 8
+/* Right cluster: battery, clock, BLE icon, separated by this gap. */
+#define HEADER_RIGHT_GAP 14
+#define HEADER_BLE_SLOT_W 18
+#define TITLE_Y 80
+/* The day agenda gives its date row more air above and below than the month
+ * title: 24 px from the header rule and 24 px to the event list. */
+#define DAY_TITLE_Y (TITLE_Y + 8) /* 88 */
+#define DAY_BODY_GAP 24
 
-#define FOOTER_TEXT_Y (UI_H - 24 - BODY_H)      /* 752 */
-#define FOOTER_RULE_Y (FOOTER_TEXT_Y - GAP_L)   /* 736 */
-#define CONTENT_BOTTOM (FOOTER_RULE_Y - GAP_L)  /* 720 */
+#define FOOTER_TEXT_Y (UI_H - 12 - BODY_H)      /* 764 */
+#define FOOTER_RULE_Y (FOOTER_TEXT_Y - GAP_L)   /* 748 */
+#define CONTENT_BOTTOM (FOOTER_RULE_Y - GAP_L)  /* 732 */
 
 /* "09:00" in the 5x7 font at scale 3 is 5 * 18 px wide. Every event row
  * (month card, day agenda, lock screen) puts its title 12 px after it. */
 #define LIST_TIME_W (5 * 18)
 
-#define MONTH_GRID_Y 140
+#define MONTH_GRID_Y 152
 #define MONTH_GRID_H 420 /* five 84 px rows or six 70 px rows, never both */
 #define MONTH_CELL_W 60
 /* The peek card is docked below the grid with the same 30 px edges, so the
@@ -132,21 +146,23 @@ static void fill_round_rect(uint8_t *fb, int x, int y, int w, int h, bool black)
 
 /* Bluetooth glyph for the header: plain outline while advertising, white on a
  * black rounded badge while a phone is connected, and a 50% dither (the only
- * "gray" a 1-bit panel can show) when the radio failed to start. It replaces
- * the old text label so the top bar carries no status text. */
+ * "gray" a 1-bit panel can show) when the radio failed to start. The whole
+ * icon occupies HEADER_STATUS_INK_H (21 px) rows, exactly the battery/clock
+ * digit ink height, and shares their bottom edge. */
 static void draw_ble_icon(uint8_t *fb, int x, int y, bool available, bool connected) {
   const bool inverted = available && connected;
   if (inverted) {
-    fill_round_rect(fb, x - 2, y - 3, 18, 28, true);
+    fill_round_rect(fb, x - 2, y, 18, HEADER_STATUS_INK_H, true);
   }
   const bool ink = !inverted;
   const int cx = x + 7;
   const int right = x + 13;
-  const int top = y;
-  const int bottom = y + 21;
-  const int q1 = y + 5;
-  const int mid = y + 11;
-  const int q3 = y + 16;
+  /* 2 px brush: line centers at y+1..y+20 cover exactly y..y+20 (21 rows). */
+  const int top = y + (inverted ? 2 : 1);
+  const int bottom = y + (inverted ? 18 : 20);
+  const int q1 = y + (inverted ? 6 : 5);
+  const int mid = y + 10;
+  const int q3 = y + (inverted ? 14 : 15);
 
   gfx_line(fb, cx, top, cx, bottom, 2, ink);
   gfx_line(fb, cx, top, right, q1, 2, ink);
@@ -158,53 +174,53 @@ static void draw_ble_icon(uint8_t *fb, int x, int y, bool available, bool connec
   gfx_line(fb, cx, mid, x + 1, q3 + 1, 2, ink);
 
   if (!available) {
-    for (int j = 0; j < 24; j++) {
+    for (int j = 0; j < HEADER_STATUS_INK_H; j++) {
       for (int i = 0; i < 16; i++) {
         if (((i + j) & 1) == 0) {
-          gfx_pixel(fb, x - 1 + i, y - 1 + j, false);
+          gfx_pixel(fb, x - 1 + i, y + j, false);
         }
       }
     }
   }
 }
 
-/* Dithered "!" shown to the left of the BLE glyph when the radio failed. The
- * 50% checkerboard makes it gray like the icon, so it reads as a warning
- * rather than a second status symbol. */
-static void draw_ble_warning(uint8_t *fb, int x, int y) {
-  gfx_fill_rect(fb, x, y, 4, 12, true);
-  gfx_fill_rect(fb, x, y + 16, 4, 4, true);
-  for (int j = 0; j < 22; j++) {
-    for (int i = 0; i < 6; i++) {
-      if (((i + j) & 1) == 0) {
-        gfx_pixel(fb, x - 1 + i, y - 1 + j, false);
-      }
-    }
-  }
+/* Top bar: logo + compact wordmark on the left; battery, clock and the BLE
+ * icon form a right-aligned cluster with the radio state at the far right.
+ * The wordmark bitmap replaces a second 24 px CJK lockup so the bar can be
+ * taller while the type stays small; the bitmap and the status text are
+ * positioned from one ink baseline. */
+static void draw_brand_header(uint8_t *fb) {
+  int x = MARGIN;
+  gfx_bitmap(fb, x, HEADER_BASELINE_Y - brand_logo_header.height, brand_logo_header.width,
+             brand_logo_header.height, brand_logo_header.bits, true);
+  x += brand_logo_header.width + HEADER_WORD_GAP;
+  gfx_bitmap(fb, x, HEADER_BASELINE_Y - brand_wordmark.height, brand_wordmark.width,
+             brand_wordmark.height, brand_wordmark.bits, true);
 }
 
-/* Top bar: BLE state and battery on the left, clock on the right. All three
- * share one 24 px cap height; only the icon is shorter. */
 static void draw_header(uint8_t *fb, const ui_status_t *status) {
-  int icon_x = MARGIN;
-  if (!status->ble_available) {
-    draw_ble_warning(fb, MARGIN, HEADER_TEXT_Y + 1);
-    icon_x = MARGIN + GAP_S;
-  }
-  draw_ble_icon(fb, icon_x, HEADER_TEXT_Y, status->ble_available, status->ble_connected);
+  draw_brand_header(fb);
 
+  char clock[8];
+  format_clock(status, clock, sizeof(clock));
   char battery[8];
   if (status->battery_valid) {
     snprintf(battery, sizeof(battery), "%u%%", (unsigned)status->battery_pct);
   } else {
     snprintf(battery, sizeof(battery), "--%%");
   }
-  gfx_text(fb, icon_x + 26, HEADER_TEXT_Y, battery, 3, true);
 
-  /* Right: clock. */
-  char clock[8];
-  format_clock(status, clock, sizeof(clock));
-  gfx_text(fb, UI_W - MARGIN - gfx_text_width(clock, 3), HEADER_TEXT_Y, clock, 3, true);
+  /* The connected badge is 18 px wide and starts at icon_x - 2, so this pins
+   * the visual right edge to the content margin. */
+  const int icon_x = UI_W - MARGIN - HEADER_BLE_SLOT_W + 2;
+  const int clock_x =
+      icon_x - HEADER_RIGHT_GAP - gfx_text_width(clock, HEADER_STATUS_SCALE);
+  const int battery_x =
+      clock_x - HEADER_RIGHT_GAP - gfx_text_width(battery, HEADER_STATUS_SCALE);
+
+  draw_ble_icon(fb, icon_x, HEADER_BLE_Y, status->ble_available, status->ble_connected);
+  gfx_text(fb, battery_x, HEADER_STATUS_Y, battery, HEADER_STATUS_SCALE, true);
+  gfx_text(fb, clock_x, HEADER_STATUS_Y, clock, HEADER_STATUS_SCALE, true);
 
   gfx_hline(fb, MARGIN, HEADER_RULE_Y, CONTENT_W, true);
 }
@@ -258,7 +274,11 @@ static void draw_peek_card(uint8_t *fb, const ui_month_t *view) {
   if (shown > 0) {
     char total[16];
     snprintf(total, sizeof(total), "%d 条", view->peek_total);
-    draw_right(fb, y + GAP_M, total, true);
+    /* Keep the count inside the card's inner border: draw_right() aligns to
+     * the screen margin (x=450), which is outside the inner frame at x=446.
+     * Right-align to the same 16 px padding as the title instead. */
+    const int total_w = gfx_text_utf8_width(total);
+    gfx_text_utf8(fb, x + w - GAP_L - total_w, y + GAP_M, total, true);
   }
 
   gfx_hline(fb, x + GAP_L, y + 44, w - 2 * GAP_L, true);
@@ -377,10 +397,10 @@ void ui_draw_day(uint8_t *fb, const ui_day_t *view) {
 
   char date[24];
   format_day_label(view->day, false, date, sizeof(date));
-  gfx_text_utf8(fb, MARGIN, TITLE_Y, date, true);
+  gfx_text_utf8(fb, MARGIN, DAY_TITLE_Y, date, true);
   const int weekday = calendar_weekday(view->day);
   const int date_w = gfx_text_utf8_width(date);
-  gfx_text_utf8(fb, MARGIN + date_w + GAP_M, TITLE_Y, kWeekdayFull[weekday], true);
+  gfx_text_utf8(fb, MARGIN + date_w + GAP_M, DAY_TITLE_Y, kWeekdayFull[weekday], true);
 
   int first = 0;
   if (view->selected >= 8) {
@@ -401,11 +421,11 @@ void ui_draw_day(uint8_t *fb, const ui_day_t *view) {
     } else {
       snprintf(count, sizeof(count), "%d 条", view->count);
     }
-    draw_right(fb, TITLE_Y, count, true);
+    draw_right(fb, DAY_TITLE_Y, count, true);
   }
 
-  gfx_hline(fb, MARGIN, TITLE_Y + BODY_H + GAP_M, CONTENT_W, true);
-
+  /* No rule under the date: the 64 px header rule already separates the
+   * status bar, and a second line 52 px below it reads as a duplicate. */
   if (view->count == 0) {
     draw_centered(fb, 390, "这天没有日程", true);
     draw_centered(fb, 426, "打开手机网页，通过蓝牙添加", true);
@@ -413,7 +433,7 @@ void ui_draw_day(uint8_t *fb, const ui_day_t *view) {
     return;
   }
 
-  const int list_y = TITLE_Y + BODY_H + GAP_M + GAP_L;
+  const int list_y = DAY_TITLE_Y + BODY_H + DAY_BODY_GAP;
   const int row_h = 72;
   const int time_x = MARGIN;
   const int text_x = MARGIN + LIST_TIME_W + GAP_M;
@@ -518,24 +538,46 @@ void ui_draw_detail(uint8_t *fb, const ui_detail_t *view) {
 
 /* --- sleep screen ------------------------------------------------------- */
 
+/* "按 POWER 唤醒" needs optical spacing: the 5x7 POWER run ends with three
+ * blank columns in its last cell, so a normal 18 px space after R looks 3 px
+ * wider than the space before POWER. Draw the three runs explicitly with a
+ * 20 px optical gap on both sides (18 px advance before, 15 px after). */
+static void draw_power_hint(uint8_t *fb, int y) {
+  const int left_w = gfx_text_utf8_width("按");
+  const int key_w = gfx_text_width("POWER", 3);
+  const int right_w = gfx_text_utf8_width("唤醒");
+  const int gap_before = 18;
+  const int gap_after = 15;
+  int x = (UI_W - (left_w + gap_before + key_w + gap_after + right_w)) / 2;
+  gfx_text_utf8(fb, x, y, "按", true);
+  x += left_w + gap_before;
+  gfx_text(fb, x, y, "POWER", 3, true);
+  x += key_w + gap_after;
+  gfx_text_utf8(fb, x, y, "唤醒", true);
+}
+
+/* The lock screen is the brand's hero surface: the mark and the product name
+ * stay on the glass while the device is parked, followed by the next events. */
 void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view) {
   gfx_clear(fb, true);
 
-  const int top_y = 30;
-  gfx_text_cjk_large(fb, MARGIN, top_y, "休眠中", 2, true);
+  gfx_bitmap(fb, MARGIN, 24, brand_logo_lock.width, brand_logo_lock.height,
+             brand_logo_lock.bits, true);
 
   char clock[8];
   format_clock(&view->status, clock, sizeof(clock));
   const int clock_w = gfx_text_width(clock, 4);
-  gfx_text(fb, UI_W - MARGIN - clock_w, top_y, clock, 4, true);
+  gfx_text(fb, UI_W - MARGIN - clock_w, 26, clock, 4, true);
 
   char date[8];
   format_day_ascii(calendar_today(), date, sizeof(date));
   const int date_w = gfx_text_width(date, 3);
-  gfx_text(fb, UI_W - MARGIN - date_w, top_y + 40, date, 3, true);
+  gfx_text(fb, UI_W - MARGIN - date_w, 68, date, 3, true);
 
-  gfx_hline(fb, MARGIN, 114, CONTENT_W, true);
-  gfx_text_utf8(fb, MARGIN, 128, "接下来的日程", true);
+  gfx_text_utf8(fb, MARGIN, 100, BRAND_NAME, true);
+  draw_right(fb, 100, BRAND_TAGLINE, true);
+  gfx_hline(fb, MARGIN, 136, CONTENT_W, true);
+  gfx_text_utf8(fb, MARGIN, 148, "接下来的日程", true);
 
   if (view->count == 0) {
     draw_centered(fb, 414, "近期没有日程", true);
@@ -544,7 +586,7 @@ void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view) {
     const int max_rows = view->count > 5 ? 5 : view->count;
     for (int i = 0; i < max_rows; i++) {
       const cal_event_t *event = &view->events[i];
-      const int y = 168 + i * 104;
+      const int y = 184 + i * 104;
 
       char day_text[8];
       char time_text[6];
@@ -566,7 +608,25 @@ void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view) {
   }
 
   gfx_hline(fb, MARGIN, FOOTER_RULE_Y, CONTENT_W, true);
-  draw_centered(fb, FOOTER_TEXT_Y, "按 POWER 唤醒  蓝牙日历", true);
+  draw_power_hint(fb, FOOTER_TEXT_Y);
+}
+
+/* --- boot splash -------------------------------------------------------- */
+
+/* Painted once on a cold boot before the first calendar frame; the e-ink
+ * keeps it for the short hold in main.c, then swaps to the month view. */
+void ui_draw_boot(uint8_t *fb) {
+  gfx_clear(fb, true);
+
+  const int logo_y = 230;
+  gfx_bitmap(fb, (UI_W - (int)brand_logo_boot.width) / 2, logo_y, brand_logo_boot.width,
+             brand_logo_boot.height, brand_logo_boot.bits, true);
+
+  const int name_y = logo_y + (int)brand_logo_boot.height + 32;
+  draw_centered(fb, name_y, BRAND_NAME, true);
+  draw_centered(fb, name_y + 36, BRAND_TAGLINE, true);
+  gfx_hline(fb, (UI_W - 120) / 2, name_y + 92, 120, true);
+  draw_centered(fb, name_y + 108, "ESP32-C61 / BLE", true);
 }
 
 void ui_draw_toast(uint8_t *fb, const char *text) {

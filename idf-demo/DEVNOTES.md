@@ -1,14 +1,18 @@
-# OnePage C61 — 开发记录
+# 墨程CalCal（OnePage C61）— 开发记录
 
 `README.md` 讲怎么用这个 demo；这份讲**为什么这样写、环境是什么、哪些坑踩过了**，
 以及后面基于它继续开发时从哪里接。硬件相关的结论都来自厂商 BSP
 (`../firmware/open-onepage-sdk`) 和真机验证，不是推测。
 
-最后更新：2026-11-09
+最后更新：2026-11-16
 
 ------
 
 ## 1. 当前状态
+
+> 2026-11-16：产品定名 **墨程CalCal**，CMake 工程/产物改为 `mocheng_calcal`，
+> 并新增了品牌 splash/锁屏/顶栏；细节见第 15 节。下面历史记录里出现的
+> `onepage_c61_idf_demo.bin` 是改名前的产物名。
 
 **2026-10-14：真机自测通过**（面板、按键、SD 卡、电池/USB、深睡全部按预期工作）。
 
@@ -578,3 +582,167 @@ SARADC/USB-Serial-JTAG 不做 light-sleep 上下文保持；本板的按键扫�
   按键导航和网页添加后自动刷新均正常。
 - 若换一台面板装配方向相反的机器，只需把 `ONEPAGE_UI_ROTATION` 改成 90。
 - 原有的 light sleep 修复（13.9）继续有效：`light_sleep_enable=false`。
+
+------
+
+## 15. 2026-11-16：品牌化（墨程CalCal）
+
+产品名定为 **墨程CalCal**，logo 用 `miniprogram/CalCal_logo.png`。这次把品牌从
+“文档里的名字”落到了固件和各个客户端：
+
+### 15.1 固件
+
+- 新增 `components/brand/`：`brand.h` 是产品名、ASCII 广播别名、tagline、版本号的
+  唯一来源；`src/brand_logo.c` 由 `tools/gen_brand_assets.py` 从 logo PNG 生成
+  200x140（splash）、96x67（锁屏）、32x22（顶栏 logo）三张 1-bit 位图，另生成
+  20 px 的顶栏 wordmark（第 16 节改成紧凑顶栏后使用）。
+- `gfx_bitmap()` 负责把 1-bit 行位图画进 framebuffer；位图 MSB 在左，1 = 黑。
+- 冷启动先画品牌 splash（logo + 名称 + tagline + 平台行），保持 1.2 s，再画月历；
+  splash 和首帧月历都用 FULL，因为两张图没有共同内容，用 HALF 可能留下 logo 残影。
+  深睡唤醒不画 splash（玻璃上已有锁屏），仍按原策略用 HALF。
+- 锁屏把原来的“休眠中”标题换成大 logo + `墨程CalCal` + tagline，日程列表下移 16 px，
+  5 条仍然放得下；页脚改成“按 POWER 唤醒”。
+- 月/日/详情页顶栏加上 `logo + 墨程CalCal`，品牌在所有日历页都可见；第 16 节
+  进一步把顶栏改成紧凑 wordmark 并调整了高度。
+- 5x7 字体补了 ASCII 0x60..0x7A（反引号和 a-z），`gfx_text()` 不再强制转大写，
+  这样 `CalCal` 的大小写能正确显示；事件标题里的小写字母也不再被改写。
+- BLE 广播/GAP 名保留 ASCII 别名 `Mochen CalCal`；`hello` 和 INFO 的 `name` 改为
+  `墨程CalCal`，固件版本改用 `BRAND_FW_VERSION`。
+- CMake 工程名从 `onepage_c61_idf_demo` 改为 `mocheng_calcal`，产物是
+  `build/mocheng_calcal.bin`。
+
+### 15.2 客户端与文档
+
+- 小程序：`config.appName` 改为 `墨程CalCal`；登录页、日程页、我的页都用
+  `/CalCal_logo.png`；页面标题统一为 `墨程CalCal`；广播名过滤仍是 `Mochen`。
+- 网页：标题和页头改为 `墨程CalCal`，把 logo 复制到 `web/CalCal_logo.png` 并在页头显示。
+- 服务端/文档：包名、README 标题、BLE 协议示例里的展示名统一；备份魔数、HKDF salt
+  等内部兼容常量保持不变。
+- 命名规则写进了 `AGENTS.md` 和 README 的 “Brand and naming” 一节。
+
+### 15.3 验证
+
+- `tools/gen_brand_assets.py` 重新生成三张 logo 位图（第 16 节又加了 wordmark）；
+  `tools/preview_calendar.py` 增加
+  `preview_boot.png`，月历/日/详情/锁屏预览全部重绘。
+- `tools/check_font_coverage.py` 通过（品牌字符串里的汉字都在 GB2312 表里）。
+- `idf.py build` 重新配置并通过（见构建日志）。
+
+------
+
+## 16. 2026-11-16：去空格、顶栏加高、字号收紧与基线对齐
+
+按使用反馈做了第二轮调整：
+
+### 16.1 产品名去掉空格
+
+- 正式展示名从 `墨程 CalCal` 改为 **`墨程CalCal`**；`brand.h` 的
+  `BRAND_NAME` 改为 `BRAND_NAME_ZH BRAND_NAME_EN` 直接拼接。
+- 小程序、网页、服务端文档、BLE 文档、测试 fixture 和 AGENTS/README 全部同步。
+  注意 BLE 广播别名仍是 `Mochen CalCal`（两个英文词之间保留空格）。
+
+### 16.2 顶栏加高、底栏收窄，内容区不变
+
+- `HEADER_RULE_Y` 52 → 64，`TITLE_Y` 68 → 80，`MONTH_GRID_Y` 140 → 152。
+- `FOOTER_TEXT_Y` 752 → 764，`FOOTER_RULE_Y` 736 → 748，`CONTENT_BOTTOM`
+  720 → 732。
+- 于是中间内容区仍是 64..732（668 px），顶部状态栏从 52 px 变成 64 px，
+  底部状态栏从 64 px 变成 52 px；月历 peek card 的底边仍正好落在内容区底部。
+
+### 16.3 顶栏字号收紧
+
+- 顶栏不再用 24 px CJK 文本画品牌名；`gen_brand_assets.py` 用 Noto Sans CJK SC
+  额外渲染一张 **20 px 的 1-bit wordmark**（`brand_wordmark`，98x19），
+  文字取自 `brand.h`，所以改名不会漂移。
+- 顶栏 logo 从 40x28 缩到 32x22；电量/时钟曾试过 scale 2，但观感太差，最终
+  恢复 5x7 scale 3（21 px ink）。
+- 统一以 `HEADER_BASELINE_Y=48` 为墨迹底边：logo 底、wordmark 底、BLE 图标底和
+  电量/时钟墨迹底都对齐到 42，顶栏虽然加高但不显散。
+
+### 16.4 中英文数字基线
+
+- 根因：5x7 ASCII 只有 7 行墨迹（scale 3 时 21 px），CJK 是 24 px；两者都从同一个
+  `y` 顶部画，所以英文/数字比中文高 3 px。
+- 修复：`gfx_text()` 把 5x7 墨迹整体下移一个 scale 行（scale 3 → +3 px），使最后一行
+  墨迹落在 `y + 8*scale - 1`，与 24 px CJK 字形的底部（最多到第 23 行）一致。
+- `tools/preview_calendar.py` 的 `text5x7()` 同步加同样的偏移，预览与固件一致。
+- 回归检查：月历日期/事件数、日视图时间+中文标题、详情页日期、锁屏日期/时间、
+  页脚按键提示都已在预览中确认底对齐。
+
+### 16.5 验证
+
+- `idf.py build` 通过，产物 `0x1437d0` bytes。
+- `tools/check_font_coverage.py` 通过。
+- 预览图：`preview_month.png`、`preview_day.png`、`preview_detail.png`、
+  `preview_delete.png`、`preview_sleep.png` 全部重绘检查。
+
+### 16.6 2026-11-16 稍后：电量/时钟恢复原字号
+
+把电量百分比和时钟从 5x7 scale 2 恢复为 **scale 3（21 px ink）**。顶栏高度、32 px
+logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之从 26 回到 18，
+仍与 logo/wordmark 共享 `HEADER_BASELINE_Y=48` 的底边。这样既保留上一轮“顶栏不挤”
+的效果，又恢复原有电量/时钟的可读性。
+
+### 16.7 顶栏右侧顺序调整
+
+- 品牌 logo + wordmark 仍固定在左侧。
+- 右侧改成一组右对齐状态：**电池 → 时钟 → 蓝牙图标**（蓝牙最右），
+  `HEADER_RIGHT_GAP=14`；蓝牙图标槽位 18 px，连接徽标右边缘贴住内容区右边界。
+- 蓝牙不可用时只把警告画在时钟和图标之间的空隙里，图标位置不移动，状态组不跳。
+
+### 16.8 顶栏品牌墨迹高度对齐
+
+- 右侧时钟/电量是 5x7 scale 3，墨迹高 **21 px**。
+- 顶栏 logo 宽度从 32 改成 **30 px**（高 21 px）；wordmark 字体从 20 px 改成
+  **22 px**，Noto 渲染出的墨迹盒正好 21 px。
+- 两者仍以 `HEADER_BASELINE_Y=48` 为底边，所以和右侧时钟数字上下完全齐平。
+
+### 16.9 顶栏内容下移
+
+- `HEADER_BASELINE_Y` 42 → **48**，整组品牌/状态下移 6 px。
+- 墨迹最后一行从 41 变成 47，顶栏分割线仍在 64，二者间距从 22 px 缩到 **16 px**。
+- 顶栏高度、字号、右侧“电池 → 时钟 → 蓝牙”顺序都不变。
+
+### 16.10 蓝牙失败状态去掉感叹号
+
+- `draw_ble_warning()` 和顶栏里的调用一起删除；蓝牙不可用时只保留 50% 棋盘抖动的
+  蓝牙图标，不再在左侧画同样抖动的感叹号。
+- 图标位置、电池/时钟位置和 14 px 间距都不变，三种状态之间切换不会移动状态组。
+
+### 16.11 peek card 的“X 条”内缩
+
+- 月历下方 peek card 的次数原先用 `draw_right()`，右边缘对齐到屏幕内容边距 x=450，
+  但卡片内框在 x=446，最后面的“条”会压到内框线。
+- 改为按卡片内边距右对齐：`x + w - GAP_L - text_width`，右边缘落在 x=434，
+  与内框留 12 px，和标题左侧的 16 px 内边距对应。
+- `tools/preview_calendar.py` 本来就是这个算法，这次只是把固件对齐到预览。
+
+### 16.12 当天日程页去掉日期下的分割线
+
+- 当天日程页（day view）原先在日期和事件列表之间还有一条横线：
+  `TITLE_Y + BODY_H + GAP_M` = 116，与 64 px 的顶栏分隔线只隔一条日期，视觉上重复。
+- 删除这条线，列表起点从 132 提到 **120**（日期下方 16 px），事件行、选中反白和
+  页脚都不变；月历、详情页的线不受影响。
+
+### 16.13 当天日程页日期行增加上下留白
+
+- 新增 `DAY_TITLE_Y = TITLE_Y + 8`（88）和 `DAY_BODY_GAP = 24`。
+- 日期行顶部到顶栏分隔线 24 px（原 16），日期到事件列表 24 px（原 16）。
+- 列表起点从 120 移到 **136**；8 行事件最后一行结束于 712，内容区底部 732，
+  仍留有 20 px。空状态文案位置未动。
+
+### 16.14 蓝牙图标与数字同高、底对齐
+
+- `HEADER_BLE_Y` 从 `HEADER_BASELINE_Y - 25` 改为 `HEADER_BASELINE_Y - 21`，图标
+  顶端与 5x7 scale 3 数字的墨迹顶端一致。
+- `draw_ble_icon()` 重画为 21 px 高：连接徽标高度 21，轮廓线用 2 px 笔刷时线心
+  取 `y+1..y+20`，实际覆盖 `y..y+20`；失效态的棋盘抖动也限制在这 21 行内。
+- 三种状态（广播、已连接、蓝牙不可用）的图标底边都是 47，与电量/时钟数字底边一致。
+
+### 16.15 “按 POWER 唤醒”左右空格视觉一致
+
+- 5x7 的 `POWER` 最后一格 `R` 右侧自带 3 px 空白，普通 UTF-8 空格让 POWER 后面
+  的视觉间隙是 23 px，前面是 20 px。
+- 新增 `draw_power_hint()`：把“按 / POWER / 唤醒”分三段画，前间距 18 px、后间距
+  15 px 补偿 R 的尾部空白，两侧墨迹间隙都变成 20 px。
+- `tools/preview_calendar.py` 的 `power_hint()` 同步实现。

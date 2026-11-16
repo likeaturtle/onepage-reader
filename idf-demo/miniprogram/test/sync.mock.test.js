@@ -67,7 +67,7 @@ function fakeBle(deviceEvents) {
     calls,
     isConnected: () => true,
     list: async () => deviceEvents,
-    hello: async () => ({ ev: 'hello', name: 'Mochen CalCal' }),
+    hello: async () => ({ ev: 'hello', name: '墨程CalCal' }),
     add: async (event) => {
       calls.add.push(event);
       nextId += 1;

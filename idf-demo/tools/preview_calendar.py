@@ -10,7 +10,9 @@ footer baseline at y=752.
     /Users/fujd/.espressif/tools/python/v6.1/venv/bin/python tools/preview_calendar.py
 
 Outputs tools/preview_month.png, preview_day.png, preview_detail.png,
-preview_delete.png and preview_sleep.png.
+preview_delete.png, preview_sleep.png and preview_boot.png. It also reads the
+generated brand logo bitmaps so the top bar, lock screen and boot splash match
+the firmware exactly.
 """
 
 import datetime as dt
@@ -22,6 +24,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 COMPONENT = ROOT / "components" / "onepage_c61"
+BRAND_DIR = ROOT / "components" / "brand"
 W, H = 480, 800
 CJK_PX = 24
 LARGE_PX = 48
@@ -33,18 +36,31 @@ BODY_H = 24
 GAP_S = 8
 GAP_M = 12
 GAP_L = 16
-HEADER_TEXT_Y = 14
-HEADER_RULE_Y = 52
-TITLE_Y = 68
-FOOTER_TEXT_Y = H - 24 - BODY_H
+HEADER_RULE_Y = 64
+HEADER_BASELINE_Y = 48
+HEADER_STATUS_SCALE = 3
+HEADER_STATUS_Y = HEADER_BASELINE_Y - 8 * HEADER_STATUS_SCALE
+HEADER_BLE_Y = HEADER_BASELINE_Y - 21
+BLE_ICON_H = 21
+HEADER_WORD_GAP = 8
+HEADER_RIGHT_GAP = 14
+HEADER_BLE_SLOT_W = 18
+TITLE_Y = 80
+DAY_TITLE_Y = TITLE_Y + 8
+DAY_BODY_GAP = 24
+FOOTER_TEXT_Y = H - 12 - BODY_H
 FOOTER_RULE_Y = FOOTER_TEXT_Y - GAP_L
 CONTENT_BOTTOM = FOOTER_RULE_Y - GAP_L
 LIST_TIME_W = 5 * 18
-MONTH_GRID_Y = 140
+MONTH_GRID_Y = 152
 MONTH_GRID_H = 420
 MONTH_CELL_W = 60
 PEEK_CARD_Y = MONTH_GRID_Y + MONTH_GRID_H + GAP_M
 PEEK_CARD_ROWS = 3
+BRAND_NAME = "墨程CalCal"
+BRAND_TAGLINE = "蓝牙墨水屏日历"
+LOCK_LOGO_Y = 24
+BOOT_LOGO_Y = 230
 
 
 def month_cell_h(rows):
@@ -81,9 +97,27 @@ def load_large():
     }
 
 
+def load_brand_logos():
+    src = (BRAND_DIR / "src" / "brand_logo.c").read_text()
+    arrays = {}
+    for match in re.finditer(r"static const uint8_t k_(\w+)_bits\[\] = \{(.*?)\};",
+                             src, re.S):
+        arrays[match.group(1)] = bytes(
+            int(b, 16) for b in re.findall(r"0x([0-9A-Fa-f]{2})", match.group(2)))
+    logos = {}
+    for match in re.finditer(
+            r"const brand_bitmap_t brand_(\w+) = "
+            r"\{(\d+), (\d+), k_(\w+)_bits\};", src):
+        name, width, height, key = match.groups()
+        logos[name.replace("logo_", "")] = (int(width), int(height), arrays[key])
+    assert {"boot", "lock", "header", "wordmark"} <= set(logos), "regenerate brand_logo.c"
+    return logos
+
+
 FONT = load_font5x7()
 GB, GB_ROW_BYTES = load_gb2312()
 LARGE = load_large()
+BRAND = load_brand_logos()
 
 
 class Screen:
@@ -138,11 +172,20 @@ class Screen:
             for col in range(w):
                 self.pixel(x + col, y + row, bayer[(y + row) & 3][(x + col) & 3] < level)
 
+    def bitmap(self, x, y, w, h, bits, black=True):
+        stride = (w + 7) // 8
+        for row in range(h):
+            for col in range(w):
+                if bits[row * stride + col // 8] & (0x80 >> (col % 8)):
+                    self.pixel(x + col, y + row, black)
+
     def text5x7(self, x, y, s, scale=1, black=True):
         cur = x
+        # Mirror gfx_text(): 5x7 ink sits on an eight-row cell, one scaled row
+        # below the top, so its bottom matches the 24 px CJK baseline.
+        y += scale
         for ch in s:
-            c = ch.upper() if "a" <= ch <= "z" else ch
-            glyph = FONT.get(c)
+            glyph = FONT.get(ch)
             if glyph is None:
                 glyph = [0x7F, 0x41, 0x41, 0x41, 0x7F]
             for col, bits in enumerate(glyph):
@@ -248,41 +291,54 @@ def fill_round_rect(s, x, y, w, h, r=3):
 def ble_icon(s, x, y, available=True, connected=True):
     inverted = available and connected
     if inverted:
-        fill_round_rect(s, x - 2, y - 3, 18, 28)
+        fill_round_rect(s, x - 2, y, 18, BLE_ICON_H)
     ink = not inverted
     cx, right = x + 7, x + 13
-    top, bottom = y, y + 21
-    q1, mid, q3 = y + 5, y + 11, y + 16
+    top = y + (2 if inverted else 1)
+    bottom = y + (18 if inverted else 20)
+    q1 = y + (6 if inverted else 5)
+    mid = y + 10
+    q3 = y + (14 if inverted else 15)
     for x0, y0, x1, y1 in ((cx, top, cx, bottom), (cx, top, right, q1),
                            (right, q1, cx, mid), (cx, mid, right, q3),
                            (right, q3, cx, bottom),
                            (cx, mid, x + 1, q1 - 1), (cx, mid, x + 1, q3 + 1)):
         s.line(x0, y0, x1, y1, 2, ink)
     if not available:
-        for j in range(24):
+        for j in range(BLE_ICON_H):
             for i in range(16):
                 if (i + j) % 2 == 0:
-                    s.pixel(x - 1 + i, y - 1 + j, False)
-
-
-def ble_warning(s, x, y):
-    s.fill_rect(x, y, 4, 12)
-    s.fill_rect(x, y + 16, 4, 4)
-    for j in range(22):
-        for i in range(6):
-            if (i + j) % 2 == 0:
-                s.pixel(x - 1 + i, y - 1 + j, False)
+                    s.pixel(x - 1 + i, y + j, False)
 
 
 def header(s, clock="15:57", battery="78%", connected=True, available=True):
-    icon_x = MARGIN
-    if not available:
-        ble_warning(s, MARGIN, HEADER_TEXT_Y + 1)
-        icon_x = MARGIN + GAP_S
-    ble_icon(s, icon_x, HEADER_TEXT_Y, available, connected)
-    s.text5x7(icon_x + 26, HEADER_TEXT_Y, battery, 3)
-    s.text5x7(W - MARGIN - s.text5x7_width(clock, 3), HEADER_TEXT_Y, clock, 3)
+    w, h, bits = BRAND["header"]
+    s.bitmap(MARGIN, HEADER_BASELINE_Y - h, w, h, bits)
+    ww, wh, wbits = BRAND["wordmark"]
+    wx = MARGIN + w + HEADER_WORD_GAP
+    s.bitmap(wx, HEADER_BASELINE_Y - wh, ww, wh, wbits)
+
+    icon_x = W - MARGIN - HEADER_BLE_SLOT_W + 2
+    clock_x = icon_x - HEADER_RIGHT_GAP - s.text5x7_width(clock, HEADER_STATUS_SCALE)
+    battery_x = clock_x - HEADER_RIGHT_GAP - s.text5x7_width(battery, HEADER_STATUS_SCALE)
+    ble_icon(s, icon_x, HEADER_BLE_Y, available, connected)
+    s.text5x7(battery_x, HEADER_STATUS_Y, battery, HEADER_STATUS_SCALE)
+    s.text5x7(clock_x, HEADER_STATUS_Y, clock, HEADER_STATUS_SCALE)
     s.hline(MARGIN, HEADER_RULE_Y, CONTENT_W)
+
+
+def power_hint(s, y):
+    # Mirror draw_power_hint(): 5x7 R has 3 px of trailing blank in its cell,
+    # so use a 15 px advance after POWER and 18 px before it for equal optical gaps.
+    left_w = s.text_width("按")
+    key_w = s.text5x7_width("POWER", 3)
+    right_w = s.text_width("唤醒")
+    x = (W - (left_w + 18 + key_w + 15 + right_w)) // 2
+    s.text_utf8(x, y, "按")
+    x += left_w + 18
+    s.text5x7(x, y, "POWER", 3)
+    x += key_w + 15
+    s.text_utf8(x, y, "唤醒")
 
 
 def footer(s, back, left_right, confirm):
@@ -375,13 +431,12 @@ def month_preview():
 def day_preview():
     s = Screen()
     header(s)
-    s.text_utf8(MARGIN, TITLE_Y, "11月9日")
-    s.text_utf8(MARGIN + s.text_width("11月9日") + GAP_M, TITLE_Y, "星期一")
+    s.text_utf8(MARGIN, DAY_TITLE_Y, "11月9日")
+    s.text_utf8(MARGIN + s.text_width("11月9日") + GAP_M, DAY_TITLE_Y, "星期一")
     events = [e for e in EVENTS if e[0] == dt.date(2026, 11, 9)]
-    s.text_right(TITLE_Y, f"{len(events)} 条")
-    s.hline(MARGIN, TITLE_Y + BODY_H + GAP_M, CONTENT_W)
+    s.text_right(DAY_TITLE_Y, f"{len(events)} 条")
 
-    list_y = TITLE_Y + BODY_H + GAP_M + GAP_L
+    list_y = DAY_TITLE_Y + BODY_H + DAY_BODY_GAP
     row_h = 72
     text_x = MARGIN + LIST_TIME_W + GAP_M
     for i, (_, start, end, title, note) in enumerate(events):
@@ -436,15 +491,17 @@ def detail_preview(confirm=False):
 
 def sleep_preview():
     s = Screen()
-    for i, ch in enumerate("休眠中"):
-        s.large(MARGIN + i * 50, 30, ch)
-    s.text5x7(W - MARGIN - s.text5x7_width("15:57", 4), 30, "15:57", 4)
-    s.text5x7(W - MARGIN - s.text5x7_width("11/09", 3), 70, "11/09", 3)
-    s.hline(MARGIN, 114, CONTENT_W)
-    s.text_utf8(MARGIN, 128, "接下来的日程")
+    w, h, bits = BRAND["lock"]
+    s.bitmap(MARGIN, LOCK_LOGO_Y, w, h, bits)
+    s.text5x7(W - MARGIN - s.text5x7_width("15:57", 4), 26, "15:57", 4)
+    s.text5x7(W - MARGIN - s.text5x7_width("11/09", 3), 68, "11/09", 3)
+    s.text_utf8(MARGIN, 100, BRAND_NAME)
+    s.text_right(100, BRAND_TAGLINE)
+    s.hline(MARGIN, 136, CONTENT_W)
+    s.text_utf8(MARGIN, 148, "接下来的日程")
     upcoming = EVENTS[:5]
     for i, (when, start, _end, title, note) in enumerate(upcoming):
-        y = 168 + i * 104
+        y = 184 + i * 104
         s.text5x7(MARGIN, y + GAP_L, f"{when.month:02d}/{when.day:02d}", 3)
         s.text5x7(MARGIN, y + 48, start, 3)
         s.text_clipped(MARGIN + LIST_TIME_W + GAP_M, y + GAP_L, title,
@@ -455,8 +512,20 @@ def sleep_preview():
         if i < len(upcoming) - 1:
             s.hline(MARGIN, y + 103, CONTENT_W)
     s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
-    s.centered(FOOTER_TEXT_Y, "按 POWER 唤醒  蓝牙日历")
+    power_hint(s, FOOTER_TEXT_Y)
     s.save("preview_sleep.png")
+
+
+def boot_preview():
+    s = Screen()
+    w, h, bits = BRAND["boot"]
+    s.bitmap((W - w) // 2, BOOT_LOGO_Y, w, h, bits)
+    name_y = BOOT_LOGO_Y + h + 32
+    s.centered(name_y, BRAND_NAME)
+    s.centered(name_y + 36, BRAND_TAGLINE)
+    s.hline((W - 120) // 2, name_y + 92, 120)
+    s.centered(name_y + 108, "ESP32-C61 / BLE")
+    s.save("preview_boot.png")
 
 
 def main():
@@ -465,6 +534,7 @@ def main():
     detail_preview(False)
     detail_preview(True)
     sleep_preview()
+    boot_preview()
 
 
 if __name__ == "__main__":

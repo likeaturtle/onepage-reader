@@ -1,3 +1,34 @@
+.brand-card {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.brand-logo {
+  display: block;
+  flex: none;
+  width: 76rpx;
+  height: 76rpx;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-name {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1b2a44;
+  white-space: nowrap;
+}
+
+.brand-sub {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #8b8778;
+  letter-spacing: 2rpx;
+}
+
 .profile-card {
   display: flex;
   flex-direction: column;

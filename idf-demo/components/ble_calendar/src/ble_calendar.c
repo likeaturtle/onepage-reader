@@ -6,6 +6,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "brand.h"
 #include "calendar.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
@@ -29,8 +30,6 @@ void ble_store_config_init(void);
 
 static const char *TAG = "ble_cal";
 
-#define DEVICE_NAME "Mochen CalCal"
-#define FW_VERSION "1.0.0"
 #define PROTO_VERSION 1
 #define RX_BUF_SIZE 2048
 #define LINE_BUF_SIZE 768
@@ -116,9 +115,10 @@ static int gatt_access(uint16_t conn_handle, uint16_t attr_handle,
   if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR && attr_handle == s_info_handle) {
     char json[256];
     const int n = snprintf(json, sizeof(json),
-                           "{\"name\":\"Mochen CalCal\",\"fw\":\"%s\",\"proto\":%d,"
+                           "{\"name\":\"%s\",\"fw\":\"%s\",\"proto\":%d,"
                            "\"events\":%d,\"calendars\":%d,\"time_valid\":%s}",
-                           FW_VERSION, PROTO_VERSION, calendar_event_count(), calendar_count(),
+                           BRAND_NAME, BRAND_FW_VERSION, PROTO_VERSION, calendar_event_count(),
+                           calendar_count(),
                            calendar_time_valid() ? "true" : "false");
     if (n <= 0 || n >= (int)sizeof(json)) {
       return BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -317,10 +317,11 @@ static void send_hello(void) {
   char json[700];
   const int n = snprintf(
       json, sizeof(json),
-      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"Mochen CalCal\","
+      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\","
       "\"now\":%u,\"tz\":%d,\"time_valid\":%s,\"time_synced\":%s,\"events\":%d,"
       "\"calendars\":%d,\"cals\":[%s]}",
-      PROTO_VERSION, FW_VERSION, (unsigned)calendar_now_epoch(), calendar_tz_minutes(),
+      PROTO_VERSION, BRAND_FW_VERSION, BRAND_NAME, (unsigned)calendar_now_epoch(),
+      calendar_tz_minutes(),
       calendar_time_valid() ? "true" : "false",
       calendar_time_synced() ? "true" : "false", calendar_event_count(), calendar_count(),
       cals);
@@ -643,7 +644,7 @@ static void start_advertising(void) {
     ESP_LOGW(TAG, "adv fields: %d", rc);
   }
 
-  static const char *name = DEVICE_NAME;
+  static const char *name = BRAND_DEVICE_NAME;
   struct ble_hs_adv_fields rsp = {0};
   rsp.name = (const uint8_t *)name;
   rsp.name_len = (uint8_t)strlen(name);
@@ -824,7 +825,7 @@ esp_err_t ble_calendar_init(void) {
     ESP_LOGE(TAG, "ble_gatts_add_svcs: %d", rc);
     return ESP_FAIL;
   }
-  rc = ble_svc_gap_device_name_set(DEVICE_NAME);
+  rc = ble_svc_gap_device_name_set(BRAND_DEVICE_NAME);
   if (rc != 0) {
     ESP_LOGW(TAG, "device name set: %d", rc);
   }

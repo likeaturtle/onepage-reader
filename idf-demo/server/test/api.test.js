@@ -9,7 +9,7 @@ const path = require('node:path');
 const { createApp } = require('../src/app');
 
 function makeConfig(overrides = {}) {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'onepage-server-'));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mocheng-calcal-server-'));
   return {
     port: 0,
     host: '127.0.0.1',

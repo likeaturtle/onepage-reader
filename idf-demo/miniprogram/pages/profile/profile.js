@@ -19,6 +19,7 @@ Page({
     uploading: false,
     error: '',
     appName: config.appName,
+    tagline: config.tagline,
     apiBase: config.apiBase,
     version: '1.0.0',
   },

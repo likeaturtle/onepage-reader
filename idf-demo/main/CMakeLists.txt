@@ -5,6 +5,7 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES
         onepage_c61
+        brand
         calendar
         ble_calendar
         esp_pm

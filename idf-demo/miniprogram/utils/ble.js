@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * BLE client for the Mochen CalCal calendar (NimBLE GATT peripheral).
+ * BLE client for the 墨程CalCal calendar (NimBLE GATT peripheral).
  *
  * Reference protocol: ../docs/ble-protocol.md
  *   service 6f6e6570-6167-6531-6361-6c656e646172
@@ -391,7 +391,7 @@ async function connect(deviceId) {
     const list = characteristics.characteristics || [];
     const rx = list.find((item) => String(item.uuid).toLowerCase() === RX_UUID);
     const tx = list.find((item) => String(item.uuid).toLowerCase() === TX_UUID);
-    if (!rx || !tx) throw new Error('设备特征不完整，可能不是 Mochen CalCal');
+    if (!rx || !tx) throw new Error('设备特征不完整，可能不是墨程CalCal');
 
     state.serviceId = service.uuid;
     state.rxId = rx.uuid;
@@ -409,7 +409,7 @@ async function connect(deviceId) {
     emitState();
 
     const hello = await command({ cmd: 'hello' }, (m) => m.ev === 'hello', 7000);
-    state.deviceName = hello.name || 'Mochen CalCal';
+    state.deviceName = hello.name || '墨程CalCal';
     emitState();
 
     const tz = -new Date().getTimezoneOffset();

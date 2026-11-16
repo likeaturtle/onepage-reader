@@ -70,6 +70,7 @@ function sameEvent(deviceEvent, cloudEvent) {
 Page({
   data: {
     appName: config.appName,
+    tagline: config.tagline,
     user: {},
     userInitial: '页',
     userAvatar: '',

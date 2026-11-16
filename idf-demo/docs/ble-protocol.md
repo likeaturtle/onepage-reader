@@ -1,4 +1,4 @@
-# OnePage calendar BLE protocol
+# 墨程CalCal BLE protocol
 
 The device is a BLE peripheral with one custom GATT service. The phone page in
 `web/index.html` is the reference client. NimBLE is configured for one
@@ -15,14 +15,16 @@ the default MTU of 23 because the client writes 20-byte chunks.
 | INFO | `6f6e6570-6167-6531-6361-000000000003` | Read |
 
 The advertised data contains the 128-bit service UUID; the scan response
-contains the name `Mochen CalCal`. No pairing or bonding is required. This
-means any BLE central in radio range can modify the calendar; the protocol is
-intended for a personal device on a desk, not for an untrusted environment.
+contains the ASCII alias `Mochen CalCal` (kept for central stacks and the mini
+program scan prefix). After connecting, `hello` and INFO report the canonical
+product name `墨程CalCal`. No pairing or bonding is required. This means any
+BLE central in radio range can modify the calendar; the protocol is intended
+for a personal device on a desk, not for an untrusted environment.
 
 The INFO characteristic is a convenience for generic BLE apps:
 
 ```json
-{"name":"Mochen CalCal","fw":"1.0.0","proto":1,"events":12,"calendars":1,"time_valid":true}
+{"name":"墨程CalCal","fw":"1.0.0","proto":1,"events":12,"calendars":1,"time_valid":true}
 ```
 
 ## Framing
@@ -55,7 +57,7 @@ instead of a single ack.
 Response:
 
 ```json
-{"ev":"hello","proto":1,"fw":"1.0.0","name":"Mochen CalCal","now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
+{"ev":"hello","proto":1,"fw":"1.0.0","name":"墨程CalCal","now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
 ```
 
 This build exposes a single calendar. `cals` still exists for protocol
@@ -190,7 +192,8 @@ Useful for checking that the link and the command task are alive.
 
 Use nRF Connect (Android/desktop) or `bleak` on a computer:
 
-1. Connect to `Mochen CalCal`.
+1. Scan for `Mochen CalCal` (the ASCII advertisement); after connecting the
+device reports `墨程CalCal`.
 2. Enable notifications on TX.
 3. Write the UTF-8 bytes of `{"cmd":"hello"}\n` to RX (with response).
 4. Read the notification stream; then try `{"cmd":"time","epoch":...,"tz":480}\n`.

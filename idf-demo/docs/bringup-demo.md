@@ -3,7 +3,9 @@
 > board-support component and the panel/key/battery/deep-sleep notes below are
 > still accurate and are kept for hardware reference. See `../README.md` for
 > the current application. Relative paths in this copy are relative to
-> `idf-demo/`, not to this `docs/` directory.
+> `idf-demo/`, not to this `docs/` directory. The current product is
+> **墨程CalCal** and the CMake project/artifact is `mocheng_calcal`; the
+> `onepage_c61_idf_demo.bin` mentions below are historical.
 
 # OnePage C61 — ESP-IDF bring-up demo
 

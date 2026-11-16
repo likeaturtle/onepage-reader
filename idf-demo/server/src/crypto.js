@@ -7,6 +7,9 @@ const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const ALG = 'aes-256-gcm';
 const SCHEME_VERSION = 1;
+// Legacy data-domain separators. Keep the literal bytes even though the
+// product is now 墨程CalCal: changing them would make existing encrypted
+// data unreadable. New user-facing filenames use the product name instead.
 const HKDF_SALT = Buffer.from('onepage-server-v2', 'utf8');
 
 function decodeKey(value, label) {

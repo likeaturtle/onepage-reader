@@ -1,19 +1,20 @@
-# OnePage C61 — BLE calendar
+# 墨程CalCal — OnePage C61 BLE 日历
 
-An ESP-IDF **6.1** calendar for the OnePage C61 e-reader. The phone talks to the
-device over BLE from a plain web page (Web Bluetooth), schedules are stored in
-NVS, and the e-ink panel shows a month grid, a day agenda, event details and a
-lock screen with the next appointments. When idle the device parks the panel and
-enters deep sleep, so it can run for a long time on a battery.
+**墨程CalCal** is an ESP-IDF **6.1** calendar for the OnePage C61 e-reader. The
+phone talks to the device over BLE from a plain web page (Web Bluetooth) or the
+native WeChat mini program, schedules are stored in NVS, and the e-ink panel
+shows a month grid, a day agenda, event details and a branded lock screen with
+the next appointments. When idle the device parks the panel and enters deep
+sleep, so it can run for a long time on a battery.
 
-> **Status: build-verified and smoke-tested on hardware (2026-11-09).** The
-> firmware compiles/links with ESP-IDF 6.1; on the real board the portrait
+> **Status: build-verified (2026-11-16), hardware smoke-tested (2026-11-09).**
+> The firmware compiles/links with ESP-IDF 6.1; on the real board the portrait
 > panel, keys, single-calendar migration, BLE add from the web page and
-> automatic redraw were verified. The
-> automatic-light-sleep regression is fixed by disabling light sleep (see
-> [Known board issue](#known-board-issue)). Deep-sleep current, the lock screen
-> and the remaining checklist items still need a full pass — see
-> [Hardware checklist](#hardware-checklist).
+> automatic redraw were verified. The automatic-light-sleep regression is fixed
+> by disabling light sleep (see [Known board issue](#known-board-issue)). The
+> branded splash/lock/top-bar layout is verified in the offline previews but
+> still needs a panel pass; deep-sleep current and the remaining checklist items
+> also need a full pass — see [Hardware checklist](#hardware-checklist).
 
 ---
 
@@ -51,13 +52,19 @@ eFuse wrapper) are preserved in [`docs/bringup-demo.md`](docs/bringup-demo.md).
 Event detail uses a two-step delete: the first CONFIRM only shows the
 confirmation box, so a single accidental click cannot remove an event.
 
-On the panel: the top bar keeps the BLE icon and battery percentage on the
-left and the clock on the right (no title text). The BLE state is icon-only:
+On the panel: the top bar carries the brand lockup (logo + `墨程CalCal`) on
+the left; battery, clock and the BLE icon form a right-aligned cluster, with
+the BLE icon at the far right and 14 px between the three. The lock screen repeats the large logo, product name and tagline above
+the next five events. The BLE state is icon-only:
 outline while advertising, white-on-black on a rounded badge while connected,
-and a 50% dither (fake gray) plus a gray "!" when the radio failed.
-Every screen uses one 30 px margin on the 480 px canvas (420 px of content) and
-one 24 px body size (the lock screen enlarges its headline and clock), with a
-shared footer rule and baseline. The portrait month
+and a 50% dither (fake gray) when the radio failed.
+Every screen uses one 30 px margin on the 480 px canvas (420 px of content).
+The content uses one 24 px body size; the top bar logo and wordmark are both
+21 px tall to match the 5x7 scale-3 battery/clock ink, inside a taller 64 px
+band, and the footer
+band is shorter so the content area keeps its previous height. All glyphs sit
+on one ink baseline: 5x7 Latin/digit ink is shifted one scaled row down to
+match the 24 px CJK cell. The portrait month
 grid has 5 or 6 week rows and seven columns and keeps a constant 420 px height.
 A black cell is the selected day, a double outline is today, and up to four dots
 show that day's events. The Saturday and Sunday columns carry a light 1/16
@@ -68,6 +75,51 @@ selected date, the day's event count and up to three entries (time + title), or
 agenda. The single footer line maps the front keys: BACK on the left,
 LEFT/RIGHT in the middle and CONFIRM on the right. There is no
 calendar-category row or selector anymore.
+
+---
+
+## Brand and naming
+
+| Surface | Canonical value |
+|:---|:---|
+| Product / display name | `墨程CalCal` |
+| Short name | `CalCal` |
+| BLE advertising + GAP name (ASCII) | `Mochen CalCal` |
+| BLE `hello` / INFO `name` | `墨程CalCal` |
+| Logo source | `miniprogram/CalCal_logo.png` |
+| Firmware logo/wordmark bitmaps | `components/brand/src/brand_logo.c` (generated) |
+| Web logo copy | `web/CalCal_logo.png` |
+
+Use **`墨程CalCal`** (no space between 墨程 and CalCal) in every user-facing
+page (firmware, mini program, web page, server docs). Do not use `墨程 CalCal`
+(with a space), `OnePage 日历` or `蓝牙日历` as a product name. `Mochen CalCal`
+is only the ASCII radio alias kept for central stacks that do not handle a
+UTF-8 GAP name and for the mini program scan prefix; after connection every
+client shows `墨程CalCal`.
+
+The e-ink panel shows the brand in three places:
+
+1. **Cold-boot splash** — large logo, `墨程CalCal`, tagline and platform line,
+   held for 1.2 s before the first calendar frame (deep-sleep wake skips it).
+2. **Lock screen** — 96 px logo, product name, tagline and the next events;
+   this is the image left on the glass while the device is parked.
+3. **Top bar** — 30 px logo + 22 px wordmark (both 21 px of ink) on the left;
+   the battery → clock
+   → BLE cluster is right-aligned (BLE farthest right) with 14 px gaps; the
+   status text keeps the original scale 3 (21 px ink).
+
+The logo is a transparent PNG. `tools/gen_brand_assets.py` composites it on
+white, crops the transparent border, renders 200/96/30 px widths and thresholds
+them to 1-bit. It also renders the 20 px top-bar wordmark from
+`BRAND_NAME_ZH` + `BRAND_NAME_EN` with Noto Sans CJK SC, so the compact lockup
+keeps a clean baseline. Regenerate after replacing the logo or the name:
+
+```bash
+/Users/fujd/.espressif/tools/python/v6.1/venv/bin/python tools/gen_brand_assets.py
+```
+
+The CMake project is named `mocheng_calcal`, so the built application image is
+`build/mocheng_calcal.bin`.
 
 ---
 
@@ -111,7 +163,8 @@ not implement Web Bluetooth; use a browser that does (for example Bluefy).
 Then:
 
 1. Wake the device with POWER.
-2. Tap **连接蓝牙设备** and pick **Mochen CalCal**.
+2. Tap **连接蓝牙设备** and pick **Mochen CalCal** (the ASCII advertisement;
+the page shows `墨程CalCal` after connecting).
 3. Pick a date, start/end time and title, then **发送到设备**.
 4. The page syncs the clock automatically and lists the selected month.
 5. **让设备锁屏** draws the lock screen and puts the board into deep sleep;
@@ -158,7 +211,9 @@ npm start                     # 登录 + 云端日程服务，默认 :8787
 | TX (notify) | `6f6e6570-6167-6531-6361-000000000002` |
 | INFO (read) | `6f6e6570-6167-6531-6361-000000000003` |
 
-The device advertises the service UUID and puts the name in the scan response.
+The device advertises the service UUID and puts the ASCII alias `Mochen CalCal`
+in the scan response; the `hello`/INFO `name` field and every on-device label
+use the canonical `墨程CalCal` (see [Brand and naming](#brand-and-naming)).
 Messages are UTF-8 JSON objects separated by `\n`; both sides reassemble
 chunks. The web page writes 20-byte chunks, so it works even when the phone
 does not negotiate a larger ATT MTU. Notifications are chunked to
@@ -239,9 +294,11 @@ timezone does not shift existing events.
   differential refresh and a stronger `HALF` pass every 30 content refreshes.
   While awake the header clock also advances once a minute through the same
   differential path (only the digits change, and this tick does not count
-  towards the 30). Cold boot uses `FULL`; a wake from deep sleep and the lock
-  screen use `HALF` (both RAM planes, sped-up waveform), so the panel flashes
-  once briefly instead of cycling black/white for ~2 s.
+  towards the 30). A cold boot paints the brand splash and then the first month
+  frame with `FULL` (the two images share no content, so a faster pass could
+  leave a logo ghost); a wake from deep sleep and the lock screen use `HALF`
+  (both RAM planes, sped-up waveform), so the panel flashes once briefly
+  instead of cycling black/white for ~2 s.
 - **Peripheral power-down in light sleep is deliberately disabled**, and
   automatic light sleep itself is currently disabled at runtime. On the C61 the
   SAR ADC (front keys, battery) and USB-Serial/JTAG console are not light-sleep
@@ -261,8 +318,13 @@ board; see the checklist below.
 
 The UI uses a **24 px GB2312 bitmap font** covering all 7,445 GB2312 characters
 (including punctuation), embedded as a 566 KB flash blob. This makes arbitrary
-Chinese event titles render without a font engine or a card. The sleep headline
-uses a generated 48 px subset (`休眠中`). The 5x7 table handles ASCII.
+Chinese event titles render without a font engine or a card. The 5x7 table
+handles ASCII, including lower case, so the brand keeps its `CalCal`
+capitalisation. A generated 48 px subset remains in the component for larger
+headlines. The top-bar wordmark is a 20 px 1-bit bitmap generated from the same
+Noto font (see `components/brand/`), which avoids loading a second full CJK
+table just for the header. `gfx_text()` shifts 5x7 ink down by one scaled row
+so Latin, digits and CJK share one bottom baseline.
 
 The bitmap was generated from **Noto Sans CJK SC** under the SIL Open Font
 License 1.1; the license text and download instructions are in
@@ -280,7 +342,7 @@ Preview the screens without flashing:
 # Pillow is in the IDF virtualenv; system Python may not have it.
 /Users/fujd/.espressif/tools/python/v6.1/venv/bin/python tools/preview_calendar.py
 # -> tools/preview_month.png, preview_day.png, preview_detail.png,
-#    preview_delete.png, preview_sleep.png
+#    preview_delete.png, preview_sleep.png, preview_boot.png
 
 python3 tools/check_font_coverage.py   # UI chars in the font + UUIDs in sync
 ```
@@ -296,15 +358,17 @@ firmware, so missing glyphs and layout overflow show up at review time.
 idf-demo/
 ├── main/
 │   ├── main.c              state machine, key scanner, sleep/lock policy
-│   ├── calendar_ui.c       month / day / detail / lock-screen drawing
+│   ├── calendar_ui.c       month / day / detail / boot / lock-screen drawing
 │   └── calendar_ui.h
 ├── components/
+│   ├── brand/              brand strings + generated 1-bit logo bitmaps
 │   ├── calendar/           data model, NVS persistence, civil date helpers
 │   ├── ble_calendar/       NimBLE GATT server + JSON protocol
 │   ├── cjson/              vendored cJSON 1.7.19 (MIT)
 │   └── onepage_c61/        panel, keys, power, ADC, SD, mic, fonts, gfx
 ├── web/
 │   ├── index.html          phone page (Web Bluetooth)
+│   ├── CalCal_logo.png     logo copy used by the page
 │   └── README.md
 ├── miniprogram/            native WeChat mini program (BLE + cloud schedule)
 ├── server/                 Node login + cloud schedule backend for the mini program
@@ -314,6 +378,7 @@ idf-demo/
 │   ├── bringup-demo.md     historical self-test/mic demo notes
 │   └── ...
 ├── tools/
+│   ├── gen_brand_assets.py generate the firmware logo bitmaps
 │   ├── gen_cjk_bitmaps.py  generate the embedded CJK fonts
 │   └── preview_calendar.py render the UI screens offline
 ├── sdkconfig.defaults      target, flash/PSRAM, USB console, BLE, PM
@@ -326,8 +391,9 @@ idf-demo/
 
 The following is what to verify on a real board. Compilation cannot cover these:
 
-1. **BLE discovery and pairing-free connect** — the phone sees `OnePage
-   Calendar`; Web Bluetooth can subscribe to TX and send `hello`/`add`.
+1. **BLE discovery and pairing-free connect** — the phone scan list shows
+   `Mochen CalCal` (ASCII advertisement) and the connected `hello` reports
+   `墨程CalCal`; Web Bluetooth can subscribe to TX and send `hello`/`add`.
 2. **Chunking** — a title near the 15-character limit and a 30-character note
    arrive intact; `list` with ~30 events reassembles without missing lines.
 3. **Time sync** — the header time matches the phone after connect; after a
@@ -342,10 +408,15 @@ The following is what to verify on a real board. Compilation cannot cover these:
    The expected dominant state is deep sleep. Also measure advertising-only
    current while advertising (light sleep is disabled on this board).
 7. **Sleep screen** — POWER, idle timeout and the web page's sleep button all
-   show the next 5 events and wake on POWER with the month view.
+   show the logo, `墨程CalCal`, the tagline and the next 5 events, and wake on
+   POWER with the month view.
 8. **NVS capacity** — add events until pruning starts; confirm the newest /
    upcoming events survive and the phone sees `pruned` / `calendar full` as
    appropriate.
+9. **Brand rendering** — cold boot shows the logo splash, the top bar keeps the
+   logo + `墨程CalCal` legible next to BLE/battery/clock, and the lock screen
+   shows the logo/name/tagline without clipping; `CalCal` keeps its
+   capitalisation.
 
 The validation status in this repository is **build + offline UI preview**.
 Please treat the BLE and power numbers as unverified until the checklist is

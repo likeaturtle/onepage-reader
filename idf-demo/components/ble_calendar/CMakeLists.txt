@@ -3,6 +3,7 @@ idf_component_register(
     INCLUDE_DIRS "include"
     REQUIRES
         bt
+        brand
         cjson
         calendar
         esp_common

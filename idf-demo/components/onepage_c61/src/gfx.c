@@ -133,6 +133,20 @@ void gfx_grid(uint8_t *fb, int x, int y, int w, int h, int cell, bool black) {
   }
 }
 
+void gfx_bitmap(uint8_t *fb, int x, int y, int w, int h, const uint8_t *bits, bool black) {
+  if (!bits || w <= 0 || h <= 0) {
+    return;
+  }
+  const int stride = (w + 7) / 8;
+  for (int row = 0; row < h; row++) {
+    for (int col = 0; col < w; col++) {
+      if (bits[row * stride + col / 8] & (0x80 >> (col & 7))) {
+        set_pixel(fb, x + col, y + row, black);
+      }
+    }
+  }
+}
+
 void gfx_dither_rect(uint8_t *fb, int x, int y, int w, int h, int level) {
   static const uint8_t bayer[4][4] = {
       {0, 8, 2, 10},
@@ -467,10 +481,7 @@ void gfx_text(uint8_t *fb, int x, int y, const char *s, int scale, bool black) {
   }
   int cursor = x;
   for (const char *p = s; *p; p++) {
-    char c = *p;
-    if (c >= 'a' && c <= 'z') {
-      c = (char)(c - 'a' + 'A');
-    }
+    const char c = *p;
     const uint8_t *glyph = NULL;
     uint8_t fallback[FONT5X7_WIDTH] = {0};
     if (c >= FONT5X7_FIRST_CHAR && c <= FONT5X7_LAST_CHAR) {
@@ -484,6 +495,10 @@ void gfx_text(uint8_t *fb, int x, int y, const char *s, int scale, bool black) {
       fallback[4] = 0x7F;
       glyph = fallback;
     }
+    /* The 5x7 ink fills seven rows of an eight-row cell. Shift it down by one
+     * row (scaled) so its bottom sits on the same baseline as the 24 px CJK
+     * glyphs; otherwise mixed strings show Latin/digits three pixels high. */
+    const int ink_y = y + scale;
     for (int col = 0; col < FONT5X7_WIDTH; col++) {
       const uint8_t bits = glyph[col];
       for (int row = 0; row < FONT5X7_HEIGHT; row++) {
@@ -491,9 +506,9 @@ void gfx_text(uint8_t *fb, int x, int y, const char *s, int scale, bool black) {
           continue;
         }
         if (scale == 1) {
-          set_pixel(fb, cursor + col, y + row, black);
+          set_pixel(fb, cursor + col, ink_y + row, black);
         } else {
-          gfx_fill_rect(fb, cursor + col * scale, y + row * scale, scale, scale, black);
+          gfx_fill_rect(fb, cursor + col * scale, ink_y + row * scale, scale, scale, black);
         }
       }
     }

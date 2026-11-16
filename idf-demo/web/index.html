@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f4f1ea">
-<title>OnePage 日历 · 蓝牙</title>
+<meta name="description" content="墨程CalCal · 蓝牙墨水屏日历手机网页">
+<title>墨程CalCal · 蓝牙日程</title>
 <style>
   :root {
     --paper: #f4f1ea;
@@ -34,10 +35,11 @@
   header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 8px 0 20px; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .mark {
-    width: 42px; height: 42px; border: 1.5px solid var(--ink); border-radius: 10px;
-    display: grid; place-items: center; font-weight: 700; font-size: 20px;
+    width: 48px; height: 48px; border: 1.5px solid var(--ink); border-radius: 12px;
+    display: grid; place-items: center;
     background: #fffdf8; box-shadow: 3px 3px 0 var(--ink);
   }
+  .mark img { display: block; width: 40px; height: auto; }
   h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
   .sub { color: var(--ink-soft); font-size: 12.5px; margin-top: 2px; }
   .pill {
@@ -146,10 +148,10 @@
 <div class="wrap">
   <header>
     <div class="brand">
-      <div class="mark">日</div>
+      <div class="mark"><img src="CalCal_logo.png" alt="墨程CalCal 标志"></div>
       <div>
-        <h1>OnePage 日历</h1>
-        <div class="sub">ESP32-C61 · 蓝牙日程 · 低功耗墨水屏</div>
+        <h1>墨程CalCal</h1>
+        <div class="sub">蓝牙墨水屏日历 · ESP32-C61</div>
       </div>
     </div>
     <div id="statusPill" class="pill"><span class="dot"></span><span id="statusText">未连接</span></div>
@@ -159,7 +161,7 @@
 
   <section class="card">
     <h2>连接设备</h2>
-    <p class="lead">先唤醒设备（按 POWER），再点击连接。设备名称：<strong>Mochen CalCal</strong>。</p>
+    <p class="lead">先唤醒设备（按 POWER），再点击连接。设备广播名为 <strong>Mochen CalCal</strong>，连接后显示为 <strong>墨程CalCal</strong>。</p>
     <div class="row">
       <button id="connectBtn" class="grow">连接蓝牙设备</button>
       <button id="sleepBtn" class="ghost" disabled>让设备锁屏</button>
@@ -406,7 +408,7 @@
 
   // --- device state -----------------------------------------------------
   function applyHello(message) {
-    $("devName").textContent = message.name || "Mochen CalCal";
+    $("devName").textContent = message.name || "墨程CalCal";
     $("devFw").textContent = message.fw || "—";
     $("devEvents").textContent = Number.isFinite(message.events) ? `${message.events} 条` : "—";
     if (message.time_valid && Number.isFinite(message.now) && Number.isFinite(message.tz)) {

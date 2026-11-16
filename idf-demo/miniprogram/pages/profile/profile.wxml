@@ -1,4 +1,12 @@
 <view class="page">
+  <view class="card brand-card">
+    <image class="brand-logo" src="/CalCal_logo.png" mode="aspectFit" />
+    <view class="brand-copy">
+      <view class="brand-name">{{appName}}</view>
+      <view class="brand-sub">{{tagline}}</view>
+    </view>
+  </view>
+
   <view class="card profile-card">
     <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" loading="{{uploading}}">
       <image wx:if="{{avatarUrl}}" class="avatar big" src="{{avatarUrl}}" mode="aspectFill" />

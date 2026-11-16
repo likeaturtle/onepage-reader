@@ -10,7 +10,7 @@ const crypto = require('node:crypto');
 const { createBackup, restoreBackup } = require('../src/backup');
 
 function tmpDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'onepage-backup-'));
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'mocheng-calcal-backup-'));
 }
 
 test('encrypted backup round trip, wrong key and non-empty target', (t) => {

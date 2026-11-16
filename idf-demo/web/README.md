@@ -1,8 +1,10 @@
-# OnePage 日历 · 手机网页
+# 墨程CalCal · 手机网页
 
-`index.html` is the whole phone client: one static file, no build step, no CDN,
-no external fonts. It uses the browser's Web Bluetooth API to connect to the
-device's GATT service and exchanges newline-delimited JSON.
+`index.html` is the whole phone client: one static page plus the
+`CalCal_logo.png` brand asset, no build step, no CDN, no external fonts. It
+uses the browser's Web Bluetooth API to connect to the device's GATT service
+and exchanges newline-delimited JSON. The page title and header use the
+canonical product name **墨程CalCal**.
 
 ## Requirements
 
@@ -25,9 +27,9 @@ Open <http://localhost:8000>. `localhost` counts as a secure context.
 
 ### For a phone
 
-Put `index.html` on any HTTPS static host. GitHub Pages, Netlify, Cloudflare
-Pages or a web server with a certificate all work. Then open the URL in
-Android Chrome.
+Put `index.html` and `CalCal_logo.png` on any HTTPS static host. GitHub Pages,
+Netlify, Cloudflare Pages or a web server with a certificate all work. Then
+open the URL in Android Chrome.
 
 > If you need to use a LAN address for development, Chrome can temporarily
 > treat an origin as secure via
@@ -36,7 +38,9 @@ Android Chrome.
 
 ## Use
 
-1. Tap **连接蓝牙设备** and choose **Mochen CalCal**.
+1. Tap **连接蓝牙设备** and choose **Mochen CalCal** (the ASCII advertisement).
+   After connecting, the page shows the canonical name **墨程CalCal** from
+   the device's `hello` message.
 2. The page reads `hello`, shows the device time, then syncs the phone clock
    and timezone (`time` command) and loads the current month (`list`).
 3. Pick a date, start/end time and title, then **发送到设备**. The device
@@ -58,7 +62,8 @@ respectively. The device also truncates safely at a UTF-8 boundary and reports
 ## Web Bluetooth notes
 
 - `requestDevice` filters on the service UUID, so only this device family is
-  offered. The device name is in the scan response.
+  offered. The scan response carries the ASCII alias `Mochen CalCal`; the
+  connected `hello` reports `墨程CalCal`.
 - The page writes 20-byte chunks (the default ATT MTU of 23 minus 3). This is
   slower than using a large MTU but works on every phone. The device
   reassembles by newline and chunks notifications to its negotiated MTU.

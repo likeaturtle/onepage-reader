@@ -1,5 +1,5 @@
 /*
- * OnePage C61 calendar.
+ * 墨程CalCal - OnePage C61 BLE calendar.
  *
  * The panel is an e-ink display, so the UI is a small state machine that only
  * repaints when something actually changed. BLE runs in its own NimBLE task;
@@ -16,6 +16,7 @@
 #include "ble_calendar.h"
 #include "board_buttons.h"
 #include "board_power.h"
+#include "brand.h"
 #include "calendar.h"
 #include "calendar_ui.h"
 #include "epd_ssd1677.h"
@@ -657,7 +658,7 @@ static esp_err_t init_nvs(void) {
 
 void app_main(void) {
   const esp_reset_reason_t reset_reason = esp_reset_reason();
-  ESP_LOGI(TAG, "OnePage C61 calendar starting (reset reason %d%s)", (int)reset_reason,
+  ESP_LOGI(TAG, "%s starting (reset reason %d%s)", BRAND_NAME, (int)reset_reason,
            reset_reason == ESP_RST_DEEPSLEEP ? ", wake from deep sleep" : "");
   /* Waking from deep sleep is the vendor's "panel was off" case: the frame on
    * the glass is our own lock screen, so HALF (both RAM planes, sped-up
@@ -674,6 +675,21 @@ void app_main(void) {
   s_last_generation = calendar_generation();
 
   refresh_battery(true);
+
+  /* A cold boot gets a short brand splash before the calendar. It uses FULL so
+   * the first frame on an unknown panel state is clean; the calendar frame
+   * after it is FULL as well, because the two images share no content and a
+   * HALF pass could leave a ghost of the logo. Deep-sleep wake skips the splash
+   * because the lock screen is already on the glass. */
+  if (!panel_was_parked) {
+    uint8_t *boot_fb = epd_framebuffer();
+    if (boot_fb) {
+      ESP_LOGI(TAG, "cold boot: painting the brand splash");
+      ui_draw_boot(boot_fb);
+      epd_refresh(EPD_REFRESH_FULL);
+      vTaskDelay(pdMS_TO_TICKS(1200));
+    }
+  }
 
   s_app.view = VIEW_MONTH;
   s_app.follow_today = true;

@@ -1,8 +1,8 @@
 {
-  "name": "onepage-calendar-login",
+  "name": "mocheng-calcal-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Login and cloud-schedule backend for the Mochen CalCal WeChat mini program",
+  "description": "Login and cloud-schedule backend for the 墨程CalCal WeChat mini program",
   "type": "commonjs",
   "main": "src/server.js",
   "scripts": {

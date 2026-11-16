@@ -1,4 +1,4 @@
-# OnePage 登录与日程服务
+# 墨程CalCal · 登录与日程服务
 
 微信小程序的登录 / 用户资料 / 云端日程后端，只使用 Node 内置模块，没有第三方依赖。
 它负责把 `wx.login` 的临时 code 换成 `openid`，签发登录 token，保存昵称与头像，
@@ -237,9 +237,9 @@ token 是无状态的，服务端不维护会话；客户端删除本地 token �
 ### 加密备份
 
 ```bash
-npm run backup                    # 写到 backups/onepage-<timestamp>.backup.json
+npm run backup                    # 写到 backups/mocheng-calcal-<timestamp>.backup.json
 npm run backup -- /path/to/dir    # 指定输出目录
-npm run restore -- backups/onepage-....backup.json [dataDir] [--force]
+npm run restore -- backups/mocheng-calcal-....backup.json [dataDir] [--force]
 ```
 
 备份是 gzip + AES-256-GCM 的单文件，包含 `DATA_DIR` 下所有内容（含头像）。
@@ -249,6 +249,9 @@ npm run restore -- backups/onepage-....backup.json [dataDir] [--force]
 恢复前先停服务；建议恢复到空目录，目标目录非空需要 `--force`（不会删除目标里多出来的文件）。
 备份文件和密钥不要放在同一块盘上。
 日常建议用 cron 每天跑一次，并把 `backups/` 同步到异地加密存储。
+
+> 备份文件内部的 magic 仍是 `ONEPAGE-BACKUP`，加密 salt 也沿用旧字面量，
+> 这是为了兼容既有备份；对外展示与文件名已统一为墨程CalCal。
 
 ### 已知边界
 

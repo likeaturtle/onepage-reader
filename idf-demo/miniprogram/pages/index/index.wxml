@@ -4,7 +4,7 @@
       <image class="brand-logo" src="/CalCal_logo.png" mode="aspectFit" />
       <view class="brand-copy">
         <view class="brand-name">{{appName}}</view>
-        <view class="brand-sub">墨水屏日历</view>
+        <view class="brand-sub">{{tagline}}</view>
       </view>
     </view>
     <view class="user" bindtap="goProfile">
@@ -46,7 +46,7 @@
       <view class="switch-row">
         <view>
           <view class="switch-title">显示全部蓝牙设备</view>
-          <view class="switch-desc">找不到设备时打开，手动选择 Mochen CalCal</view>
+          <view class="switch-desc">找不到设备时打开，手动选择广播名 Mochen CalCal 的设备</view>
         </view>
         <switch checked="{{showAllDevices}}" color="#22345a" bindchange="toggleAllDevices" />
       </view>
@@ -72,7 +72,7 @@
 
     <block wx:else>
       <view class="device-info">
-        <view class="kv"><text>名称</text><text>{{hello.name || 'Mochen CalCal'}}</text></view>
+        <view class="kv"><text>名称</text><text>{{hello.name || appName}}</text></view>
         <view class="kv"><text>固件</text><text>{{hello.fw || '—'}}</text></view>
         <view class="kv"><text>设备日程</text><text>{{hello.events || 0}} 条</text></view>
         <view class="kv"><text>设备时间</text><text>{{deviceTime || '未同步'}}</text></view>

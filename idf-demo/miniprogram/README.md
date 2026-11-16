@@ -1,11 +1,21 @@
 # 墨程CalCal · 微信小程序
 
 这是 `web/index.html` 之外的另一套客户端：原生微信小程序（墨程CalCal），Android / iOS 都能用 BLE
-连接 `Mochen CalCal` 设备。导入开发者工具、配置 AppID/.env 的完整步骤见
+连接设备。设备广播名是 ASCII 别名 `Mochen CalCal`，连接后的 `hello` 和页面展示名是
+`墨程CalCal`。导入开发者工具、配置 AppID/.env 的完整步骤见
 [`微信小程序配置说明.md`](../微信小程序配置说明.md)。
 
-**固件、BLE 协议和现有网页都没有改动**，小程序复用同一套 JSON 行协议
-（[`../docs/ble-protocol.md`](../docs/ble-protocol.md)）。
+小程序复用固件同一套 BLE JSON 行协议，没有额外的协议分支
+（[`../docs/ble-protocol.md`](../docs/ble-protocol.md)）；产品名和 logo 由固件与
+小程序各自展示，协议字段保持兼容。
+
+## 品牌
+
+- 展示名统一为 **墨程CalCal**（墨程和 CalCal 之间不要空格），`config.appName` 是唯一来源；
+- 登录页、日程页、我的页都使用根目录的 `CalCal_logo.png`；页面导航标题统一为
+  `墨程CalCal`，tab 文案仍是「日程」「我的」；
+- 设备广播名是 ASCII 别名 `Mochen CalCal`，连接后的 `hello` 和页面显示名是
+  `墨程CalCal`；扫描过滤仍按 `Mochen` 前缀，见 `config.js` 的 `deviceNamePrefix`。
 
 ## 功能
 
@@ -79,7 +89,7 @@ npm start
 ### 4. 连接设备
 
 1. 按设备 POWER 键唤醒；
-2. 点「扫描设备」，选择 `Mochen CalCal`（找不到时打开「显示全部蓝牙设备」）；
+2. 点「扫描设备」，选择广播名 `Mochen CalCal` 的设备（找不到时打开「显示全部蓝牙设备」）；
 3. 连接成功后自动同步时间，并执行一次“云端 ↔ 设备”补齐；
 4. 没连接设备时添加/删除只改云端；连接后点「同步」或重新连接即可落到设备；
 5. 「锁屏休眠」等价于网页上的「让设备锁屏」。

@@ -15,6 +15,8 @@ module.exports = {
   devLogin: false,
   appName: '墨程CalCal',
   tagline: '把日程写进墨水屏',
+  // ASCII alias advertised by the device; the connected device reports
+  // the Chinese product name. Keep the prefix in sync with brand.h.
   deviceNamePrefix: 'Mochen',
   protocol: 1,
 };

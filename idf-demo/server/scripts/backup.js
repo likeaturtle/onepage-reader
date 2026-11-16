@@ -15,7 +15,7 @@ const outputDir = process.argv[2]
   ? path.resolve(process.argv[2])
   : path.join(__dirname, '..', 'backups');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const output = path.join(outputDir, `onepage-${stamp}.backup.json`);
+const output = path.join(outputDir, `mocheng-calcal-${stamp}.backup.json`);
 
 try {
   const result = createBackup({ dataDir: config.dataDir, outFile: output, key: config.backupKey });

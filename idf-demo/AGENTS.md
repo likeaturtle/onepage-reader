@@ -1,6 +1,6 @@
 # Working in `idf-demo/`
 
-`idf-demo` 是这套 OnePage C61 阅读器的**自有 ESP-IDF 应用**（BLE 日历），用来替代
+`idf-demo` 是 **墨程CalCal**（OnePage C61 墨水屏日历）的**自有 ESP-IDF 应用**，用来替代
 厂商的 PlatformIO/Arduino 固件。开始改代码之前先读 `DEVNOTES.md`（硬件事实、环境
 路径、已验证结论、已知坑），`README.md` 讲怎么编译烧写和排障，`docs/ble-protocol.md`
 是手机网页与设备之间的协议。
@@ -10,6 +10,25 @@
 - ESP-IDF **6.1**：`/Users/fujd/.espressif/v6.1/esp-idf`
 - `idf.py` 不在默认 PATH，先 `. /Users/fujd/.espressif/tools/activate_idf_v6.1.sh`
 - 目标芯片固定 `esp32c61`；换机器或删掉 `sdkconfig` 后先跑一次 `idf.py set-target esp32c61`
+
+## 品牌与命名
+
+- 产品展示名统一写 **`墨程CalCal`**（墨程和 CalCal 之间不要空格），简称 `CalCal`；
+  不要写 `墨程 CalCal`、`OnePage 日历` 或 `蓝牙日历`。硬件平台名仍是 OnePage C61。
+- BLE 广播/GAP 名保留 ASCII 别名 **`Mochen CalCal`**（部分系统对 UTF-8 设备名支持
+  不稳定，小程序也按 `Mochen` 前缀扫描）；连接后的 `hello` / INFO `name` 用
+  `墨程CalCal`。字符串的唯一来源是 `components/brand/include/brand.h`。
+- logo 源文件是 `miniprogram/CalCal_logo.png`；固件 logo 位图和顶栏 wordmark 都由
+  `tools/gen_brand_assets.py` 生成到 `components/brand/src/brand_logo.c`，不要手改
+  （wordmark 从 `brand.h` 的名称 + Noto Sans CJK SC 渲染）。换 logo 或名称后重新跑
+  生成脚本和 `tools/preview_calendar.py`。
+- 电子墨水屏的三处品牌露出：冷启动 splash、锁屏、月/日/详情页顶栏；
+  改布局时先用预览图确认 logo 不糊、名称不被挤压。
+- 顶栏固定用 30 px logo + 22 px wordmark（两者墨迹高都是 21 px，与 5x7 scale 3
+  电量/时钟一致，`brand_wordmark`，左侧），右侧是
+  电池 → 时钟 → 蓝牙图标（蓝牙最右）的右对齐组，间距 14 px；电量/时钟保持
+  5x7 scale 3（21 px ink）。不要再把 24 px CJK 文本塞回顶栏。5x7 与 CJK 的底对齐由
+  `gfx_text()` 的 scale 行偏移统一处理，不要在各页面手写补偿。
 
 ## 规矩
 
