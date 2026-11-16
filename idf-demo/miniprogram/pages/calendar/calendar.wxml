@@ -1,0 +1,38 @@
+<view class="page">
+  <view wx:if="{{error}}" class="banner error">{{error}}</view>
+
+  <view class="card">
+    <view class="card-head">
+      <view class="card-heading">
+        <text class="card-title">本月日程</text>
+        <text class="hint">{{eventCount}} 条</text>
+      </view>
+      <text class="hint status">{{loading ? '读取中…' : '云端'}}</text>
+    </view>
+
+    <view class="month-bar">
+      <view class="month-btn" bindtap="prevMonth" hover-class="month-btn-hover" aria-role="button" aria-label="上个月">‹</view>
+      <text class="month-label">{{monthLabel}}</text>
+      <view class="month-btn" bindtap="nextMonth" hover-class="month-btn-hover" aria-role="button" aria-label="下个月">›</view>
+    </view>
+
+    <view wx:if="{{loading}}" class="empty">正在读取云端…</view>
+    <view wx:elif="{{!groups.length && error}}" class="empty">云端日程加载失败，请检查网络后重试。</view>
+    <view wx:elif="{{!groups.length}}" class="empty">本月还没有日程，到“添加”页新建一条。</view>
+
+    <view wx:for="{{groups}}" wx:key="date" class="day-group">
+      <view class="day-head">{{item.label}}</view>
+      <view wx:for="{{item.items}}" wx:for-item="event" wx:key="id" class="event">
+        <view class="event-time">
+          <view>{{event.start}}</view>
+          <view class="event-end">{{event.end}}</view>
+        </view>
+        <view class="event-main">
+          <view class="event-title">{{event.title}}</view>
+          <view wx:if="{{event.note}}" class="event-note">{{event.note}}</view>
+        </view>
+        <button class="btn tiny danger" catchtap="remove" data-id="{{event.id}}">删除</button>
+      </view>
+    </view>
+  </view>
+</view>

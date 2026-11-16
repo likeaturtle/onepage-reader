@@ -66,3 +66,18 @@ test('20-byte chunks never break JSON parsing after reassembly', () => {
     assert.deepEqual(JSON.parse(utf8.decode(lines[0])), command);
   }
 });
+
+test('clamp truncates by UTF-8 bytes without splitting characters', () => {
+  assert.equal(utf8.clamp('a'.repeat(200), 95).length, 95);
+  const cjk = utf8.clamp('长'.repeat(40), 95);
+  assert.equal(cjk, '长'.repeat(31)); // 93 bytes, the 32nd character would be 96
+  assert.equal(utf8.byteLength(cjk), 93);
+  const note = utf8.clamp('记'.repeat(80), 191);
+  assert.equal(note, '记'.repeat(63)); // 189 bytes, the 64th would be 192
+  assert.equal(utf8.byteLength(note), 189);
+  assert.equal(utf8.clamp('😀'.repeat(30), 95), '😀'.repeat(23)); // 4 bytes each
+  assert.equal(utf8.clamp('', 95), '');
+  assert.equal(utf8.clamp('abc', 0), '');
+  assert.equal(utf8.clamp('abc', -1), '');
+  assert.equal(utf8.clamp(null, 95), '');
+});

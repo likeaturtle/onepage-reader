@@ -2,7 +2,7 @@
 
 **墨程CalCal** is an ESP-IDF **6.1** calendar for the OnePage C61 e-reader. The
 phone talks to the device over BLE from a plain web page (Web Bluetooth) or the
-native WeChat mini program, schedules are stored in NVS, and the e-ink panel
+native WeChat mini program, schedules are stored on a LittleFS partition, and the e-ink panel
 shows a month grid, a day agenda, event details and a branded lock screen with
 the next appointments. When idle the device parks the panel and enters deep
 sleep, so it can run for a long time on a battery.
@@ -143,10 +143,15 @@ esptool --chip esp32c61 -p /dev/cu.usbmodemXXXX erase-region 0xe000 0x2000
 idf.py -p /dev/cu.usbmodemXXXX monitor
 ```
 
-The project still uses the stock partition offsets, so rollback works the same
-way as before (see [`docs/bringup-demo.md`](docs/bringup-demo.md) for the full
-flash/rollback/Puya-flash notes). The app image is about 1.26 MB of the 6.4 MB
-factory partition.
+The first 64 KB and the nvs/otadata/factory offsets still match the stock
+firmware, so flashing back the stock image works (see
+[`docs/bringup-demo.md`](docs/bringup-demo.md) for the full
+flash/rollback/Puya-flash notes). The factory slot is 3 MB and the app image is
+about 1.38 MB of it; the rest of the flash is the `storage` LittleFS partition.
+
+**After this partition change, flash the whole layout once** (`idf.py flash -a`):
+updating only the app leaves the old table in place and `calendar_init()` will
+fail to find the `storage` partition.
 
 ### Open the phone page
 
@@ -244,26 +249,31 @@ minutes east of UTC. Full examples are in
 
 ### Calendar storage
 
-The whole database is one NVS blob in namespace `calstore` (partition `nvs`,
-20 KB), not on the SD card:
+The whole database is one file, `/lfs/calendar.db`, on the `storage` LittleFS
+partition (~12.9 MB, see `partitions.csv`). NVS (20 KB) only keeps the clock,
+the timezone and the PHY/BT calibration data; the calendar no longer uses it.
 
 - **No SD dependency** and no card current: the calendar works with no card
   inserted, and the SD card is never mounted by this application.
-- The database is rewritten as a single blob on each change. Capacity is
-  96 events, with title 47 bytes and note 95 bytes of UTF-8. This build exposes
-  a single calendar; the DB keeps a calendar index (always 0) for schema
-  compatibility. On first boot, an older multi-calendar DB is collapsed into
-  calendar 0 and saved.
-  When NVS is full, the oldest events that are already in the past are pruned
-  first and the phone's `add` acknowledgement reports `"pruned":N`. Upcoming
-  events are never silently dropped; the add fails with `calendar full`
-  instead.
-- The blob has a magic/version header and a CRC32 over the payload, so a
-  corrupt or future layout falls back to the default calendar instead of
-  reinterpreting bytes (NVS itself protects individual entries, but a torn
-  multi-entry blob is worth an explicit check).
-- The clock (`epoch`, `tz`) is stored next to the database. On a cold boot the
-  last known time is restored; on deep-sleep wake the RTC time keeps running.
+- The database is rewritten as a single file on each change (temp file +
+  rename, so a power cut leaves either the old or the new database). Capacity
+  is still 96 events with title 95 bytes and note 191 bytes of UTF-8; those are
+  now protocol/UI limits rather than NVS limits, and the in-RAM buffer cap is
+  `DB_MAX_BYTES` in `calendar.c`. Raising them only needs a matching buffer and
+  the server/mini-program counters.
+- If a change would not fit `DB_MAX_BYTES`, the oldest events that are already
+  in the past are pruned first and the phone's `add` acknowledgement reports
+  `"pruned":N`. Upcoming events are never silently dropped; the add fails with
+  `calendar full` instead.
+- The file has a magic/version header and a CRC32 over the payload, so a
+  corrupt or future layout is moved aside (`calendar.db.bad`) and the firmware
+  falls back to the default calendar instead of reinterpreting bytes.
+- **Migration**: firmware before this change kept the database in the NVS
+  namespace `calstore`. On the first boot after flashing this image the file is
+  missing, the NVS blob is CRC-checked, written to `/lfs/calendar.db`, and the
+  NVS copy is deleted. The log line is `migrated N events from NVS`.
+- The clock (`epoch`, `tz`) stays in NVS. On a cold boot the last known time is
+  restored; on deep-sleep wake the RTC time keeps running.
 
 ### Time
 
@@ -364,9 +374,10 @@ idf-demo/
 │   └── calendar_ui.h
 ├── components/
 │   ├── brand/              brand strings + generated 1-bit logo bitmaps
-│   ├── calendar/           data model, NVS persistence, civil date helpers
+│   ├── calendar/           data model, LittleFS persistence, civil dates
 │   ├── ble_calendar/       NimBLE GATT server + JSON protocol
 │   ├── cjson/              vendored cJSON 1.7.19 (MIT)
+│   ├── littlefs/           vendored LittleFS 1.23.0 (MIT), calendar storage
 │   └── onepage_c61/        panel, keys, power, ADC, SD, mic, fonts, gfx
 ├── web/
 │   ├── index.html          phone page (Web Bluetooth)
@@ -384,7 +395,7 @@ idf-demo/
 │   ├── gen_cjk_bitmaps.py  generate the embedded CJK fonts
 │   └── preview_calendar.py render the UI screens offline
 ├── sdkconfig.defaults      target, flash/PSRAM, USB console, BLE, PM
-└── partitions.csv          stock-compatible layout
+└── partitions.csv          stock-compatible head + LittleFS storage tail
 ```
 
 ---
@@ -414,9 +425,13 @@ The following is what to verify on a real board. Compilation cannot cover these:
    events, and wake on POWER with the month view. With no upcoming events the
    list area shows the mini program code plus the two hints, vertically
    centered; check it scans with WeChat.
-8. **NVS capacity** — add events until pruning starts; confirm the newest /
-   upcoming events survive and the phone sees `pruned` / `calendar full` as
-   appropriate.
+8. **Calendar storage** — on a board that still runs the old firmware, flash
+   this image (`idf.py flash -a`) and confirm the log says `migrated N events
+   from NVS`, then power-cycle twice and check the events are still there.
+   Fill the calendar until pruning starts and confirm the newest / upcoming
+   events survive and the phone sees `pruned` / `calendar full` as appropriate.
+   Also pull the plug during a save: the next boot must still show a valid
+   calendar (old or new, never corrupt).
 9. **Brand rendering** — cold boot shows the logo splash, the top bar keeps the
    logo + `墨程CalCal` legible next to BLE/battery/clock, and the lock screen
    shows the logo/name/subtitle without clipping; `CalCal` keeps its
@@ -454,7 +469,7 @@ power-management docs for SARADC and USB-Serial/JTAG.
 | Device is not listed | device is in deep sleep (press POWER), or the page's service filter does not match; check the UUIDs in `ble_calendar.h` / `web/index.html` |
 | Connect succeeds but no events | TX notifications not subscribed; the page must call `startNotifications()`; check the console log |
 | `bad json` / `missing cmd` | a write was truncated or split without a newline; the page chunks at 20 bytes and appends `\n` once |
-| Event says `calendar full` | 96 events / NVS is full and no past events are left to prune; delete some events |
+| Event says `calendar full` | 96 events / the database file is full and no past events are left to prune; delete some events |
 | Header clock is `--:--` | never synced since power-on; connect the phone or check the time command |
 | Header battery is `--%` | first sample after power-up is still settling; the app retries at 2/4/8/16/32 s and replaces it as soon as the pack voltage is plausible |
 | Keys stop working after idling | automatic light sleep was re-enabled in `init_power_management()`; keep `light_sleep_enable = false` on this board (and keep `CONFIG_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP=n`) |

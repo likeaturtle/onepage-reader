@@ -284,15 +284,17 @@ static void send_event(const cal_event_t *event) {
   char date[12];
   char start[6];
   char end[6];
-  char title[160];
-  char note[320];
+  /* Sized for the full 95/191-byte fields even when every byte has to be
+   * escaped (\" or \\ doubles it). */
+  char title[200];
+  char note[400];
   calendar_format_date(event->day, date, sizeof(date));
   calendar_format_time(event->start_min, start, sizeof(start));
   calendar_format_time(event->end_min, end, sizeof(end));
   json_escape(title, sizeof(title), event->title);
   json_escape(note, sizeof(note), event->note);
 
-  char json[720];
+  char json[768];
   snprintf(json, sizeof(json),
            "{\"ev\":\"ev\",\"id\":%u,\"cal\":%u,\"date\":\"%s\",\"start\":\"%s\","
            "\"end\":\"%s\",\"title\":\"%s\",\"note\":\"%s\"}",

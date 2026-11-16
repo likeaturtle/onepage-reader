@@ -54,10 +54,10 @@ open the URL in Android Chrome.
 6. Open **蓝牙协议日志** to see every JSON line in both directions. This is the
    first place to look if a command times out.
 
-The form limits are chosen to match the firmware: a title is at most 15
-characters and a note at most 30, because the device stores 47/95 UTF-8 bytes
-respectively. The device also truncates safely at a UTF-8 boundary and reports
-`"trunc":true` if it had to shorten anything.
+The form limits are chosen to match the firmware: a title is at most 31
+characters and a note at most 63, because the device stores 95/191 UTF-8 bytes
+respectively (about 31/63 Chinese characters). The device also truncates safely
+at a UTF-8 boundary and reports `"trunc":true` if it had to shorten anything.
 
 ## Web Bluetooth notes
 

@@ -49,6 +49,8 @@
   实测会让按键/刷新/串口假死。
 - BLE 服务/特征 UUID 同时出现在 `components/ble_calendar/include/ble_calendar.h`
   和 `web/index.html`，改一处必须同步另一处。
+- 日历数据在 `storage` 分区（LittleFS）的 `/lfs/calendar.db`，NVS 只放时钟/时区/校准；
+  改 `partitions.csv` 后必须 `idf.py flash -a`，否则找不到分区会启动失败。
 - `font_gb2312_24.bin` / `font_cjk_large.c` 是 `tools/gen_cjk_bitmaps.py` 生成的，
   不要手改；改 UI 文案后跑一遍脚本和 `tools/preview_calendar.py`。
 - 当前是**单一日历、竖版 480x800**：不要重新引入分类选择；`ONEPAGE_UI_ROTATION`

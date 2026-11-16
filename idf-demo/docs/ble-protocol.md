@@ -112,9 +112,9 @@ the in-RAM limit (96 events); use a date range on the phone.
 - If `end` is omitted, empty, or not later than `start`, the device uses
   `start + 60 min` (clamped to 24:00). An event with `start=23:30` and
   `end=00:00` becomes 23:30–24:00.
-- `title` is required and truncated to 47 UTF-8 bytes (about 15 Chinese
-  characters). `note` is optional and truncated to 95 UTF-8 bytes. The reply
-  reports `trunc` when truncation happened.
+- `title` is required and truncated to 95 UTF-8 bytes (about 31 Chinese
+  characters). `note` is optional and truncated to 191 UTF-8 bytes (about 63
+  Chinese characters). The reply reports `trunc` when truncation happened.
 
 Response:
 

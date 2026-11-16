@@ -5,23 +5,36 @@ const ble = require('../../utils/ble');
 const auth = require('../../utils/auth');
 const api = require('../../utils/api');
 const avatar = require('../../utils/avatar');
+const cal = require('../../utils/calendar');
 const fmt = require('../../utils/format');
+const utf8 = require('../../utils/utf8');
 
 const SYNC_PAST_DAYS = 7;
 const SYNC_FUTURE_DAYS = 120;
 const BULK_DELETE_THRESHOLD = 3;
 const SCAN_DURATION_MS = 5000;
+// The wheel picker this replaced was capped at 2021..2100; keep the calendar
+// arrows inside the same practical range instead of allowing any year.
+const CAL_YEAR_MIN = 2020;
+const CAL_YEAR_MAX = 2099;
+// Confirming a start time moves the end time this far ahead; the end picker
+// stays editable so the user can override it afterwards.
+const AUTO_END_MINUTES = 30;
+// The device stores titles/notes in 96/192-byte fields (95/191 usable). The
+// inputs are clamped by UTF-8 bytes here, because a character limit would stop
+// Chinese text at roughly a third of the budget.
+const TITLE_BYTES = 95;
+const NOTE_BYTES = 191;
 
 function defaultForm() {
   const now = new Date();
   const start = new Date(now.getTime() + 30 * 60 * 1000);
   start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15, 0, 0);
-  const end = new Date(start.getTime() + 60 * 60 * 1000);
   const hhmm = (date) => `${fmt.pad(date.getHours())}:${fmt.pad(date.getMinutes())}`;
   return {
     date: fmt.ymd(start),
     start: hhmm(start),
-    end: hhmm(end),
+    end: fmt.shiftClock(hhmm(start), AUTO_END_MINUTES),
     title: '',
     note: '',
   };
@@ -83,15 +96,17 @@ Page({
     showAllDevices: false,
     hasScanned: false,
     hello: null,
+    deviceOpen: true,
     deviceTime: '',
-    monthCursor: '',
-    monthLabel: '',
-    groups: [],
-    eventCount: 0,
-    loading: false,
     form: { date: '', start: '', end: '', title: '', note: '' },
+    weekdays: cal.WEEKDAY_INITIALS,
+    calendarOpen: false,
+    calendarLabel: '',
+    calendarCells: [],
     titleBytes: 0,
     noteBytes: 0,
+    titleLimit: TITLE_BYTES,
+    noteLimit: NOTE_BYTES,
     busy: false,
     error: '',
     syncError: '',
@@ -100,15 +115,8 @@ Page({
   },
 
   onLoad() {
-    const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    this.events = [];
     this.syncedThisSession = false;
-    this.setData({
-      monthCursor: fmt.ymd(first),
-      monthLabel: fmt.monthLabel(first),
-      form: defaultForm(),
-    });
+    this.setData({ form: defaultForm() });
     this.syncUser();
 
     this.offState = ble.onState((state) => {
@@ -126,7 +134,22 @@ Page({
       if (!state.connected) {
         patch.hello = null;
         patch.deviceTime = '';
+        patch.deviceOpen = true; // the scan UI has to be visible again
+        if (this.data.connected) {
+          // The link just ended (lock/sleep, manual disconnect or a drop).
+          // The devices from the old scan are almost certainly asleep or out
+          // of range by now, so leave an empty scan list instead of a row that
+          // cannot be reconnected.
+          patch.devices = [];
+          patch.hasScanned = false;
+          patch.scanning = false;
+        }
         this.syncedThisSession = false;
+      } else if (!this.data.connected) {
+        // Freshly connected: roll the device card up to its header so the
+        // calendar and the add-event form stay in reach. The header tap opens
+        // it again, and repeated state events leave that choice alone.
+        patch.deviceOpen = false;
       }
       this.setData(patch);
     });
@@ -163,10 +186,10 @@ Page({
         // 401 already redirects from utils/api; network errors keep the cache.
       });
 
-    // The cloud list is the primary view: it must load even without a device.
-    this.loadMonth();
+    // The month list lives on the 日程 tab; this page only syncs when a board
+    // is connected, so switching there always reads a fresh list.
     if (ble.isConnected() && !this.syncedThisSession && !this.syncing) {
-      this.syncDevice().then(() => this.loadMonth());
+      this.syncDevice();
     }
   },
 
@@ -203,6 +226,11 @@ Page({
   },
 
   // --- device -----------------------------------------------------------
+  toggleDeviceCard() {
+    if (!this.data.connected) return; // the scan UI must stay on screen
+    this.setData({ deviceOpen: !this.data.deviceOpen });
+  },
+
   clearScanTimer() {
     if (this.scanTimer) {
       clearTimeout(this.scanTimer);
@@ -274,7 +302,6 @@ Page({
         wx.showToast({ title: '已连接，正在同步', icon: 'none' });
         return this.syncDevice();
       })
-      .then(() => this.loadMonth())
       .catch((err) => this.setData({ error: err.message }))
       .then(() => this.setData({ connecting: false }));
   },
@@ -300,13 +327,7 @@ Page({
 
   refresh() {
     if (this.data.syncing) return;
-    if (!ble.isConnected()) {
-      this.loadMonth().then(() => wx.showToast({ title: '已刷新云端', icon: 'none' }));
-      return;
-    }
-    this.syncDevice()
-      .then(() => this.loadMonth())
-      .then(() => wx.showToast({ title: '已同步', icon: 'none' }));
+    this.syncDevice().then(() => wx.showToast({ title: '已同步', icon: 'none' }));
   },
 
   // --- cloud <-> device sync -------------------------------------------
@@ -460,61 +481,99 @@ Page({
         throw err;
       }
     })().catch(() => {
-      // The message is already on screen; callers still refresh the cloud list.
+      // The message is already on screen; the caller only clears its flags.
     }).then(() => {
       this.syncing = false;
       this.setData({ syncing: false });
     });
   },
 
-  // --- month ------------------------------------------------------------
-  loadMonth() {
-    this.setData({ loading: true, error: '' });
-    const cursor = this.data.monthCursor;
-    const bounds = fmt.monthBounds(cursor);
-    return api.events({ from: bounds.from, to: bounds.to })
-      .then((events) => {
-        if (cursor !== this.data.monthCursor) return; // a newer month won
-        this.events = events;
-        this.setData({
-          groups: fmt.groupEvents(events),
-          eventCount: events.length,
-        });
-      })
-      .catch((err) => {
-        if (cursor === this.data.monthCursor) this.setData({ error: err.message });
-      })
-      .then(() => {
-        if (cursor === this.data.monthCursor) this.setData({ loading: false });
+  // --- date picker ------------------------------------------------------
+  toggleCalendar() {
+    if (this.data.calendarOpen) {
+      this.setData({ calendarOpen: false });
+      return;
+    }
+    const cursor = cal.cursorFrom(this.data.form.date);
+    this.calYear = cursor.year;
+    this.calMonth = cursor.month;
+    this.renderCalendar();
+    this.setData({ calendarOpen: true }, () => this.revealCalendar());
+  },
+
+  /* The panel opens below the date row, which can leave its last weeks below
+   * the fold on a short screen. Measure it after the view has updated and
+   * scroll just enough to show all of it. */
+  revealCalendar() {
+    if (typeof wx === 'undefined' || !wx.createSelectorQuery) return;
+    const query = wx.createSelectorQuery();
+    query.select('.cal').boundingClientRect();
+    query.selectViewport().scrollOffset();
+    query.exec((res) => {
+      if (!this.data.calendarOpen) return; // closed while measuring
+      const rect = res && res[0];
+      const view = res && res[1];
+      if (!rect || !view) return;
+      const info = typeof wx.getWindowInfo === 'function'
+        ? wx.getWindowInfo()
+        : wx.getSystemInfoSync();
+      const target = cal.revealScrollTop({
+        top: rect.top,
+        height: rect.height,
+        scrollTop: view.scrollTop,
+        viewport: info.windowHeight,
       });
-  },
-
-  shiftMonth(delta) {
-    const cursor = fmt.parseYmd(this.data.monthCursor);
-    const next = new Date(cursor.getFullYear(), cursor.getMonth() + delta, 1);
-    this.setData({
-      monthCursor: fmt.ymd(next),
-      monthLabel: fmt.monthLabel(next),
-      groups: [],
+      if (target == null) return;
+      wx.pageScrollTo({ scrollTop: target, duration: 200 });
     });
-    this.loadMonth();
   },
 
-  prevMonth() {
-    this.shiftMonth(-1);
+  shiftCalendarMonth(event) {
+    const delta = Number(event.currentTarget.dataset.delta) || 0;
+    if (!delta) return;
+    const next = new Date(this.calYear, this.calMonth + delta, 1);
+    if (next.getFullYear() < CAL_YEAR_MIN || next.getFullYear() > CAL_YEAR_MAX) return;
+    this.calYear = next.getFullYear();
+    this.calMonth = next.getMonth();
+    this.renderCalendar();
   },
 
-  nextMonth() {
-    this.shiftMonth(1);
+  renderCalendar() {
+    this.setData({
+      calendarLabel: cal.monthLabel(this.calYear, this.calMonth),
+      calendarCells: cal.monthGrid(this.calYear, this.calMonth, this.data.form.date,
+        fmt.ymd(new Date())),
+    });
+  },
+
+  pickDay(event) {
+    this.chooseDate(event.currentTarget.dataset.date);
+  },
+
+  pickToday() {
+    this.chooseDate(fmt.ymd(new Date()));
+  },
+
+  chooseDate(date) {
+    if (!date) return;
+    const cursor = cal.cursorFrom(date);
+    this.calYear = cursor.year;
+    this.calMonth = cursor.month;
+    this.setData({
+      form: Object.assign({}, this.data.form, { date }),
+      calendarOpen: false,
+    });
   },
 
   // --- add / delete -----------------------------------------------------
-  onDate(event) {
-    this.setData({ 'form.date': event.detail.value });
-  },
-
   onStart(event) {
-    this.setData({ 'form.start': event.detail.value });
+    const start = event.detail.value;
+    // The end follows the start by 30 minutes; picking an end afterwards still
+    // wins until the start is confirmed again.
+    this.setData({
+      'form.start': start,
+      'form.end': fmt.shiftClock(start, AUTO_END_MINUTES),
+    });
   },
 
   onEnd(event) {
@@ -522,13 +581,13 @@ Page({
   },
 
   onTitle(event) {
-    const value = event.detail.value;
-    this.setData({ 'form.title': value, titleBytes: fmt.utf8Len(value) });
+    const value = utf8.clamp(event.detail.value, TITLE_BYTES);
+    this.setData({ 'form.title': value, titleBytes: utf8.byteLength(value) });
   },
 
   onNote(event) {
-    const value = event.detail.value;
-    this.setData({ 'form.note': value, noteBytes: fmt.utf8Len(value) });
+    const value = utf8.clamp(event.detail.value, NOTE_BYTES);
+    this.setData({ 'form.note': value, noteBytes: utf8.byteLength(value) });
   },
 
   submit() {
@@ -574,66 +633,14 @@ Page({
         const fresh = defaultForm();
         this.setData({
           form: Object.assign({}, fresh, { date: form.date }),
+          calendarOpen: false,
           titleBytes: 0,
           noteBytes: 0,
         });
-        const day = fmt.parseYmd(form.date);
-        this.setData({
-          monthCursor: fmt.ymd(new Date(day.getFullYear(), day.getMonth(), 1)),
-          monthLabel: fmt.monthLabel(day),
-        });
-        return this.loadMonth();
       })
       .then(() => (ble.isConnected() ? ble.hello().catch(() => null) : null))
       .then((hello) => {
         if (hello) this.setData({ hello, deviceTime: fmt.deviceTime(hello) });
-      })
-      .catch((err) => this.setData({ error: err.message }))
-      .then(() => this.setData({ busy: false }));
-  },
-
-  remove(event) {
-    const id = event.currentTarget.dataset.id;
-    const target = (this.events || []).find((item) => item.id === id);
-    if (!target) return;
-    wx.showModal({
-      title: '删除日程',
-      content: ble.isConnected()
-        ? '删除后无法恢复，确定删除这条日程吗？'
-        : '删除后无法恢复。当前未连接蓝牙设备，删除会先改云端，连接设备后再同步。',
-      confirmText: '删除',
-      confirmColor: '#9c3427',
-      success: (res) => {
-        if (res.confirm) this.doRemove(target);
-      },
-    });
-  },
-
-  doRemove(target) {
-    this.setData({ busy: true, error: '' });
-    const wasConnected = ble.isConnected();
-    let deviceError = '';
-    api.deleteEvent(target.id)
-      .then(() => {
-        if (target.deviceId == null) return api.purgeEvent(target.id);
-        if (!ble.isConnected()) return null; // tombstone waits for the next sync
-        return ble.del(target.deviceId)
-          .then(() => api.purgeEvent(target.id))
-          .catch((err) => {
-            if (/not found/i.test(err.message)) return api.purgeEvent(target.id);
-            deviceError = err.message; // keep the tombstone
-            return null;
-          });
-      })
-      .then(() => {
-        wx.showToast({
-          title: deviceError
-            ? '云端已删，设备同步失败'
-            : (!wasConnected ? '未连蓝牙，已删云端' : '已删除'),
-          icon: 'none',
-          duration: 2200,
-        });
-        return this.loadMonth();
       })
       .catch((err) => this.setData({ error: err.message }))
       .then(() => this.setData({ busy: false }));

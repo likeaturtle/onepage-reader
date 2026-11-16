@@ -117,8 +117,8 @@ function detectImage(buffer) {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TITLE_BYTES = 47;
-const NOTE_BYTES = 95;
+const TITLE_BYTES = 95;
+const NOTE_BYTES = 191;
 
 function isValidDate(value) {
   if (!DATE_RE.test(value)) return false;

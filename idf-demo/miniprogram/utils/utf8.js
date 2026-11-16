@@ -107,4 +107,25 @@ function byteLength(text) {
   return encode(text).length;
 }
 
-module.exports = { encode, decode, byteLength };
+/**
+ * Truncates `text` to at most `maxBytes` UTF-8 bytes without splitting a
+ * character. The device stores titles/notes as byte-limited fields, so the
+ * inputs are clamped by bytes instead of by JavaScript string length (which
+ * would stop Chinese text at a third of the budget).
+ */
+function clamp(text, maxBytes) {
+  const input = String(text == null ? '' : text);
+  const limit = Number(maxBytes);
+  if (!Number.isFinite(limit) || limit <= 0) return '';
+  let out = '';
+  let used = 0;
+  for (const ch of input) {
+    const size = byteLength(ch);
+    if (used + size > limit) break;
+    out += ch;
+    used += size;
+  }
+  return out;
+}
+
+module.exports = { encode, decode, byteLength, clamp };

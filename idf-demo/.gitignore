@@ -14,6 +14,7 @@ tools/preview_cjk.png
 tools/preview_month.png
 tools/preview_day.png
 tools/preview_detail.png
+tools/preview_detail_long.png
 tools/preview_delete.png
 tools/preview_boot.png
 tools/preview_peek_count.png
@@ -24,6 +25,11 @@ tools/preview_glyph_fix.png
 tools/preview_sleep.png
 tools/preview_sleep_empty.png
 tools/preview_qrcode.png
+tools/preview_miniprogram_calendar.png
+tools/preview_miniprogram_device.png
+tools/preview_miniprogram_scan.png
+tools/preview_miniprogram_tabs.png
+tools/preview_miniprogram_schedule_long.png
 
 tools/preview_ble_states.png
 

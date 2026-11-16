@@ -4,6 +4,7 @@ idf_component_register(
     REQUIRES
         esp_common
     PRIV_REQUIRES
+        littlefs
         nvs_flash
         esp_hw_support
 )

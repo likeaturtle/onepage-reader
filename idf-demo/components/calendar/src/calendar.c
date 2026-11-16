@@ -1,5 +1,6 @@
 #include "calendar.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +8,7 @@
 #include <time.h>
 
 #include "esp_heap_caps.h"
+#include "esp_littlefs.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -15,15 +17,25 @@
 
 static const char *TAG = "calendar";
 
+/* NVS keeps the clock/timezone and the pre-filesystem calendar copy; the
+ * database itself lives on the LittleFS "storage" partition (partitions.csv). */
 #define NVS_NAMESPACE "calstore"
 #define NVS_KEY_DB "db"
 #define NVS_KEY_EPOCH "epoch"
 #define NVS_KEY_TZ "tz"
 
+#define DB_MOUNT_POINT "/lfs"
+#define DB_PARTITION_LABEL "storage"
+#define DB_FILE DB_MOUNT_POINT "/calendar.db"
+#define DB_TMP_FILE DB_MOUNT_POINT "/calendar.db.tmp"
+#define DB_BAD_FILE DB_MOUNT_POINT "/calendar.db.bad"
+
 #define DB_MAGIC 0x4C41434Fu /* "OCAL" */
 #define DB_VERSION 2
 #define DB_HEADER_BYTES 16
-#define DB_MAX_BYTES 16384
+/* In-RAM cap for the packed database (file + buffer). 96 events with the
+ * full 95/191-byte fields need 96 * 298 + 16 = 28,624 bytes. */
+#define DB_MAX_BYTES 32768
 
 /* A calendar without a synced clock still needs a sane cursor. */
 #define EPOCH_2021 1609459200u
@@ -322,35 +334,110 @@ static int find_oldest_past(uint16_t keep_id) {
   return best;
 }
 
-/* Packs and stores the database. When NVS is full, the oldest events that are
- * already in the past are dropped first; a calendar keeps its upcoming ones. */
+/* --- filesystem storage ------------------------------------------------- */
+
+/* Temp file + rename: a power cut leaves either the previous database or the
+ * new one, never a half-written file. LittleFS makes the rename atomic. */
+static esp_err_t write_db_file(const uint8_t *data, size_t len) {
+  FILE *file = fopen(DB_TMP_FILE, "wb");
+  if (!file) {
+    ESP_LOGE(TAG, "cannot open %s (errno %d)", DB_TMP_FILE, errno);
+    return ESP_FAIL;
+  }
+  const size_t written = fwrite(data, 1, len, file);
+  const int closed = fclose(file);
+  if (written != len || closed != 0) {
+    ESP_LOGE(TAG, "short write to %s (%u/%u bytes)", DB_TMP_FILE, (unsigned)written,
+             (unsigned)len);
+    remove(DB_TMP_FILE);
+    return ESP_FAIL;
+  }
+  if (rename(DB_TMP_FILE, DB_FILE) != 0) {
+    ESP_LOGE(TAG, "cannot replace %s (errno %d)", DB_FILE, errno);
+    remove(DB_TMP_FILE);
+    return ESP_FAIL;
+  }
+  return ESP_OK;
+}
+
+/* Returns 0 when there is no usable file. An oversized one is moved aside so
+ * the next boot does not trip over it again. */
+static size_t read_db_file(uint8_t *buffer, size_t cap) {
+  FILE *file = fopen(DB_FILE, "rb");
+  if (!file) {
+    return 0;
+  }
+  const size_t len = fread(buffer, 1, cap, file);
+  const bool too_long = fgetc(file) != EOF;
+  fclose(file);
+  if (too_long) {
+    ESP_LOGW(TAG, "%s is larger than %u bytes; moving it to %s", DB_FILE, (unsigned)cap,
+             DB_BAD_FILE);
+    rename(DB_FILE, DB_BAD_FILE);
+    return 0;
+  }
+  return len;
+}
+
+static void erase_legacy_nvs_db(void) {
+  size_t len = 0;
+  if (nvs_get_blob(s_nvs, NVS_KEY_DB, NULL, &len) != ESP_OK) {
+    return;
+  }
+  if (nvs_erase_key(s_nvs, NVS_KEY_DB) == ESP_OK) {
+    (void)nvs_commit(s_nvs);
+  }
+}
+
+/* One-time move of the database older firmware kept in NVS. The file is
+ * written first; the NVS copy is erased only after the write succeeded. */
+static bool migrate_legacy_nvs_db(void) {
+  size_t len = 0;
+  if (nvs_get_blob(s_nvs, NVS_KEY_DB, NULL, &len) != ESP_OK || len == 0 ||
+      len > DB_MAX_BYTES) {
+    return false;
+  }
+  uint8_t *blob = heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!blob) {
+    blob = malloc(len);
+  }
+  if (!blob) {
+    return false;
+  }
+  bool loaded = false;
+  if (nvs_get_blob(s_nvs, NVS_KEY_DB, blob, &len) == ESP_OK && unpack_db(blob, len)) {
+    if (write_db_file(blob, len) == ESP_OK) {
+      ESP_LOGI(TAG, "migrated %d events from NVS to %s", s_event_count, DB_FILE);
+      erase_legacy_nvs_db();
+    } else {
+      ESP_LOGW(TAG, "keeping the NVS copy; migration retried on the next boot");
+    }
+    loaded = true;
+  }
+  free(blob);
+  return loaded;
+}
+
+/* Packs and stores the database. If it would not fit DB_MAX_BYTES, the oldest
+ * events that are already in the past are dropped first; a calendar keeps its
+ * upcoming ones. */
 static esp_err_t save_db_locked(uint16_t keep_id, int *pruned) {
   int dropped = 0;
   esp_err_t err = ESP_FAIL;
   for (int attempt = 0; attempt < CAL_MAX_EVENTS; attempt++) {
     const size_t len = pack_db(s_blob, DB_MAX_BYTES);
-    if (len == 0) {
-      err = ESP_ERR_INVALID_SIZE;
-      break;
-    }
-    if (!s_nvs_open) {
-      err = ESP_ERR_INVALID_STATE;
-      break;
-    }
-    err = nvs_set_blob(s_nvs, NVS_KEY_DB, s_blob, len);
-    if (err != ESP_ERR_NVS_NOT_ENOUGH_SPACE) {
+    if (len != 0) {
+      err = write_db_file(s_blob, len);
       break;
     }
     const int victim = find_oldest_past(keep_id);
     if (victim < 0) {
+      err = ESP_ERR_INVALID_SIZE;
       break;
     }
-    ESP_LOGW(TAG, "NVS full, pruning past event %u", (unsigned)s_events[victim].id);
+    ESP_LOGW(TAG, "database full, pruning past event %u", (unsigned)s_events[victim].id);
     remove_at(victim);
     dropped++;
-  }
-  if (err == ESP_OK) {
-    err = nvs_commit(s_nvs);
   }
   if (pruned) {
     *pruned = dropped;
@@ -434,6 +521,29 @@ esp_err_t calendar_init(void) {
   }
   s_nvs_open = true;
 
+  /* The database lives on the dedicated LittleFS partition. It is created on
+   * first use; mount failure is fatal because losing the store would silently
+   * discard the user's events. */
+  const esp_vfs_littlefs_conf_t lfs_conf = {
+      .base_path = DB_MOUNT_POINT,
+      .partition_label = DB_PARTITION_LABEL,
+      .format_if_mount_failed = true,
+      .dont_mount = false,
+      .grow_on_mount = true,
+  };
+  err = esp_vfs_littlefs_register(&lfs_conf);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "littlefs mount failed: %s (flash the new partition table?)",
+             esp_err_to_name(err));
+    return err;
+  }
+  size_t fs_total = 0;
+  size_t fs_used = 0;
+  if (esp_littlefs_info(DB_PARTITION_LABEL, &fs_total, &fs_used) == ESP_OK) {
+    ESP_LOGI(TAG, "littlefs: %u/%u KB used", (unsigned)(fs_used / 1024),
+             (unsigned)(fs_total / 1024));
+  }
+
   load_defaults();
 
   int32_t tz = 0;
@@ -457,27 +567,26 @@ esp_err_t calendar_init(void) {
     s_time_synced = false;
   }
 
-  size_t blob_len = 0;
-  if (nvs_get_blob(s_nvs, NVS_KEY_DB, NULL, &blob_len) == ESP_OK && blob_len > 0 &&
-      blob_len <= DB_MAX_BYTES) {
-    uint8_t *blob = heap_caps_malloc(blob_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!blob) {
-      blob = malloc(blob_len);
-    }
-    if (blob) {
-      if (nvs_get_blob(s_nvs, NVS_KEY_DB, blob, &blob_len) == ESP_OK &&
-          unpack_db(blob, blob_len)) {
-        ESP_LOGI(TAG, "loaded %d events, %d calendars", s_event_count, s_cal_count);
-      } else {
-        ESP_LOGW(TAG, "stored calendar is invalid; starting with defaults");
-        load_defaults();
-      }
-      free(blob);
+  /* File first; fall back to the pre-filesystem NVS copy exactly once. */
+  bool loaded = false;
+  const size_t file_len = read_db_file(s_blob, DB_MAX_BYTES);
+  if (file_len > 0) {
+    loaded = unpack_db(s_blob, file_len);
+    if (loaded) {
+      ESP_LOGI(TAG, "loaded %d events, %d calendars from %s", s_event_count, s_cal_count,
+               DB_FILE);
+      erase_legacy_nvs_db();
     } else {
-      load_defaults();
+      ESP_LOGW(TAG, "stored calendar is invalid; moving it to %s", DB_BAD_FILE);
+      rename(DB_FILE, DB_BAD_FILE);
     }
-  } else {
+  }
+  if (!loaded) {
+    loaded = migrate_legacy_nvs_db();
+  }
+  if (!loaded) {
     ESP_LOGI(TAG, "no stored calendar; creating defaults");
+    load_defaults();
     int pruned = 0;
     (void)save_db_locked(0, &pruned);
   }

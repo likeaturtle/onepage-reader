@@ -124,6 +124,23 @@ test('dev login can be disabled and WeChat login reports missing config', async 
   });
 });
 
+test('titles and notes are truncated to the device byte limits', async () => {
+  await withServer(makeConfig(), async (base) => {
+    const login = await json(base, 'POST', '/api/login', { dev: true });
+    const token = login.body.token;
+
+    const created = await json(base, 'POST', '/api/events', {
+      date: '2026-11-21',
+      start: '09:00',
+      title: '长'.repeat(40), // 120 bytes, must stop at 95
+      note: '记'.repeat(80),  // 240 bytes, must stop at 191
+    }, token);
+    assert.equal(created.status, 201);
+    assert.equal(Buffer.byteLength(created.body.event.title), 93); // 31 chars, +3 would exceed 95
+    assert.equal(Buffer.byteLength(created.body.event.note), 189); // 63 chars, +3 would exceed 191
+  });
+});
+
 test('events are per user, map to a device id, soft delete and purge', async () => {
   await withServer(makeConfig(), async (base) => {
     const login = await json(base, 'POST', '/api/login', { dev: true });

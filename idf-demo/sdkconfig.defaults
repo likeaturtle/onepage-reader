@@ -77,3 +77,9 @@ CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y
 
 # The UI task parses JSON/BLE events and renders; 3.5 KB is too tight.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# --- Calendar filesystem (LittleFS) ------------------------------------------
+# The storage partition has ~3300 4 KB blocks and LittleFS allocates one
+# lookahead bit per block; the 128 B default only covers 1024 blocks, so mount
+# would fail with ERR_BADLOOKAHEAD. 512 B covers 4096 blocks (16 MB).
+CONFIG_LITTLEFS_LOOKAHEAD_SIZE=512

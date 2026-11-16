@@ -29,6 +29,22 @@ function monthLabel(date) {
   return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
 }
 
+/**
+ * `HH:MM` shifted by `minutes`, clamped to the same day (00:00..23:59).
+ * An event never spans midnight here, so a start near the end of the day gets
+ * 23:59 rather than wrapping into the next morning. Invalid input is returned
+ * unchanged.
+ */
+function shiftClock(hhmm, minutes) {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(hhmm == null ? '' : hhmm).trim());
+  if (!match) return hhmm;
+  const hours = Number(match[1]);
+  const mins = Number(match[2]);
+  if (hours > 23 || mins > 59) return hhmm;
+  const total = Math.max(0, Math.min(hours * 60 + mins + Number(minutes || 0), 23 * 60 + 59));
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
+
 function groupEvents(events) {
   const sorted = (events || []).slice().sort((a, b) => {
     const left = `${a.date} ${a.start || ''}`;
@@ -87,6 +103,7 @@ module.exports = {
   parseYmd,
   monthBounds,
   monthLabel,
+  shiftClock,
   groupEvents,
   deviceTime,
   initial,

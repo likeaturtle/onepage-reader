@@ -15,25 +15,34 @@
   </view>
 
   <view wx:if="{{!adapterAvailable}}" class="banner error">
-    系统蓝牙不可用。请打开蓝牙，并允许微信使用蓝牙后重试。
+    系统蓝牙不可用，请打开并允许微信使用蓝牙后重试
   </view>
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
   <view wx:if="{{syncError}}" class="banner warn">{{syncError}}</view>
   <view wx:if="{{!connected}}" class="banner cloud">
-    未连接设备 · 日程保存在云端，连接设备后自动同步
+    未连接设备，日程保存在云端，连接设备后自动同步
   </view>
 
   <view class="card">
-    <view class="card-head">
+    <view
+      class="card-head {{connected && !deviceOpen ? 'collapsed' : ''}}"
+      bindtap="toggleDeviceCard"
+      hover-class="{{connected ? 'card-head-hover' : 'none'}}"
+      aria-role="{{connected ? 'button' : ''}}"
+      aria-label="{{connected ? (deviceOpen ? '收起设备信息' : '展开设备信息') : ''}}"
+    >
       <view class="card-heading">
         <text class="card-title">设备</text>
         <text class="hint">{{connected ? '已连接' : (connecting ? '连接中…' : '未连接')}}</text>
       </view>
-      <view class="dot {{connected ? 'on' : ''}}"></view>
+      <view class="head-right">
+        <text wx:if="{{connected}}" class="head-toggle">{{deviceOpen ? '收起' : '展开'}}</text>
+        <view class="dot {{connected ? 'on' : ''}}"></view>
+      </view>
     </view>
 
     <block wx:if="{{!connected}}">
-      <view class="muted">先按设备 POWER 键唤醒，再扫描并连接。</view>
+      <view class="muted">先按设备 POWER 键唤醒再扫描并连接</view>
       <view class="row actions">
         <button class="btn primary grow" bindtap="startScan" loading="{{scanning}}" disabled="{{connecting || scanning}}">
           {{scanning ? '正在扫描…' : (hasScanned ? '重新扫描' : '扫描设备')}}
@@ -46,7 +55,7 @@
       <view class="switch-row">
         <view>
           <view class="switch-title">显示全部蓝牙设备</view>
-          <view class="switch-desc">找不到设备时打开，手动选择广播名 Mochen CalCal 的设备</view>
+          <view class="switch-desc">找不到设备时打开右侧开关，手动选择名为 Mochen CalCal 的设备</view>
         </view>
         <switch checked="{{showAllDevices}}" color="#22345a" bindchange="toggleAllDevices" />
       </view>
@@ -66,12 +75,12 @@
           <button class="btn small" catchtap="connect" data-id="{{item.deviceId}}">连接</button>
         </view>
       </view>
-      <view wx:elif="{{scanning}}" class="empty">正在搜索附近的蓝牙设备…</view>
-      <view wx:elif="{{hasScanned}}" class="empty">没有发现设备。请确认设备已唤醒，或点“重新扫描”。</view>
+      <view wx:elif="{{scanning}}" class="empty compact">正在搜索附近的蓝牙设备</view>
+      <view wx:elif="{{hasScanned}}" class="empty compact">未发现设备，请确认设备已唤醒并重新扫描</view>
     </block>
 
     <block wx:else>
-      <view class="device-info">
+      <view wx:if="{{deviceOpen}}" class="device-info">
         <view class="kv"><text>名称</text><text>{{hello.name || appName}}</text></view>
         <view class="kv"><text>固件</text><text>{{hello.fw || '—'}}</text></view>
         <view class="kv"><text>设备日程</text><text>{{hello.events || 0}} 条</text></view>
@@ -94,9 +103,15 @@
     </view>
 
     <view class="pick-row">
-      <picker class="pick-item date" mode="date" start="2021-01-01" end="2100-12-31" value="{{form.date}}" bindchange="onDate">
-        <view class="field pick">{{form.date}}</view>
-      </picker>
+      <view class="pick-item date">
+        <view
+          class="field pick {{calendarOpen ? 'open' : ''}}"
+          bindtap="toggleCalendar"
+          hover-class="pick-hover"
+          aria-role="button"
+          aria-label="选择日期"
+        >{{form.date}}</view>
+      </view>
       <picker class="pick-item time" mode="time" value="{{form.start}}" bindchange="onStart">
         <view class="field pick">{{form.start}}</view>
       </picker>
@@ -106,67 +121,58 @@
       </picker>
     </view>
 
+    <view wx:if="{{calendarOpen}}" class="cal">
+      <view class="cal-head">
+        <view class="cal-nav" data-delta="-1" bindtap="shiftCalendarMonth" hover-class="cal-nav-hover" aria-role="button" aria-label="上个月">‹</view>
+        <text class="cal-label">{{calendarLabel}}</text>
+        <view class="cal-nav" data-delta="1" bindtap="shiftCalendarMonth" hover-class="cal-nav-hover" aria-role="button" aria-label="下个月">›</view>
+        <view class="cal-today" bindtap="pickToday" hover-class="cal-today-hover" aria-role="button" aria-label="选择今天">今天</view>
+      </view>
+      <view class="cal-week">
+        <text wx:for="{{weekdays}}" wx:key="*this" class="cal-weekday">{{item}}</text>
+      </view>
+      <view class="cal-grid">
+        <view
+          wx:for="{{calendarCells}}"
+          wx:key="key"
+          class="cal-cell {{item.inMonth ? 'in' : 'out'}} {{item.selected ? 'sel' : ''}} {{item.today ? 'today' : ''}}"
+          data-date="{{item.date}}"
+          bindtap="pickDay"
+          hover-class="cal-cell-hover"
+          aria-role="button"
+          aria-label="{{item.date}}"
+        >
+          <view class="cal-day">{{item.day}}</view>
+        </view>
+      </view>
+    </view>
+
     <input
       class="input"
       placeholder="日程标题，例如 项目评审"
       value="{{form.title}}"
-      maxlength="30"
+      maxlength="-1"
       bindinput="onTitle"
       confirm-type="done"
     />
-    <view class="counter">{{titleBytes}} / 47 字节（超出会被设备截断）</view>
+    <view class="counter">{{titleBytes}} / {{titleLimit}} 字节</view>
 
     <textarea
       class="input area"
       placeholder="备注（可选）"
       value="{{form.note}}"
-      maxlength="60"
+      maxlength="-1"
       bindinput="onNote"
     />
-    <view class="counter">{{noteBytes}} / 95 字节（超出会被设备截断）</view>
+    <view class="counter">{{noteBytes}} / {{noteLimit}} 字节</view>
 
     <view wx:if="{{!connected}}" class="inline-tip">
-      未连接蓝牙设备：保存后先存在云端，连接设备时自动同步。
+      未连接设备蓝牙，保存后云端储存，连接设备时自动同步
     </view>
 
     <button class="btn primary block" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">
       保存日程
     </button>
-  </view>
-
-  <view class="card">
-    <view class="card-head">
-      <view class="card-heading">
-        <text class="card-title">本月日程</text>
-        <text class="hint">{{eventCount}} 条</text>
-      </view>
-      <text class="hint status">{{syncing ? '同步中…' : (connected ? '设备已连接' : '云端')}}</text>
-    </view>
-
-    <view class="month-bar">
-      <view class="month-btn" bindtap="prevMonth" hover-class="month-btn-hover" aria-role="button" aria-label="上个月">‹</view>
-      <text class="month-label">{{monthLabel}}</text>
-      <view class="month-btn" bindtap="nextMonth" hover-class="month-btn-hover" aria-role="button" aria-label="下个月">›</view>
-    </view>
-
-    <view wx:if="{{loading}}" class="empty">正在读取云端…</view>
-    <view wx:elif="{{!groups.length && error}}" class="empty">云端日程加载失败，请检查网络后重试。</view>
-    <view wx:elif="{{!groups.length}}" class="empty">本月还没有日程，先在上方添加一条。</view>
-
-    <view wx:for="{{groups}}" wx:key="date" class="day-group">
-      <view class="day-head">{{item.label}}</view>
-      <view wx:for="{{item.items}}" wx:for-item="event" wx:key="id" class="event">
-        <view class="event-time">
-          <view>{{event.start}}</view>
-          <view class="event-end">{{event.end}}</view>
-        </view>
-        <view class="event-main">
-          <view class="event-title">{{event.title}}</view>
-          <view wx:if="{{event.note}}" class="event-note">{{event.note}}</view>
-        </view>
-        <button class="btn tiny danger" catchtap="remove" data-id="{{event.id}}">删除</button>
-      </view>
-    </view>
   </view>
 
   <view class="log-wrap">

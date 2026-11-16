@@ -170,7 +170,7 @@ idf-demo/
 ├── CMakeLists.txt                  project entry
 ├── bootloader_components/          code linked into the bootloader, not the app
 │   └── onepage_efuse_gate/         vendor eFuse block revision workaround
-├── partitions.csv                  same offsets as the stock firmware
+├── partitions.csv                  stock-compatible head + LittleFS storage
 ├── sdkconfig.defaults              esp32c61, 16 MB flash, 2 MB PSRAM @40 MHz, USB console
 ├── components/onepage_c61/         board support, reusable on its own
 │   ├── include/                    onepage_pins.h + public headers

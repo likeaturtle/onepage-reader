@@ -256,6 +256,51 @@ class Screen:
             cur += w
         return cur
 
+    def wrap(self, x, y, s, max_width, line_height, max_lines, black=True):
+        """Mirror gfx_text_utf8_wrap(): greedy per-character wrap, ellipsis
+        on the last line when the text was shortened."""
+        if max_lines <= 0:
+            return 0
+        max_lines = min(max_lines, 16)
+        lines = []
+        line_start = 0
+        width = 0
+        i = 0
+        more = False
+        while i < len(s):
+            ch = s[i]
+            if ch == "\n":
+                if len(lines) >= max_lines:
+                    more = True
+                    break
+                lines.append(s[line_start:i])
+                i += 1
+                line_start = i
+                width = 0
+                continue
+            advance = 18 if ord(ch) < 0x80 else 25
+            if width + advance > max_width and i > line_start:
+                if len(lines) >= max_lines:
+                    more = True
+                    break
+                lines.append(s[line_start:i])
+                line_start = i
+                width = 0
+                continue
+            width += advance
+            i += 1
+        if not more and len(lines) < max_lines and (i > line_start or not lines):
+            lines.append(s[line_start:i])
+        for j, text in enumerate(lines):
+            self.text_utf8(x, y + j * line_height, text, black)
+            if j == len(lines) - 1 and more and max_width >= 25:
+                ex = x + self.text_width(text)
+                if ex + 25 > x + max_width:
+                    ex = x + max_width - 25
+                if ex >= x:
+                    self.text_utf8(ex, y + j * line_height, "\u2026", black)
+        return len(lines)
+
     def centered(self, y, s, black=True):
         self.text_utf8((W - self.text_width(s)) // 2, y, s, black)
 
@@ -462,18 +507,29 @@ def day_preview():
     s.save("preview_day.png")
 
 
-def detail_preview(confirm=False):
+def detail_preview(confirm=False, long_text=False):
     s = Screen()
     header(s)
-    s.text_utf8(MARGIN, TITLE_Y, "项目评审")
-    meta_y = TITLE_Y + 32 + GAP_S
+    if long_text:
+        title = ("November planning review with the hardware team about the "
+                 "new e-ink panel batch")
+        note = ("Bring the revised schedule, the panel measurements and the "
+                "battery test sheet. Discuss the second sourcing option, the "
+                "shipping window and the firmware update plan for December, "
+                "then collect the follow-up items for the next review meeting.")
+    else:
+        title = "项目评审"
+        note = "会议室 A，带上上周的测试报告。"
+    title_lines = s.wrap(MARGIN, TITLE_Y, title, CONTENT_W, 32, 5)
+    meta_y = TITLE_Y + title_lines * 32 + GAP_S
     s.text_utf8(MARGIN, meta_y, "2026年11月9日")
     s.text_utf8(MARGIN + s.text_width("2026年11月9日") + GAP_M, meta_y, "星期一")
     s.text_utf8(MARGIN, meta_y + 32, "09:00-10:30")
     line_y = meta_y + 32 + BODY_H + GAP_M
     s.hline(MARGIN, line_y, CONTENT_W)
     s.text_utf8(MARGIN, line_y + GAP_L, "备注")
-    s.text_utf8(MARGIN, line_y + GAP_L + BODY_H + GAP_M, "会议室 A，带上上周的测试报告。")
+    s.wrap(MARGIN, line_y + GAP_L + BODY_H + GAP_M, note, CONTENT_W, 32,
+           16 - title_lines)
     s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
     s.text_utf8(MARGIN, FOOTER_TEXT_Y, "返回:列表")
     delete = "确认:删除"
@@ -493,7 +549,10 @@ def detail_preview(confirm=False):
         s.text_clipped(box_x + GAP_L, box_y + 64, "项目评审", box_w - 2 * GAP_L)
         s.text_utf8(box_x + GAP_L, box_y + 104, "确定要删除这个日程吗?")
         s.text_utf8(box_x + GAP_L, box_y + 148, "再次按确认删除  返回取消")
-    s.save("preview_delete.png" if confirm else "preview_detail.png")
+    if long_text:
+        s.save("preview_detail_long.png")
+    else:
+        s.save("preview_delete.png" if confirm else "preview_detail.png")
 
 
 def sleep_preview(empty=False):
@@ -549,6 +608,7 @@ def main():
     day_preview()
     detail_preview(False)
     detail_preview(True)
+    detail_preview(long_text=True)
     sleep_preview()
     sleep_preview(empty=True)
     boot_preview()

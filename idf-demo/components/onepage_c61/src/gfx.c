@@ -398,8 +398,8 @@ int gfx_text_utf8_clipped(uint8_t *fb, int x, int y, const char *utf8, int max_w
 
 int gfx_text_utf8_wrap(uint8_t *fb, int x, int y, const char *utf8, int max_width,
                        int line_height, int max_lines, bool black) {
-  if (max_lines <= 0 || max_lines > 8) {
-    max_lines = max_lines > 8 ? 8 : 0;
+  if (max_lines <= 0 || max_lines > 16) {
+    max_lines = max_lines > 16 ? 16 : 0;
   }
   if (max_lines == 0) {
     return 0;
@@ -409,7 +409,7 @@ int gfx_text_utf8_wrap(uint8_t *fb, int x, int y, const char *utf8, int max_widt
     const char *start;
     const char *end;
   } line_t;
-  line_t lines[8];
+  line_t lines[16];
   int count = 0;
   bool more = false;
 

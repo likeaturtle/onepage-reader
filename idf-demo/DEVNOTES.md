@@ -777,3 +777,216 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
   `preview_sleep_empty.png`。
 - 未验证：面板 4.26"、480 px 宽约 55.7 mm，248 px 的码约 **2.9 cm**，尺寸够扫码但
   必须真机用微信实测；1-bit 二值化把中间的 logo 和小程序角标画成实心，属于预期。
+
+### 16.18 小程序添加日程改成月历点选日期
+
+- `miniprogram/pages/index` 的“添加日程”里，日期从 `<picker mode="date">`（系统滚轮）改成
+  内嵌月历：点日期框展开，`‹ ›` 翻月，直接点格子选日，右上角“今天”一键回到今天；
+  开始/结束时间仍是系统时间滚轮。
+- 微信没有官方原生 calendar 组件（第三方的 wx-calendar 之类要 npm 构建再引组件），
+  所以用 WXML/WXSS 自己画，沿用纸感配色：选中日是深蓝圆点、今天有描边、
+  非本月日期淡显。
+- 纯逻辑在 `miniprogram/utils/calendar.js`：`monthGrid(year, month, selectedYmd,
+  todayYmd)` 固定 42 格（6 周）、周日开头（和设备月历方向一致），另有 `cursorFrom` /
+  `monthLabel` / `WEEKDAY_INITIALS`。固定 6 周是为了翻月时面板高度不跳。
+- 页面状态 `weekdays / calendarOpen / calendarLabel / calendarCells`，方法
+  `toggleCalendar / shiftCalendarMonth / renderCalendar / pickDay / pickToday /
+  chooseDate`。选中后写回 `form.date` 并收起面板，`chooseDate` 把光标移到所选日期
+  所在月；提交成功后也收起面板。
+- 翻月范围限制在 2020-01..2099-12，对齐旧滚轮 picker 的 `start/end` 实用范围，
+  避免翻到无意义年份。
+- 测试：`miniprogram/test/calendar.test.js`（42 格、周日开头、闰年、跨月选中）+
+  `page.mock.test.js`（模拟 Page 的展开/翻月/点选/今天/边界），加上原有的
+  `protocol / ble.mock / sync.mock` 用例，全量 28 个用例通过。
+- 预览图 `tools/preview_miniprogram_calendar.png` 不是真机截图：把 `app.wxss` +
+  `index.wxss` 的 rpx 按 1:1 换成 px，用无头 Chrome 渲染页面版式，只用于检查间距
+  （已 gitignore）。真机效果仍需在开发者工具/微信里确认。
+
+### 16.19 添加日程：结束时间跟随开始时间 +30 分钟
+
+- `onStart()` 确认开始时间后同时写 `form.end = fmt.shiftClock(start, 30)`；
+  用户之后仍可手动改结束时间，只有再次确认开始时间才会重新按 +30 计算。
+- 新增 `fmt.shiftClock(hhmm, minutes)`（`utils/format.js`）：只接受 `HH:MM`，按分钟
+  加减并**夹在同一天 00:00..23:59**——日程不跨天，所以 23:40 + 30 得到 23:59，
+  非法输入原样返回。
+- `defaultForm()` 的默认结束时间从 +60 改成 +30，让表单初始值和“确认开始后”的行为一致；
+  默认值也走 `shiftClock`，晚上打开表单不会再出现 end < start 的初始状态。
+- 测试：`test/format.test.js`（跨小时、当日边界夹取、非法输入）+
+  `test/form.mock.test.js` 的 3 个用例（+30、手选结束保留、23:40 夹到 23:59）。
+
+### 16.20 月历展开时自动滚进屏幕
+
+- 问题：日期栏在“添加日程”卡片顶部，卡片下方还有标题/备注/保存按钮，短屏上展开月历会
+  有一部分落在折叠线以下。
+- `toggleCalendar()` 打开面板时把 `revealCalendar()` 放在 `setData(..., callback)` 里
+  执行（回调在视图更新之后），用 `wx.createSelectorQuery()` 量 `.cal` 的
+  `boundingClientRect` 和 `selectViewport().scrollOffset()`，再读
+  `wx.getWindowInfo().windowHeight`（旧基础库回退 `wx.getSystemInfoSync()`），
+  需要时 `wx.pageScrollTo({ scrollTop, duration: 200 })`。
+- 滚动量是纯函数 `cal.revealScrollTop({ top, height, scrollTop, viewport, margin })`
+  （`utils/calendar.js`）：已经完整可见（含 12 px 余量）返回 `null` 不滚动；能放下时
+  只补足底部的溢出量；整块比屏幕还高时对齐顶部、优先露出月份标题和前几周。
+- 面板在测量回调返回前被关掉就不滚动（`if (!this.data.calendarOpen) return`）。
+- 测试：`test/calendar.test.js` 的纯函数用例 + `test/form.mock.test.js` 里 4 个
+  用例（滚到可见、已可见不滚、超高对齐顶部、关闭不滚），全量 34 个用例通过。
+
+### 16.21 设备卡片连接后自动收起
+
+- 连上板子后“设备”卡片自动收起设备信息（名称/固件/设备日程/设备时间），给下面的添加
+  日程/本月日程腾出屏幕；同步/锁屏休眠/断开三个按钮常驻，不随信息一起隐藏。标题行右侧
+  显示“展开/收起”，整行可点（`toggleDeviceCard()`），只在 `connected` 时生效——未连接
+  时扫描/连接按钮必须一直可见，点标题不做任何事。
+- `ble.onState` 回调里按“状态跃迁”决定：`connected` 由 false → true 时置
+  `deviceOpen = false`；断开时 `deviceOpen = true`（扫描界面重新出现）。重复的
+  connected 事件不会把用户手动展开的卡片再收起来，因为只在 `!this.data.connected`
+  时才收起。
+- 视图：标题行加 `bindtap="toggleDeviceCard"`、`hover-class`（仅连接时）和
+  `head-toggle` 文案；连接后的内容块仍是 `wx:else`，只把 `device-info` 包进
+  `wx:if="{{deviceOpen}}"`，按钮行在折叠状态下照常显示；收起时去掉标题行的下边距
+  （`.card-head.collapsed`）。
+- 测试：`test/page.mock.test.js` 增加 3 个用例（连接收起/断开展开、手动展开后不被
+  重复事件收回、未连接时点击无效），`ble.onState` 用假回调触发；全量 37 个用例通过。
+
+### 16.22 设备卡片里扫描状态行的上下留白
+
+- `.empty` 是通用空状态（上下各 56rpx）。用在设备卡片的“正在搜索附近的蓝牙设备…”和
+  “没有发现设备…”上时，加上卡片自身 28rpx 的内边距，一行字上下各空 84rpx，看着像
+  一块空洞。
+- 新增 `.empty.compact { padding: 20rpx 0 6rpx; }`，只给设备卡片这两行加 `compact`；
+  本月日程卡片的空状态继续用 `.empty` 的大留白，不受影响。
+- 预览 `tools/preview_miniprogram_scan.png`：无头 Chrome 按 `app.wxss` + `index.wxss`
+  原值 1:1 渲染的版式检查图（不是真机截图，已 gitignore）。
+
+### 16.23 设备休眠后不再显示过期的扫描结果
+
+- 现象：连接后在设备卡片里点“锁屏”，板子 ack 后立刻关射频 →
+  `onBLEConnectionStateChange` 把 `connected` 置 false，页面回到未连接态；但 `devices` /
+  `hasScanned` 还留着上一次扫描到的 `Mochen CalCal`，列表里挂着一个已经睡着的设备，
+  点“连接”必然失败。
+- `ble.onState` 回调里，只有**从已连接变为未连接**时才清空 `devices` / `hasScanned` /
+  `scanning`（覆盖锁屏休眠、手动断开、意外掉线）。连接失败时 `connected` 一直是
+  false，不清空——用户正在看的列表不该因为一次连接失败就消失。
+- 清空后按钮文案回到“扫描设备”，“扫描完成 · N 个设备”提示消失；再点扫描会重新扫
+  5 秒，列表只留本轮结果。
+- 测试：`test/page.mock.test.js` 增加 2 个用例（连接结束清空、连接失败保留），全量
+  39 个用例通过。
+
+### 16.24 小程序拆成三个 tab：添加 / 日程 / 我的
+
+- 原来「日程」tab 一个页面同时放设备卡片、新建表单和本月列表，页面太长；现在拆成：
+  「添加」（`pages/index`，设备连接/同步 + 新建日程表单 + 协议日志）、
+  「日程」（`pages/calendar`，本月列表 + 翻月 + 删除）、「我的」（`pages/profile`）。
+- 新增 `pages/calendar/`（js/wxml/wxss/json）：`loadMonth/shiftMonth/prevMonth/nextMonth/
+  remove/doRemove` 和 `monthCursor/monthLabel/groups/eventCount/loading` 从 index 原样搬过去；
+  `onShow` 每次重新拉当月（添加页可能刚写过云端），未登录仍 `reLaunch` 登录页。
+- 列表相关样式（`.month-bar/.month-btn/.month-label/.day-group/.day-head/.event*`）
+  从 `pages/index/index.wxss` 移到 `pages/calendar/calendar.wxss`，index 不再引用。
+- index 页面删掉 month 状态、`loadMonth` 调用（onShow/connect/refresh/submit/syncDevice）
+  和删除逻辑；`refresh()` 现在只做设备同步；保存成功后不再切月份（列表在日程 tab，
+  切过去时 `onShow` 会重新加载）。
+- `app.json` 的 `pages` 加 `pages/calendar/calendar`，`tabBar.list` 变成
+  「添加 / 日程 / 我的」三项（仍是纯文字，无图标）。
+- 测试：新增 `test/month.mock.test.js`（当月初次加载、翻月边界、未连设备删云端、
+  已连接同时删设备，4 个用例），全量 43 个用例通过。
+- 预览 `tools/preview_miniprogram_tabs.png` 是按真实 wxss 1:1 渲染的排版检查图
+  （tabBar 是模拟绘制，不是真机截图，已 gitignore）。
+
+## 17. 2026-11-16：日程从 NVS 迁到 LittleFS
+
+### 17.1 分区表重排（方案 B′）
+
+| 区域 | 偏移 | 大小 | 用途 |
+|:---|:---|:---|:---|
+| nvs | 0x9000 | 20 KB | 时钟/时区 + PHY/BT 校准（不再放日程） |
+| otadata | 0xe000 | 8 KB | 厂商 bootloader 的启动选择 |
+| factory | 0x10000 | 3 MB | 应用（现约 1.38 MB） |
+| coredump | 0x310000 | 64 KB | 崩溃转储 |
+| storage | 0x320000 | 0xCE0000 ≈ 12.9 MB | LittleFS：`/lfs/calendar.db` + 以后的数据 |
+
+- 头部（nvs/otadata/factory 偏移）保持和厂商固件一致，仍可刷回；尾部原来的
+  6.25 MB 空白（厂商 ota_1）和 3.375 MB spiffs 全部收进 storage。
+- **改表后必须 `idf.py flash -a`**：只刷 app 会找不到 storage 分区，
+  `calendar_init()` 报 `littlefs mount failed (flash the new partition table?)`
+  后 `ESP_ERROR_CHECK` 重启。
+
+### 17.2 LittleFS 依赖（vendored）
+
+- `components/littlefs`：`joltwallet/esp_littlefs` 1.23.0（MIT，Copyright 2020
+  Brian Pugh），只保留构建必需文件（`CMakeLists.txt`、`Kconfig`、`LICENSE`、
+  `include/`、`src/`），去掉 tests/scripts/benches/example，约 430 KB。和
+  `components/cjson` 一样不走 managed_components，离线构建可复现。
+- `CONFIG_LITTLEFS_LOOKAHEAD_SIZE=512`：storage 有 3300 个 4 KB block，默认
+  128 B 的 lookahead 只覆盖 1024 block，mount 会 `ERR_BADLOOKAHEAD`；已写进
+  `sdkconfig.defaults`（新符号，现有 `sdkconfig` 会自动取 defaults 值）。
+
+### 17.3 存储与迁移
+
+- `calendar.c` 的 blob 格式（magic/version/CRC/变长记录）不变，只把 NVS blob
+  读写换成文件读写：
+  - 写：`calendar.db.tmp` → `fclose` → `rename()`（LittleFS 原子），失败删 tmp；
+  - 读：`fread` 最多 `DB_MAX_BYTES`，再多读一个字节判超长；超长或 CRC/版本
+    校验失败都改名为 `calendar.db.bad`，回退默认日历；
+  - 容量剪枝从“NVS 满”改成“`pack_db()` 返回 0”（即超过 `DB_MAX_BYTES`），
+    语义不变：先删最久远的过去事件，都是未来事件就还 `calendar full`。
+- 首启迁移：文件不存在 → 读 NVS `calstore/db` → CRC 校验 → 原子写文件 →
+  `nvs_erase_key` + commit。写失败则保留 NVS 副本，下次启动重试。`epoch`/`tz`
+  继续留在 NVS。迁移后回滚旧固件读不到日程（NVS 副本已删），云端可重新同步。
+- 关键日志：`littlefs: X/Y KB used`、`migrated N events from NVS to
+  /lfs/calendar.db`、`loaded N events ... from /lfs/calendar.db`。
+- 挂载用 `format_if_mount_failed = true`：首次上电（分区全 0xFF）自动格式化；
+  如果文件系统本身损坏也会被重格式化（日历文件丢失，靠云端重新同步恢复），
+  这是"日历是云端缓存"的取舍，换来不需要单独的分区版本/初始化流程。
+
+### 17.4 验证
+
+- 构建通过：app `0x150e30`（1.38 MB），factory 分区余 56%。
+- 生成的 partition-table.bin dump 校验：20 KB / 8 KB / 0x10000+3 MB / 0x310000
+  +64 KB / 0x320000+0xCE0000，结束于 0x1000000。
+- **未上板**：NVS→文件迁移、保存时拔电的原子性、12.9 MB LittleFS 的 mount
+  与读写耗时都要真机验证（见 README checklist 第 8 条）。
+
+> 第 13.2 节“为什么是 NVS”是 2026-11-10 的历史结论，已被本次迁移取代。
+
+## 18. 2026-11-16：标题/备注上限 47/95 → 95/191 字节
+
+- 存储搬到 LittleFS 后，47/95 不再是 NVS 的容量约束。新上限由三件事决定：
+  - 打包格式的 `title_len`/`note_len` 是 uint8 → 单字段最大 255 字节（再大要升格式）；
+  - 屏幕：24 px 字、内容宽 420 px ≈ 23 个 ASCII / 16 个汉字一行；详情页最多
+    5 行标题 + 11 行备注（见 18.1），95 B（最坏 95 个 ASCII = 5 行）和 191 B
+    （最坏 9 行）都能完整显示；
+  - BLE JSON 缓冲：按最坏"每字节转义成 2 字符"算，95/191 的出站/入站行是
+    673/656 字节，现有 `json[768]`、`NOTIFY_BUF_SIZE 900`、`LINE_BUF_SIZE 768`
+    仍然放得下（127/255 就会溢出，需要放大缓冲并多吃 host task 栈）。
+- 固件：`CAL_TITLE_BYTES 96`、`CAL_NOTE_BYTES 192`（可用 95/191）、
+  `DB_MAX_BYTES 32768`（96 条 × 298 B + 16 = 28,624）；`cal_event_t` 154 → 296 B，
+  96 条数组 28.4 KB PSRAM；`send_event()` 的 title/note/json 缓冲 200/400/768。
+- 服务端：`TITLE_BYTES 95` / `NOTE_BYTES 191`（`truncateUtf8` 按整字符截断）；
+  新增测试断言 40 个汉字标题截成 31 个（93 B）、80 个汉字备注截成 63 个（189 B）。
+- 客户端：小程序计数器改成 `/95`、`/191`，输入改为**按 UTF-8 字节截断**
+  （`utils/utf8.js` 新增 `clamp()`，`onTitle`/`onNote` 调用，`maxlength` 设为 `-1`）。
+  原来的 `maxlength=30/60 字符` 会让中文只能写到 90/180 字节（3 字节/字），而且接近
+  上限时输入法的组合串会撞上 maxlength、被截断后计数看起来乱跳；改成字节截断后
+  中文能写满 31/63 字（93/189 B），英文能写满 95/191 个字符。
+  网页 `maxlength` 15/30 → 31/63 字；协议文档、README、排错表同步。
+- 兼容：新固件能读旧文件、旧 NVS 迁移（旧长度都小于新上限）；**旧固件读不了新
+  文件**（旧代码按 48/96 校验长度），回滚会回退默认日历，云端可恢复。
+- 验证：`idf.py build` 通过（app `0x150e70`，factory 3 MB 余 56%）；服务端
+  `node --test` 18 个用例通过；小程序 43 个用例通过。
+
+### 18.1 详情页：长标题/备注完整显示
+
+- 原因：详情页标题 `gfx_text_utf8_wrap(..., 2)`、备注 `(..., 8)`，而
+  `gfx_text_utf8_wrap()` 内部还硬编码 `max_lines <= 8` + `lines[8]`；以前
+  47/95 字节的内容放得下，现在 95/191 字节的英文标题/备注会超过 2/8 行被省略。
+- 改法：
+  - `gfx_text_utf8_wrap()` 上限 8 → **16** 行（`lines[16]`）；
+  - 详情页标题 2 → **5** 行（95 字节纯 ASCII 最坏 5 行）；备注 8 →
+    **`16 - title_lines`** 行。
+  - 版式不变，靠 `title_lines` 自适应：`meta_y = TITLE_Y + 32*T + 8`，
+    `note_start = 208 + 32*T`，所以 `T + N <= 16` 时最后一行墨迹都在 712，
+    页脚分割线（748）之前；标题 5 行时备注仍有 11 行（191 B 最坏 9 行）。
+- `tools/preview_calendar.py`：`Screen` 增加 `wrap()`（同样按 18/25 px 步进、
+  截断加省略号），`detail_preview(long_text=True)` 输出 `preview_detail_long.png`
+  （已 gitignore），用来目检长标题/备注不会压到页脚。
+- 验证：`idf.py build` 通过；预览图确认长标题 5 行 + 长备注 10 行完整显示，
+  与页脚之间仍有余量。

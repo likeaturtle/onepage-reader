@@ -1,15 +1,23 @@
-# Same offsets as the stock OnePage firmware so this app can be flashed over it
-# and rolled back without moving anything around.
+# Partition layout for the 墨程CalCal firmware (16 MB flash).
 #
-# The stock layout keeps its app in the app0/ota_0 slot at 0x10000 and leaves a
-# valid OTA selection in `otadata`; because a `factory` partition is only used
-# when `otadata` holds no valid selection, erase that region once after
-# flashing this table:
+# The bootloader/partition-table area and the nvs/otadata/factory offsets match
+# the stock OnePage firmware, so this image can be flashed over it and rolled
+# back with the stock image. The factory slot is smaller than the stock 6.25 MB
+# and the reclaimed tail hosts the calendar filesystem (LittleFS):
+#
+#   nvs        20 KB   clock/timezone + PHY/BT calibration (legacy calendar copy)
+#   otadata     8 KB   keeps the boot-selection slot the stock bootloader uses
+#   factory     3 MB   application (~1.3 MB today)
+#   coredump   64 KB   crash dumps
+#   storage  ~12.9 MB  LittleFS: /lfs/calendar.db and future data
+#
+# Because a `factory` partition is only used when `otadata` holds no valid
+# selection, erase that region once after flashing this table:
 #   esptool --chip esp32c61 -p <port> erase-region 0xe000 0x2000
 #
-# Name,   Type, SubType,  Offset,   Size,     Flags
-nvs,      data, nvs,      0x9000,   0x5000,
-otadata,  data, ota,      0xe000,   0x2000,
-factory,  app,  factory,  0x10000,  0x640000,
-spiffs,   data, spiffs,   0xc90000, 0x360000,
-coredump, data, coredump, 0xff0000, 0x10000,
+# Name,   Type, SubType,  Offset,    Size,     Flags
+nvs,      data, nvs,      0x9000,    0x5000,
+otadata,  data, ota,      0xe000,    0x2000,
+factory,  app,  factory,  0x10000,   0x300000,
+coredump, data, coredump, 0x310000,  0x10000,
+storage,  data, littlefs, 0x320000,  0xCE0000,

@@ -17,18 +17,22 @@
  * and the panel shows the same values. The timezone offset is only used to
  * decide what "today" is and to order the upcoming list.
  *
- * The whole database is a single NVS blob in namespace "calstore". A calendar
- * of this size (96 events with short titles/notes) fits the 20 KB nvs
- * partition; when it does not, the oldest past events are pruned and the
- * caller is told how many were dropped.
+ * The whole database is one file on the LittleFS "storage" partition (NVS only
+ * keeps the clock/timezone). It is rewritten on each change; when the packed
+ * database would exceed DB_MAX_BYTES, the oldest past events are pruned and
+ * the caller is told how many were dropped.
+ *
+ * Titles/notes are packed with one byte of length each, so 255 bytes is the
+ * format maximum. 96 + 192 give 95/191 usable bytes (31/63 CJK characters),
+ * which is what the 420 px page can still show in the detail view.
  */
 
 #define CAL_MAX_CALENDARS 8
 #define CAL_MAX_EVENTS 96
 #define CAL_MAX_DAY_EVENTS 24
 #define CAL_NAME_BYTES 20
-#define CAL_TITLE_BYTES 48
-#define CAL_NOTE_BYTES 96
+#define CAL_TITLE_BYTES 96
+#define CAL_NOTE_BYTES 192
 
 typedef struct {
   uint16_t id;

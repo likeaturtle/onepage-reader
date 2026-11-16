@@ -477,9 +477,13 @@ void ui_draw_detail(uint8_t *fb, const ui_detail_t *view) {
   draw_header(fb, &view->status);
 
   const cal_event_t *event = view->event;
+  /* The device stores 95-byte titles and 191-byte notes; at 24 px a 420 px line
+   * holds 23 ASCII or 16 CJK characters, so the worst case is 5 title lines
+   * plus 9 note lines. Title and note share the space above the footer:
+   * note_start = 208 + 32 * title_lines, so title_lines + note_lines <= 16. */
   const int title_lines =
       gfx_text_utf8_wrap(fb, MARGIN, TITLE_Y, event->title[0] ? event->title : "(无标题)",
-                         CONTENT_W, 32, 2, true);
+                         CONTENT_W, 32, 5, true);
   const int meta_y = TITLE_Y + title_lines * 32 + GAP_S;
 
   char date[24];
@@ -503,8 +507,9 @@ void ui_draw_detail(uint8_t *fb, const ui_detail_t *view) {
   gfx_hline(fb, MARGIN, line_y, CONTENT_W, true);
   gfx_text_utf8(fb, MARGIN, line_y + GAP_L, "备注", true);
   if (event->note[0]) {
+    const int note_lines = 16 - title_lines;
     gfx_text_utf8_wrap(fb, MARGIN, line_y + GAP_L + BODY_H + GAP_M, event->note, CONTENT_W,
-                       32, 8, true);
+                       32, note_lines, true);
   } else {
     gfx_text_utf8(fb, MARGIN, line_y + GAP_L + BODY_H + GAP_M, "无备注", true);
   }
