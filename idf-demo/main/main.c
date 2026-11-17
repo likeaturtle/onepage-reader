@@ -463,7 +463,12 @@ static int load_lock_events(cal_event_t *out, int max, uint16_t *today_out) {
  * move. Both are known before the park, so the panel can stay down for hours: a
  * normal day costs a handful of wakes instead of 48 half-hour ones. The corner
  * clock only advances on those wakes, which is the accepted price for not
- * waking every 30 minutes. */
+ * waking every 30 minutes.
+ *
+ * A start time is deliberately NOT a wake (confirmed with the user on
+ * 2026-11-17): the row already shows that time, so an event turning from
+ * "upcoming" into "ongoing" changes nothing on the glass and would only flash
+ * the panel. A 19:00-19:30 event is therefore repainted at 19:31:03. */
 static uint32_t lock_change_delay_s(uint16_t today, const cal_event_t *events, int count) {
   if (!calendar_time_valid()) {
     return 0;

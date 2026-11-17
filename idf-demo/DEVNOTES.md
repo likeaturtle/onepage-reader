@@ -460,7 +460,14 @@ CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y
   中的较小值，交给 `board_power_enter_deep_sleep(wake_s)` 用
   `esp_sleep_enable_timer_wakeup()` 与 POWER 键一起武装（0 = 只留 POWER）。普通一天
   3～8 次唤醒，每次 2～4 秒（复位 + GPIO27 脉冲 + HALF 刷新），约 0.05 mAh。
-- **定时唤醒必须走短路径**：`app_main()` 里 `wake_cause == ESP_SLEEP_WAKEUP_TIMER`
+- **日程的开始时刻刻意不唤醒**（2026-11-17 用户确认保持现状）：那一行本来就印着开始
+  时间，从“未来”变成“已开始”在玻璃上没有任何变化，醒来只会白闪一次。所以一条
+  19:00–19:30 的日程是在 **19:31:03** 唤醒（`end_min + 1` 分钟 + 3 秒余量），19:00
+  不会醒；当天没有日程就等零点。别拿“开始时刻该闪一下”当验收标准——要确认机制，
+  看串口：锁屏时应有 `entering deep sleep; press POWER to wake (schedule timer armed)`，
+  醒来应有 `wake from the schedule timer: refreshing the parked list`，且启动行的
+  `wake causes` 位图含 `0x10`（`BIT(ESP_SLEEP_WAKEUP_TIMER)`）。
+- **定时唤醒必须走短路径**：`app_main()` 里 `wake_causes & (1u << ESP_SLEEP_WAKEUP_TIMER)`
   时先调 `repark_after_timer_wake()` ——不画 splash、不起按键任务、不启动 BLE，
   重算列表 → 重画锁屏 → 回睡。**别让它落进下面的正常启动流程**：那里要闲置 3 分钟
   才自动锁屏，48 次/天就是 ~1.5 mAh/次、1000 mAh 电池两周见底。
