@@ -11,5 +11,6 @@ idf_component_register(
         esp_pm
         esp_timer
         esp_system
+        esp_hw_support
         nvs_flash
 )

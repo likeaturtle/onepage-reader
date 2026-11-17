@@ -36,7 +36,7 @@
     <view class="kv"><text>登录方式</text><text>微信登录</text></view>
     <view class="kv"><text>接口地址</text><text class="mono">{{apiBase}}</text></view>
     <view class="kv"><text>客户端版本</text><text>{{version}}</text></view>
-    <view class="kv"><text>设备协议</text><text>proto 1</text></view>
+    <view class="kv"><text>设备协议</text><text>proto {{protocol}}</text></view>
   </view>
 
   <view class="card explain">

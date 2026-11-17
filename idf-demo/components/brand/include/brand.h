@@ -19,7 +19,10 @@
 /* Shorter, schedule-oriented line drawn next to BRAND_NAME on the lock
  * screen; the full tagline stays on the cold-boot splash. */
 #define BRAND_LOCK_SUBTITLE "墨水屏日程表"
-#define BRAND_FW_VERSION "1.0.0"
+/* The firmware version is deliberately NOT defined here. It lives in the
+ * project's version.txt, which ESP-IDF bakes into the image as PROJECT_VER;
+ * firmware and phone clients read it back from the app description, so there
+ * is exactly one place to bump. */
 
 /* 1-bit, row-major brand bitmap. MSB is the leftmost pixel and a set bit
  * means ink (black) on the panel. The logo bitmaps come from

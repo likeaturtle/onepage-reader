@@ -10,4 +10,5 @@ idf_component_register(
     PRIV_REQUIRES
         esp_timer
         esp_hw_support
+        esp_app_format
 )

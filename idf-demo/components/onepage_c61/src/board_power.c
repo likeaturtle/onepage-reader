@@ -176,7 +176,7 @@ uint8_t board_battery_percent(uint16_t millivolts) {
   return (uint8_t)(percent + 0.5);
 }
 
-void board_power_enter_deep_sleep(void) {
+void board_power_enter_deep_sleep(uint32_t auto_wake_s) {
   /* POWER is a level-triggered deep-sleep wake source. The 2 s hold fires the
    * sleep request while the finger is still down, and arming the wake with the
    * key already low makes the chip wake up again immediately (the lock screen
@@ -233,6 +233,20 @@ void board_power_enter_deep_sleep(void) {
   esp_deep_sleep_enable_gpio_wakeup(1ULL << ONEPAGE_PIN_BTN_POWER, ESP_GPIO_WAKEUP_GPIO_LOW);
 #endif
 
-  ESP_LOGI(TAG, "entering deep sleep; press POWER to wake");
+  /* Optional schedule timer, armed alongside the key: the app parks until the
+   * parked list has to change, so this is normally hours, not minutes. The RTC
+   * runs from the 32.768 kHz crystal (CONFIG_RTC_CLK_SRC_EXT_CRYS), so the
+   * delay does not depend on the RC oscillator's drift. */
+  if (auto_wake_s != 0) {
+    const esp_err_t timer_err =
+        esp_sleep_enable_timer_wakeup((uint64_t)auto_wake_s * 1000ULL * 1000ULL);
+    if (timer_err != ESP_OK) {
+      ESP_LOGW(TAG, "timer wake rejected (%s); parking on POWER alone",
+               esp_err_to_name(timer_err));
+    }
+  }
+
+  ESP_LOGI(TAG, "entering deep sleep; press POWER to wake%s",
+           auto_wake_s != 0 ? " (schedule timer armed)" : "");
   esp_deep_sleep_start();
 }

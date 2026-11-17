@@ -27,6 +27,10 @@ The INFO characteristic is a convenience for generic BLE apps:
 {"name":"墨程CalCal","fw":"1.0.0","proto":1,"events":12,"calendars":1,"time_valid":true}
 ```
 
+`fw` is the image version built from the project's `version.txt` (the firmware
+reads it back from the app description, so there is no second copy to keep in
+sync); `proto` is the protocol revision and moves independently of `fw`.
+
 ## Framing
 
 - Both directions are **UTF-8 JSON objects, one per line**, terminated by

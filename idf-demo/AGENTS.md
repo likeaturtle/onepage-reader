@@ -37,6 +37,13 @@
 
 - 不要改 `../firmware/`（厂商固件 submodule，只有参考价值，它本身有既有的脏状态）。
   板级数值要从那儿抄时，抄到这边来。
+- 固件版本只有一处：工程根目录的 `version.txt`。ESP-IDF 把它编成镜像的 `PROJECT_VER`，
+  固件再用 `esp_app_get_description()->version` 读出来填 `hello`/INFO 的 `fw`。
+  不要在任何头文件里重新定义版本字符串（原来的 `BRAND_FW_VERSION` 已删），也不要靠
+  `git describe`。`PROTO_VERSION` 是协议版本，和固件版本无关，不要合并。
+- 小程序版本不进仓库：`pages/profile/profile.js` 的 `clientVersion()` 运行时读
+  `wx.getAccountInfoSync()`（正式版才有线上版本号，开发/体验版显示环境名）。
+  不要把版本号写回 `config.js`、`app.json` 或 wxml；发布号以上传时填的为准。
 - 代码注释用英文，不写 license header，改动保持小而聚焦。
 - 引用其它组件的头文件时，**必须**在 `idf_component_register` 的
   `REQUIRES`/`PRIV_REQUIRES` 里声明，否则 ESP-IDF 6.x 直接构建失败。

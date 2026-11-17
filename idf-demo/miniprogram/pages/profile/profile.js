@@ -9,6 +9,28 @@ const config = require('../../config');
 
 const MAX_AVATAR_BYTES = 512 * 1024;
 
+/* The client version is not stored in this repository: WeChat only exposes the
+ * online version number inside a release build, and develop/trial return an
+ * empty `version`. Reading it at runtime keeps this row honest instead of
+ * showing a hardcoded string that drifts from what was uploaded. */
+function clientVersion() {
+  try {
+    const mp = wx.getAccountInfoSync().miniProgram || {};
+    if (mp.version) {
+      return mp.version;
+    }
+    if (mp.envVersion === 'trial') {
+      return '体验版';
+    }
+    if (mp.envVersion === 'release') {
+      return '正式版';
+    }
+  } catch (err) {
+    /* getAccountInfoSync needs base library 2.2.2+; fall through to the label. */
+  }
+  return '开发版';
+}
+
 Page({
   data: {
     user: {},
@@ -21,7 +43,8 @@ Page({
     appName: config.appName,
     tagline: config.tagline,
     apiBase: config.apiBase,
-    version: '1.0.0',
+    version: clientVersion(),
+    protocol: config.protocol,
   },
 
   onShow() {

@@ -27,6 +27,11 @@ uint16_t board_battery_read_mv(void);
 /* LiPo state of charge in percent from a pack voltage. */
 uint8_t board_battery_percent(uint16_t millivolts);
 
-/* Park the peripherals and enter deep sleep; returns on wake via the POWER key.
- * Never returns normally. */
-void board_power_enter_deep_sleep(void);
+/* Park the peripherals and enter deep sleep.
+ *
+ * The POWER key is always armed. When auto_wake_s is non-zero a deep-sleep
+ * timer is armed as well, so the caller can park until something on the glass
+ * has to change instead of waking on a fixed cadence.
+ *
+ * Wakes via either source; never returns normally. */
+void board_power_enter_deep_sleep(uint32_t auto_wake_s);

@@ -9,6 +9,7 @@
 #include "brand.h"
 #include "calendar.h"
 #include "cJSON.h"
+#include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -35,6 +36,14 @@ static const char *TAG = "ble_cal";
 #define LINE_BUF_SIZE 768
 #define NOTIFY_BUF_SIZE 900
 #define MAX_NOTIFY_CHUNK 180
+
+/* The firmware version has exactly one source: version.txt at the project root.
+ * ESP-IDF bakes it into the image as PROJECT_VER and exposes it through the app
+ * description, so the `fw` field below and the image metadata cannot drift. */
+static const char *fw_version(void) {
+  const esp_app_desc_t *desc = esp_app_get_description();
+  return (desc && desc->version[0]) ? desc->version : "unknown";
+}
 
 /* Little-endian byte order, as required by BLE_UUID128_INIT. The canonical
  * strings are in ble_calendar.h:
@@ -117,7 +126,7 @@ static int gatt_access(uint16_t conn_handle, uint16_t attr_handle,
     const int n = snprintf(json, sizeof(json),
                            "{\"name\":\"%s\",\"fw\":\"%s\",\"proto\":%d,"
                            "\"events\":%d,\"calendars\":%d,\"time_valid\":%s}",
-                           BRAND_NAME, BRAND_FW_VERSION, PROTO_VERSION, calendar_event_count(),
+                           BRAND_NAME, fw_version(), PROTO_VERSION, calendar_event_count(),
                            calendar_count(),
                            calendar_time_valid() ? "true" : "false");
     if (n <= 0 || n >= (int)sizeof(json)) {
@@ -322,7 +331,7 @@ static void send_hello(void) {
       "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\","
       "\"now\":%u,\"tz\":%d,\"time_valid\":%s,\"time_synced\":%s,\"events\":%d,"
       "\"calendars\":%d,\"cals\":[%s]}",
-      PROTO_VERSION, BRAND_FW_VERSION, BRAND_NAME, (unsigned)calendar_now_epoch(),
+      PROTO_VERSION, fw_version(), BRAND_NAME, (unsigned)calendar_now_epoch(),
       calendar_tz_minutes(),
       calendar_time_valid() ? "true" : "false",
       calendar_time_synced() ? "true" : "false", calendar_event_count(), calendar_count(),

@@ -25,6 +25,7 @@
 
 #include "esp_log.h"
 #include "esp_pm.h"
+#include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -47,6 +48,13 @@ static const char *TAG = "calendar-app";
 #define AUTO_SLEEP_CONNECTED_US (600LL * 1000 * 1000)
 #define CLEAN_REFRESH_EVERY 30
 #define TOAST_MS 1600
+/* Wake a few seconds past the boundary the parked list waits for: the RTC
+ * crystal drifts over a long park, and waking a second early would repaint the
+ * same list and then re-arm to the very same boundary. */
+#define LOCK_WAKE_MARGIN_S 3
+/* Never arm a shorter park than this: a boundary that is already in the past
+ * would otherwise turn into a wake/sleep loop. */
+#define LOCK_WAKE_MIN_S 60
 
 typedef enum {
   VIEW_MONTH = 0,
@@ -426,6 +434,96 @@ static epd_refresh_mode_t next_refresh_mode(void) {
 
 /* --- actions ------------------------------------------------------------ */
 
+/* Snapshot of what the parked glass shows. Shared by the lock action and by the
+ * timer wake that refreshes it, so both paint exactly the same list. */
+static int load_lock_events(cal_event_t *out, int max, uint16_t *today_out) {
+  const uint16_t today = calendar_today();
+  uint16_t now_min = 0;
+  if (calendar_time_valid()) {
+    const time_t local = (time_t)calendar_local_epoch();
+    struct tm tm = {0};
+    if (gmtime_r(&local, &tm)) {
+      now_min = (uint16_t)(tm.tm_hour * 60 + tm.tm_min);
+    }
+  }
+  if (today_out) {
+    *today_out = today;
+  }
+  if (today != 0) {
+    return calendar_upcoming(today, now_min, -1, out, max);
+  }
+  return calendar_upcoming(0, 0, -1, out, max);
+}
+
+/* Seconds until the parked list has to be repainted; 0 parks on POWER alone.
+ *
+ * The lock screen only changes when a row that is still listed expires (its end
+ * minute passes, which is the moment calendar_upcoming() stops returning it) or
+ * when the local date rolls over and both the date line and the list's "today"
+ * move. Both are known before the park, so the panel can stay down for hours: a
+ * normal day costs a handful of wakes instead of 48 half-hour ones. The corner
+ * clock only advances on those wakes, which is the accepted price for not
+ * waking every 30 minutes. */
+static uint32_t lock_change_delay_s(uint16_t today, const cal_event_t *events, int count) {
+  if (!calendar_time_valid()) {
+    return 0;
+  }
+  const uint32_t sec_of_day = calendar_local_epoch() % 86400u;
+  /* Midnight always changes something, even with an empty list. */
+  uint32_t change_s = 86400u;
+  for (int i = 0; i < count; i++) {
+    if (events[i].day != today) {
+      continue;
+    }
+    /* The row leaves the list at the start of minute end_min + 1. */
+    const uint32_t boundary_s = ((uint32_t)events[i].end_min + 1u) * 60u;
+    if (boundary_s < change_s) {
+      change_s = boundary_s;
+    }
+  }
+  int32_t delay_s = (int32_t)change_s - (int32_t)sec_of_day + LOCK_WAKE_MARGIN_S;
+  if (delay_s < LOCK_WAKE_MIN_S) {
+    delay_s = LOCK_WAKE_MIN_S;
+  }
+  return (uint32_t)delay_s;
+}
+
+/* A timer wake is not a user session: the glass already shows the lock screen,
+ * so there is no splash, no key task and no BLE. Recompute the list, repaint it
+ * with the same HALF waveform the lock action uses, and park again. This is the
+ * whole loop and it stays within a couple of seconds. */
+static void repark_after_timer_wake(void) {
+  ESP_LOGI(TAG, "wake from the schedule timer: refreshing the parked list");
+  refresh_battery(true);
+
+  uint16_t today = 0;
+  cal_event_t upcoming[5];
+  const int count = load_lock_events(upcoming, 5, &today);
+
+  ui_sleep_t view = {
+      .count = count,
+      .events = upcoming,
+  };
+  fill_status(&view.status);
+
+  uint8_t *fb = epd_framebuffer();
+  if (fb) {
+    ui_draw_sleep(fb, &view);
+    /* Same reasoning as the lock action: HALF rewrites both RAM planes, so the
+     * parked image is clean without FULL's black/white cycling. */
+    epd_refresh(EPD_REFRESH_HALF);
+  }
+
+  const uint32_t wake_s = lock_change_delay_s(today, upcoming, count);
+  calendar_save_clock();
+  epd_sleep();
+  board_power_enter_deep_sleep(wake_s);
+  /* Not reached. */
+  for (;;) {
+    vTaskDelay(portMAX_DELAY);
+  }
+}
+
 static void enter_sleep(void) {
   ESP_LOGI(TAG, "locking: screen shows the upcoming schedule, then deep sleep");
   s_app.sleep_requested = false;
@@ -439,23 +537,9 @@ static void enter_sleep(void) {
 
   refresh_battery(true);
 
-  const uint16_t today = calendar_today();
-  uint16_t now_min = 0;
-  if (calendar_time_valid()) {
-    const time_t local = (time_t)calendar_local_epoch();
-    struct tm tm = {0};
-    if (gmtime_r(&local, &tm)) {
-      now_min = (uint16_t)(tm.tm_hour * 60 + tm.tm_min);
-    }
-  }
-
+  uint16_t today = 0;
   cal_event_t upcoming[5];
-  int count = 0;
-  if (today != 0) {
-    count = calendar_upcoming(today, now_min, -1, upcoming, 5);
-  } else {
-    count = calendar_upcoming(0, 0, -1, upcoming, 5);
-  }
+  const int count = load_lock_events(upcoming, 5, &today);
 
   ui_sleep_t view = {
       .count = count,
@@ -473,9 +557,12 @@ static void enter_sleep(void) {
     epd_refresh(EPD_REFRESH_HALF);
   }
 
+  /* Park until the list on the glass is out of date, so a later play of the
+   * desk calendar does not need the POWER key first. */
+  const uint32_t wake_s = lock_change_delay_s(today, upcoming, count);
   calendar_save_clock();
   epd_sleep();
-  board_power_enter_deep_sleep();
+  board_power_enter_deep_sleep(wake_s);
   /* Not reached. */
   for (;;) {
     vTaskDelay(portMAX_DELAY);
@@ -658,7 +745,11 @@ static esp_err_t init_nvs(void) {
 
 void app_main(void) {
   const esp_reset_reason_t reset_reason = esp_reset_reason();
-  ESP_LOGI(TAG, "%s starting (reset reason %d%s)", BRAND_NAME, (int)reset_reason,
+  /* A cause bitmap rather than the single-cause call: GPIO and the schedule
+   * timer can fire together, and the timer path must win in that case. */
+  const uint32_t wake_causes = esp_sleep_get_wakeup_causes();
+  ESP_LOGI(TAG, "%s starting (reset reason %d, wake causes 0x%x%s)", BRAND_NAME,
+           (int)reset_reason, (unsigned)wake_causes,
            reset_reason == ESP_RST_DEEPSLEEP ? ", wake from deep sleep" : "");
   /* Waking from deep sleep is the vendor's "panel was off" case: the frame on
    * the glass is our own lock screen, so HALF (both RAM planes, sped-up
@@ -673,6 +764,13 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(calendar_init());
   s_last_generation = calendar_generation();
+
+  /* A schedule-timer wake exists only to bring the parked list up to date; it
+   * must never fall through into the interactive boot below, which would sit
+   * awake for the 3 minute idle timeout after every repaint. */
+  if (wake_causes & (1u << ESP_SLEEP_WAKEUP_TIMER)) {
+    repark_after_timer_wake();
+  }
 
   refresh_battery(true);
 

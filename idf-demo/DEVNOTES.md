@@ -4,11 +4,24 @@
 以及后面基于它继续开发时从哪里接。硬件相关的结论都来自厂商 BSP
 (`../firmware/open-onepage-sdk`) 和真机验证，不是推测。
 
-最后更新：2026-11-16
+最后更新：2026-11-17
 
 ------
 
 ## 1. 当前状态
+
+> 2026-11-17：固件版本收敛到工程根目录的 `version.txt`（当前 `1.0.0`），**只有这一处**。
+> ESP-IDF 的 `PROJECT_VER` 优先读它，不再退化成 `git describe --always --tags --dirty`
+> 的短 hash（仓库没有 tag，之前镜像里的版本是 `475b844-dirty`）；固件里也不再保留第二份
+> 拷贝——`hello`/INFO 的 `fw` 由 `ble_calendar.c` 的 `fw_version()` 从
+> `esp_app_get_description()->version` 读出（该组件 PRIV_REQUIRES 加了 `esp_app_format`），
+> `BRAND_FW_VERSION` 宏已删。于是镜像 metadata、BLE 字段、网页/小程序的“固件”显示同源，
+> 发版只改 `version.txt` 一行。改它会自动触发重配（只有第一次新建文件时需要手动
+> `idf.py reconfigure`）。注意 `PROTO_VERSION`（`ble_calendar.c`）是**协议**版本，
+> 与固件版本无关，两者不要合并。小程序则相反：客户端版本**不进仓库**——微信只在正式版
+> 返回线上版本号，所以“我的”页改为运行时读 `wx.getAccountInfoSync()`
+> （开发/体验版显示环境名），发布号以上传时填的为准；顺手把 wxml 里写死的
+> `proto 1` 改成绑定 `config.protocol`。
 
 > 2026-11-16：产品定名 **墨程CalCal**，CMake 工程/产物改为 `mocheng_calcal`，
 > 并新增了品牌 splash/锁屏/顶栏；细节见第 15 节。下面历史记录里出现的
@@ -439,8 +452,24 @@ CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y
   所以只保留 DFS；低功耗主要靠 3 分钟后的深睡。
 - 空闲锁屏：未连接 3 分钟、已连接 10 分钟、POWER 单击/2 秒长按、网页 `sleep`
   命令都会进深睡。插着 USB 时跳过自动锁屏（用外部供电，也方便串口调试和桌面常显），
-  POWER/网页仍可主动锁。深睡前 `epd_sleep()` 把面板 park，`board_power_enter_deep_sleep()`
+  POWER/网页仍可主动锁。深睡前 `epd_sleep()` 把面板 park，`board_power_enter_deep_sleep(wake_s)`
   拉低 GPIO27 并 hold，屏幕图像留在屏上。
+- **锁屏列表按“内容变化时刻”唤醒，不是定时 30 分钟**（2026-11-17）：锁屏上唯一会
+  随时间变旧的东西是“某条日程已经结束、不该再列出来”和“跨天”，两者在睡前都算得准。
+  `lock_change_delay_s()` 取「今天那几行里最早的 `end_min + 1` 分钟」和「下一个零点」
+  中的较小值，交给 `board_power_enter_deep_sleep(wake_s)` 用
+  `esp_sleep_enable_timer_wakeup()` 与 POWER 键一起武装（0 = 只留 POWER）。普通一天
+  3～8 次唤醒，每次 2～4 秒（复位 + GPIO27 脉冲 + HALF 刷新），约 0.05 mAh。
+- **定时唤醒必须走短路径**：`app_main()` 里 `wake_cause == ESP_SLEEP_WAKEUP_TIMER`
+  时先调 `repark_after_timer_wake()` ——不画 splash、不起按键任务、不启动 BLE，
+  重算列表 → 重画锁屏 → 回睡。**别让它落进下面的正常启动流程**：那里要闲置 3 分钟
+  才自动锁屏，48 次/天就是 ~1.5 mAh/次、1000 mAh 电池两周见底。
+- **代价：锁屏那个 HH:MM 时钟只在这些唤醒时刻前进**（2026-11-17 与用户确认：优先
+  列表准确，接受时钟陈旧，不做每 30 分钟/整点的时钟刷新）。RTC 走 32.768 kHz 晶振
+  （±20 ppm，长时间 park 会漂 1～2 秒），所以边界后留 `LOCK_WAKE_MARGIN_S`(3) 秒；
+  `LOCK_WAKE_MIN_S`(60) 是下限，防止算到已经过去的边界后“醒来即睡、睡下即醒”。
+- 深睡时 BLE 控制器整块关闭，所以定时唤醒**只能刷新本地已有数据，拿不到手机上的
+  新日程**；数据更新仍然只在 BLE 会话（按键唤醒 / 网页连接）里发生。
 - **顶部状态栏**：左侧蓝牙图标 + 电量百分比，右侧时钟；不再显示“日历”标题和
   “已连接/可连接/蓝牙失败”文字。蓝牙图标三态：广告中=细线轮廓、已连接=黑底（3 px 圆角）白线反白、
   射频失败=50% 棋盘抖动假装浅灰（1-bit 面板没有真灰度），并在图标左侧加一个
@@ -501,7 +530,8 @@ DIRAM 138041 / 256624 bytes (54%), 118583 free
   手机网页 BLE 连接、`add` 后自动重绘、差分刷新约 460–480 ms。验证中定位到
   light sleep 会导致按键/刷新/串口假死，已关闭（13.9）。
 - **仍未验证**：深睡电流、锁屏画面在真实面板上的保持时间、NVS 满时的 prune、
-  真实手机的分块极限（大标题/长列表）、USB 拔掉后纯电池的 3 分钟自动锁屏。
+  真实手机的分块极限（大标题/长列表）、USB 拔掉后纯电池的 3 分钟自动锁屏、
+  锁屏定时唤醒的实际一天耗电（估算见 13.5，需要外部表计或长期放电实测）。
 - 如果以后重新启用 light sleep，按 13.9 的检查项先验证前面板 ADC、USB 串口和
   网页 add 后重绘；不要只看 BLE 还能广播。
 - `CONFIG_ESP_SLEEP_CACHE_SAFE_ASSERTION=y` 是调试期保护；如果它在某些 light
@@ -607,7 +637,8 @@ SARADC/USB-Serial-JTAG 不做 light-sleep 上下文保持；本板的按键扫�
 - 5x7 字体补了 ASCII 0x60..0x7A（反引号和 a-z），`gfx_text()` 不再强制转大写，
   这样 `CalCal` 的大小写能正确显示；事件标题里的小写字母也不再被改写。
 - BLE 广播/GAP 名保留 ASCII 别名 `Mochen CalCal`；`hello` 和 INFO 的 `name` 改为
-  `墨程CalCal`，固件版本改用 `BRAND_FW_VERSION`。
+  `墨程CalCal`，固件版本改用 `BRAND_FW_VERSION`（2026-11-17 又改成从 `version.txt`
+  经 app description 读取，见第 1 节，那个宏已删）。
 - CMake 工程名从 `onepage_c61_idf_demo` 改为 `mocheng_calcal`，产物是
   `build/mocheng_calcal.bin`。
 
