@@ -990,3 +990,26 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
   （已 gitignore），用来目检长标题/备注不会压到页脚。
 - 验证：`idf.py build` 通过；预览图确认长标题 5 行 + 长备注 10 行完整显示，
   与页脚之间仍有余量。
+
+## 19. 2026-11-17：设备卡片状态灯左移、右侧改为展开收起按钮
+
+### 19.1 状态灯与展开按钮换位
+
+- 原来的标题行是「设备  已连接 …… 收起 ●」：状态灯在最右，和它说明的连接状态隔着整行；
+  右侧只有一个浅色小字「展开/收起」，看不出能点。
+- 现在状态灯移到「已连接 / 连接中… / 未连接」左侧（`index.wxml` 里 `.dot` 进
+  `.card-heading`、放在 `hint` 之前），灯原来的位置换成右侧的「展开 ▾ / 收起 ▴」
+  （`.head-toggle`；箭头 `.head-caret` 用 CSS 三角画，`up` 时 `rotate(180deg)` 指回
+  上方）。这个展开/收起保持**纯文字 + 箭头**：不描边、也没有圆角浅底/胶囊，颜色沿用
+  原来的 `#8b8778`，视觉上仍是标题行的一部分；可点性靠箭头和整行的 `hover-class`
+  反馈，不靠按钮外壳。
+- 灯和文字是一对，所以标题行改成垂直居中：`.card-head.device-head` 与
+  `.device-head .card-heading` 都用 `align-items: center`；同时去掉 `app.wxss` 里
+  `.dot` 的 `margin-top: 12rpx`——那 12rpx 是给旧的 `flex-start` 位置补的下推，
+  居中后会把灯压到文字下沿。
+- 点击区域不变：仍是整行 `bindtap="toggleDeviceCard"`，未连接时无效。胶囊只是视觉上的
+  按钮，**不**另绑 `bindtap`/`catchtap`，否则冒泡会让一次点击翻两次、看起来没反应。
+- 验证：`node --test test/*.test.js` 46 个用例通过；`tools/preview_miniprogram_device.png`
+  是无头 Chrome 按 `app.wxss` + `index.wxss` 的 rpx 1:1 渲染的四种状态排版检查图
+  （未连接 / 连接中 / 已连接收起 / 已连接展开，已 gitignore，不是真机截图）。
+  真机仍需在开发者工具/微信里确认。

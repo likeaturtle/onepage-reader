@@ -25,7 +25,7 @@
 
   <view class="card">
     <view
-      class="card-head {{connected && !deviceOpen ? 'collapsed' : ''}}"
+      class="card-head device-head {{connected && !deviceOpen ? 'collapsed' : ''}}"
       bindtap="toggleDeviceCard"
       hover-class="{{connected ? 'card-head-hover' : 'none'}}"
       aria-role="{{connected ? 'button' : ''}}"
@@ -33,11 +33,12 @@
     >
       <view class="card-heading">
         <text class="card-title">设备</text>
+        <view class="dot {{connected ? 'on' : ''}}"></view>
         <text class="hint">{{connected ? '已连接' : (connecting ? '连接中…' : '未连接')}}</text>
       </view>
-      <view class="head-right">
-        <text wx:if="{{connected}}" class="head-toggle">{{deviceOpen ? '收起' : '展开'}}</text>
-        <view class="dot {{connected ? 'on' : ''}}"></view>
+      <view wx:if="{{connected}}" class="head-toggle">
+        <text>{{deviceOpen ? '收起' : '展开'}}</text>
+        <view class="head-caret {{deviceOpen ? 'up' : ''}}"></view>
       </view>
     </view>
 

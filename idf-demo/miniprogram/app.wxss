@@ -235,7 +235,6 @@ page {
 }
 
 .dot {
-  margin-top: 12rpx;
   width: 16rpx;
   height: 16rpx;
   border-radius: 50%;

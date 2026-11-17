@@ -94,16 +94,46 @@
   margin-bottom: 0;
 }
 
-.head-right {
-  display: flex;
+/* The lamp sits left of the "已连接" label, so the title row centres its items
+ * instead of aligning them on the text baseline. */
+.card-head.device-head {
   align-items: center;
-  gap: 12rpx;
+}
+
+.device-head .card-heading {
+  align-items: center;
+}
+
+.device-head .dot {
   flex: none;
 }
 
+/* The lamp used to close out the row; that slot now holds the expand/collapse
+ * control. It stays plain text + caret (no chip, border or fill) so it reads as
+ * part of the header; tapping anywhere on the row still folds the card. */
 .head-toggle {
-  font-size: 22rpx;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  flex: none;
   color: #8b8778;
+  font-size: 22rpx;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.head-caret {
+  width: 0;
+  height: 0;
+  border-left: 7rpx solid transparent;
+  border-right: 7rpx solid transparent;
+  border-top: 8rpx solid #8b8778;
+  transition: transform 0.15s ease;
+}
+
+/* "展开" points down (the panel opens below), "收起" flips it up. */
+.head-caret.up {
+  transform: rotate(180deg);
 }
 
 .card-head-hover {
