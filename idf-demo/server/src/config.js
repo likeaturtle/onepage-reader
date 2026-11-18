@@ -11,6 +11,14 @@ function loadConfig(env = process.env) {
     : path.join(serverRoot, 'data');
   const wxAppId = (env.WX_APPID || '').trim();
   const wxSecret = (env.WX_SECRET || '').trim();
+  const deepseekApiKey = (env.DEEPSEEK_API_KEY || '').trim();
+  const deepseekTimeout = Number(env.DEEPSEEK_TIMEOUT_MS);
+  const scheduleTimeZone = (env.SCHEDULE_TIMEZONE || 'Asia/Shanghai').trim();
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: scheduleTimeZone });
+  } catch (_) {
+    throw new Error(`SCHEDULE_TIMEZONE 不是有效时区：${scheduleTimeZone}`);
+  }
 
   return {
     port: Number(env.PORT || 8787),
@@ -18,6 +26,13 @@ function loadConfig(env = process.env) {
     dataDir,
     wxAppId,
     wxSecret,
+    // DeepSeek voice schedule. The key must stay on the server; the mini
+    // program only talks to /api/ai/*.
+    deepseekApiKey,
+    deepseekBaseUrl: (env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').trim().replace(/\/+$/, ''),
+    deepseekModel: (env.DEEPSEEK_MODEL || 'deepseek-flash').trim(),
+    deepseekTimeoutMs: Number.isFinite(deepseekTimeout) && deepseekTimeout > 0 ? deepseekTimeout : 30000,
+    scheduleTimeZone,
     // Only enabled explicitly. Never infer this from an empty AppID: a
     // production deploy with a missing .env must fail closed, not open a
     // password-less login.

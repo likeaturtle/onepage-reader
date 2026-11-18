@@ -102,6 +102,29 @@ function uploadAvatar(dataUri) {
   });
 }
 
+function transcribe(audio, meta) {
+  const opts = meta || {};
+  return request('/api/ai/transcribe', {
+    method: 'POST',
+    timeout: 45000,
+    data: {
+      audio,
+      format: opts.format || 'pcm',
+      sampleRate: opts.sampleRate || 16000,
+      channels: opts.channels || 1,
+      bitsPerSample: opts.bitsPerSample || 16,
+    },
+  });
+}
+
+function parseSchedule(text) {
+  return request('/api/ai/schedule', {
+    method: 'POST',
+    data: { text },
+    timeout: 30000,
+  }).then((res) => res.event);
+}
+
 function events(params) {
   const opts = params || {};
   const query = [];
@@ -159,6 +182,8 @@ module.exports = {
   me,
   updateMe,
   uploadAvatar,
+  transcribe,
+  parseSchedule,
   events,
   createEvent,
   updateEvent,

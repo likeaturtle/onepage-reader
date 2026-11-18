@@ -1104,3 +1104,109 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
   覆盖“连线编辑同步/离线只改云端/云端独有事件补加/参数校验/24:00 显示”，
   `sync.mock` 覆盖“原地 update”和“老固件回退不重复导入”，BLE mock 覆盖 `update` 命令。
 - 未上板：`update` 的 ack、旧固件回退和同步后的设备列表仍需按 README 的真机清单验证。
+
+## 21. 2026-11-18：小程序语音日程（DeepSeek ASR + AI 解析）
+
+### 21.1 为什么走服务端代理
+
+DeepSeek 的语音识别接口（`POST /v1/tools/asr`）要求 `multipart/form-data`，只接受
+16 位 PCM WAV 或 Ogg Opus，最长 120 秒、最大 8 MiB。小程序的 `RecorderManager` 能录
+PCM，但没有 WAV 头；更关键的是 **API Key 不能放进小程序源码**，否则反编译即可拿到。
+所以新增两个需要登录的服务端接口，小程序只请求自己的 `apiBase`：
+
+- `POST /api/ai/transcribe`：收 base64 音频，补 WAV 头后转发 ASR；
+- `POST /api/ai/schedule`：收识别文本，用 `deepseek-flash` 的 JSON 模式解析成日程草案。
+
+服务端只在内存里处理音频，不落盘；每个用户每分钟最多 20 次 AI/ASR 请求。没配
+`DEEPSEEK_API_KEY` 时接口返回 503，`/api/health` 的 `ai` 为 `false`，其余功能不受影响。
+
+### 21.2 服务端
+
+- 新增 `src/ai.js`：`buildWav()`（44 字节头、8000–48000 Hz、单/双声道、16 位、最长 120 秒）、
+  `prepareAudio()`（已经是 RIFF/WAVE 或 OggS 就直传，否则补头）、`transcribe()`、
+  `parseSchedule()`；DeepSeek 错误统一映射成可读的 4xx/5xx（429 频繁、504 超时、
+  401/403 提示服务端 Key 无效）。
+- 解析提示词带上 `SCHEDULE_TIMEZONE` 的当前日期/时间/星期，要求只输出
+  `{"date","start","end","title","note"}`；结果仍走 `normalizeEvent()` 校验与截断，
+  标题缺失时退回用户原话，结束时间缺失/不合法时默认 30 分钟（与添加表单一致）。
+- 把日期/时间/标题校验从 `app.js` 抽到 `src/event-rules.js`，把 `httpError` 抽到
+  `src/http-error.js`，ASR 和事件接口共用同一套规则；`normalizeEvent()` 增加
+  `defaultEndMinutes` 选项（API 新增仍默认 60 分钟）。
+- `config.js` 增加 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、
+  `DEEPSEEK_TIMEOUT_MS`、`SCHEDULE_TIMEZONE`；启动日志打印
+  `voice schedule: configured / NOT configured`。
+- 测试 `server/test/ai.test.js` 覆盖 WAV 头字段、PCM/WAV/Ogg 识别、时区、ASR 请求的
+  `file` 字段与返回、错误映射、JSON 围栏、结束时间修正、标题回退、坏日期、路由鉴权
+  与缺 Key；服务端共 30 个用例通过（含 121 秒 PCM 被 413 拒绝、模型名与 thinking 断言）。
+- 部署示例（`calcal_nginx_example.conf` / README）的 `client_max_body_size` 从 4m 提到
+  8m、代理读写超时提到 60s：60 秒 PCM 的 base64 约 2.5 MB，默认 1m/30s 会先被 nginx
+  413 或 504。
+
+### 21.3 小程序
+
+- 新增 `utils/voice.js`：包装 `wx.getRecorderManager()`，录音参数为
+  `format: 'PCM'`、16000 Hz、单声道、16 位、最长 60 秒；`start()` 先查
+  `scope.record`（未决定时 `wx.authorize`，拒绝时抛 `code:'permission'`），
+  `onStop` 里用 `wx.getFileSystemManager().readFile({encoding:'base64'})` 读出音频；
+  `stop()` 支持“还没 onStart 就松手”（记下 stopRequested，启动后立刻停），
+  `cancel()`/来电中断走 `onCancel`，`dispose()` 解绑全局 RecorderManager 回调，
+  避免 tab 页复用时回调叠加。
+- 「添加」页在设备卡片和添加日程卡片之间增加「语音日程」：
+  文字输入框（可改识别结果，上限 500 字）、按住说话按钮（红色脉冲 + 秒数）、
+  「解析日程」。松开后自动 `POST /api/ai/transcribe` 并回填；确认后
+  `POST /api/ai/schedule`，把返回的日期/时间/标题/备注写入添加表单（同时更新字节
+  计数），但**不保存**；用户核对/修改后点「保存日程」才调用 `saveForm()` 保存并同步
+  设备——手动保存和语音来源的保存共用一条路径，避免两套校验。
+- `stopVoiceTimer()` 在停止/取消/离开页面时清理；`onHide`/`onUnload` 会取消录音，
+  `onUnload` 还会 dispose。权限被拒绝时弹「去设置」，调用 `wx.openSetting()`。
+- 失败处理：识别为空/失败保留原文并显示错误；解析失败不改输入框文字；云端保存失败
+  保留文字，提示「日程没有保存成功」，表单仍保留 AI 解析结果可手动重试。
+- 测试新增 `voice.test.js`（9 个：参数、权限、松手早于 onStart、过短、取消、来电中断、
+  读取失败、dispose）和 `voice-page.mock.test.js`（12 个：回填、确认保存、空文本、
+  解析失败、保存失败、权限弹窗、字数截断、取消、离开页面、授权弹窗未关就松手、
+  语音处理期间禁止手动保存）；小程序共 80 个用例通过。
+
+### 21.4 仍需真机验证
+
+- 微信 `format:'PCM'` 在 iOS/Android 真机上的实际文件头与时长字段（模拟器没有
+  BLE/录音真机行为）；若文件意外带 WAV 头，服务端已按内容识别并直传；
+- 首次授权、拒绝后「去设置」恢复、录音中来电中断的交互；
+- 60 秒自动停止与 ASR 转写耗时；DeepSeek 账号的 ASR 并发/限速与计费。
+
+### 21.5 模型名修正（2026-11-18）
+
+- DeepSeek 官网当前 Chat Completions 的合法 `model` 只有 `deepseek-flash` 和
+  `deepseek-v4-pro`；实现里最初写的 `deepseek-chat` 是旧名，已全部改成
+  `deepseek-flash`（服务端默认值、`.env`、`.env.example`、`calcal_example.env`、文档）。
+- `deepseek-flash` 支持 JSON Output、价格更低，适合“一句话 → 日程 JSON”的短抽取；
+  `deepseek-v4-pro` 更强但更贵，需要时可改 `DEEPSEEK_MODEL`。
+- 请求里显式加 `thinking: { "type": "disabled" }`：官网说明不传时默认开启思考模式，
+  这个任务不需要推理，开着会消耗 reasoning token；在 `max_tokens: 500` 下还可能只
+  返回空 `content`，导致 JSON 解析失败。
+- 测试断言请求体 `model=deepseek-flash`、`thinking.type=disabled`，并覆盖
+  `DEEPSEEK_MODEL` 留空时的回退；服务端共 30 个用例通过。
+
+### 21.6 语音日程改为二次确认（2026-11-18）
+
+- 上一版按钮（当时叫「确认并设置」）在解析成功后直接调用 `saveForm()`，AI 填的日期/时间没有机会让
+  用户核对。现在「解析日程」只把解析结果填入下方「添加日程」表单，置
+  `voiceFilled=true`，测量整张表单并滚动到完整可见，显示「已按语音填入，核对后点保存」提示；真正写云端
+  和设备只发生在用户点「保存日程」时。
+- 保存成功后才清空语音原文、`voiceFilled`，并把状态改成「已保存，可以继续说下一条」；
+  保存失败保留表单和语音原文，状态提示「保存失败，请检查后重试」，用户可以在表单里改
+  日期/时间/标题/备注后重试。
+- 添加表单的标题右边在 `voiceFilled` 时显示「请确认后保存」；提示条
+  `.voice-filled` 使用浅蓝底，和「未连接设备」的绿色提示区分。
+- 测试调整/新增：确认后不落库、点「保存日程」后才落库并清空语音状态、用户在表单内改
+  标题/时间后按改后的值保存、保存失败保留表单；`voice-page.mock` 16 个用例，小程序
+  共 84 个用例通过。
+- 按钮文案「确认并设置」改为「解析日程」；行宽改为「按住说话」70% / 「解析日程」
+  30%。两者都作为 `view` 参与 flex：`.voice-hold { flex: 7 1 0 }`，解析按钮外套
+  `.voice-parse-slot { flex: 3 1 0 }`，按钮 `width: 100%` 填满槽位。这样原生
+  `button` 的固有宽度不再参与行宽分配；扣除 16rpx 间距后正好 70%/30%。
+  （此前的 1:1 方案用 `.voice-actions > .voice-confirm`，WXSS 子选择器跨到原生
+  `button` 不保证生效，按钮保持固有宽度，实测比按住说话宽。）
+- 解析成功后不再只是 `selector` 对齐卡片顶部，而是查 `#add-card` 的
+  `boundingClientRect` + `scrollOffset`，复用 `cal.revealScrollTop()`：整卡能放下时
+  滚到卡片底部也进入视口，已经完整可见时不滚动，超过一屏时对齐顶部。测试覆盖
+  “完整可见不滚动 / 卡片超过一屏 / 底部在视口外”。

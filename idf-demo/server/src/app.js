@@ -7,12 +7,19 @@ const path = require('node:path');
 const { Store } = require('./store');
 const { createKeyrings } = require('./crypto');
 const { signToken, verifyToken } = require('./auth');
-const { exchangeCode, httpError } = require('./wechat');
+const { exchangeCode } = require('./wechat');
+const { httpError } = require('./http-error');
+const { isValidDate, normalizeEvent } = require('./event-rules');
+const { transcribe, parseSchedule } = require('./ai');
 
 const JSON_LIMIT = 64 * 1024;
 const AVATAR_LIMIT = 3 * 1024 * 1024;
+const AI_AUDIO_LIMIT = 6 * 1024 * 1024;
 const LOGIN_WINDOW_MS = 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 30;
+const AI_WINDOW_MS = 60 * 1000;
+const AI_MAX_REQUESTS = 20;
+const AI_MAX_TEXT_CHARS = 500;
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body);
@@ -114,72 +121,29 @@ function detectImage(buffer) {
 }
 
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TITLE_BYTES = 95;
-const NOTE_BYTES = 191;
 
-function isValidDate(value) {
-  if (!DATE_RE.test(value)) return false;
-  const [year, month, day] = value.split('-').map(Number);
-  if (year < 2021 || year > 2100) return false;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
-
-function minutesOf(value) {
-  if (value === '24:00') return 1440;
-  const [hours, minutes] = value.split(':').map(Number);
-  return hours * 60 + minutes;
-}
-
-function timeFromMinutes(value) {
-  const clamped = Math.max(0, Math.min(1440, value));
-  if (clamped === 1440) return '24:00';
-  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
-}
-
-function truncateUtf8(text, maxBytes) {
-  let out = '';
-  let used = 0;
-  for (const char of String(text)) {
-    const size = Buffer.byteLength(char);
-    if (used + size > maxBytes) break;
-    out += char;
-    used += size;
-  }
-  return out;
-}
-
-function normalizeEvent(body) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw httpError(400, '请求体必须是 JSON 对象');
-  }
-  const date = String(body.date || '').trim();
-  if (!isValidDate(date)) throw httpError(400, '日期不合法，应为 YYYY-MM-DD');
-  const start = String(body.start || '').trim();
-  if (!TIME_RE.test(start)) throw httpError(400, '开始时间不合法，应为 HH:MM');
-  let end = String(body.end || '').trim();
-  if (end !== '24:00' && !TIME_RE.test(end)) end = '';
-  if (!end || minutesOf(end) <= minutesOf(start)) {
-    end = timeFromMinutes(minutesOf(start) + 60);
-  }
-  const title = truncateUtf8(String(body.title || '').trim(), TITLE_BYTES);
-  if (!title) throw httpError(400, '标题不能为空');
-  const note = truncateUtf8(String(body.note || '').trim(), NOTE_BYTES);
-  let deviceId = null;
-  if (body.deviceId !== undefined && body.deviceId !== null) {
-    const value = Number(body.deviceId);
-    if (!Number.isInteger(value) || value <= 0) throw httpError(400, 'deviceId 不合法');
-    deviceId = value;
-  }
-  return { date, start, end, title, note, deviceId };
+// Voice recognition and parsing cost money, so each logged-in user gets a small
+// sliding-window budget in addition to the login limiter.
+function createAiLimiter() {
+  const attempts = new Map();
+  return function allow(userId) {
+    const now = Date.now();
+    const recent = (attempts.get(userId) || []).filter((t) => now - t < AI_WINDOW_MS);
+    if (recent.length >= AI_MAX_REQUESTS) {
+      attempts.set(userId, recent);
+      return false;
+    }
+    recent.push(now);
+    attempts.set(userId, recent);
+    return true;
+  };
 }
 
 function createApp(config, store) {
   if (!store) store = new Store(config.dataDir, createKeyrings(config));
   const allowLogin = createLoginLimiter();
+  const allowAi = createAiLimiter();
 
   function authenticate(req) {
     const header = req.headers.authorization || '';
@@ -210,6 +174,7 @@ function createApp(config, store) {
         ok: true,
         wechat: Boolean(config.wxAppId && config.wxSecret),
         devLogin: config.allowDevLogin,
+        ai: Boolean(config.deepseekApiKey),
       });
       return;
     }
@@ -310,6 +275,36 @@ function createApp(config, store) {
       return;
     }
 
+
+    if (req.method === 'POST' && pathname === '/api/ai/transcribe') {
+      const user = requireUser(req);
+      if (!allowAi(user.id)) throw httpError(429, '语音识别太频繁，请稍后再试');
+      const body = await readJson(req, AI_AUDIO_LIMIT);
+      const audio = {
+        data: String((body && body.audio) || ''),
+        sampleRate: Number(body && body.sampleRate) || 16000,
+        channels: Number(body && body.channels) || 1,
+        bitsPerSample: Number(body && body.bitsPerSample) || 16,
+      };
+      if (!audio.data) throw httpError(400, '缺少录音数据');
+      const result = await transcribe(config, audio);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/ai/schedule') {
+      const user = requireUser(req);
+      if (!allowAi(user.id)) throw httpError(429, 'AI 解析太频繁，请稍后再试');
+      const body = await readJson(req);
+      const text = String((body && body.text) || '').trim();
+      if (!text) throw httpError(400, '日程内容不能为空');
+      if (text.length > AI_MAX_TEXT_CHARS) {
+        throw httpError(400, `日程内容最多 ${AI_MAX_TEXT_CHARS} 字`);
+      }
+      const event = await parseSchedule(config, text);
+      sendJson(res, 200, { event });
+      return;
+    }
 
     if (req.method === 'GET' && pathname === '/api/events') {
       const user = requireUser(req);

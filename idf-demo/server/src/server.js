@@ -4,7 +4,13 @@ const { loadConfig, DEFAULT_SECRET } = require('./config');
 const { createKeyrings } = require('./crypto');
 const { createApp } = require('./app');
 
-const config = loadConfig();
+let config;
+try {
+  config = loadConfig();
+} catch (err) {
+  console.error('[server] refusing to start:', err.message);
+  process.exit(1);
+}
 
 if (config.isProd && config.sessionSecret === DEFAULT_SECRET) {
   console.error('[server] refusing to start: set SESSION_SECRET for production');
@@ -41,6 +47,7 @@ server.listen(config.port, config.host, () => {
   const port = typeof address === 'object' && address ? address.port : config.port;
   console.log(`[server] listening on http://${config.host}:${port}`);
   console.log(`[server] wechat login: ${config.wxAppId && config.wxSecret ? 'configured' : 'NOT configured'}`);
+  console.log(`[server] voice schedule: ${config.deepseekApiKey ? `configured (${config.deepseekModel})` : 'NOT configured (set DEEPSEEK_API_KEY)'}`);
   console.log(`[server] dev login: ${config.allowDevLogin ? 'enabled' : 'disabled'}`);
   console.log(`[server] data encryption: ${keyrings.source.data === 'env' ? config.dataKeyId : 'dev-derived'} / index: ${keyrings.source.index === 'env' ? config.indexKeyId : 'dev-derived'}`);
 });

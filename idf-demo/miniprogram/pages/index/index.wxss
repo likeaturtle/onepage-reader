@@ -386,6 +386,113 @@
   line-height: 1.6;
 }
 
+/* --- voice schedule ---------------------------------------------------- */
+.input.area.voice-text {
+  height: 160rpx;
+  min-height: 160rpx;
+}
+
+.voice-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 16rpx;
+  margin-top: 18rpx;
+}
+
+/* The row is split 70/30 between two views. The button lives inside the 30%
+ * slot and fills it, so native <button> sizing never decides the ratio. */
+
+/* Hold-to-talk is a plain view: a <button> would swallow touchstart/end and
+ * fire its own tap feedback. */
+.voice-hold {
+  flex: 7 1 0;
+  width: auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  height: 84rpx;
+  border-radius: 20rpx;
+  background: #efe8d9;
+  color: #2b2a24;
+  font-size: 29rpx;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.voice-hold-hover {
+  background: #e4d9c3;
+}
+
+.voice-hold.recording {
+  background: #9c3427;
+  color: #ffffff;
+}
+
+.voice-hold.off {
+  opacity: 0.5;
+}
+
+.voice-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #9c3427;
+}
+
+.voice-hold.recording .voice-dot {
+  background: #ffffff;
+  animation: voice-pulse 1s infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+.voice-parse-slot {
+  flex: 3 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.btn.voice-confirm {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0 8rpx;
+}
+
+.voice-note {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #9a9482;
+}
+
+.voice-note.recording {
+  color: #9c3427;
+}
+
+.voice-error {
+  margin: 14rpx 0 0;
+}
+
+/* The AI draft lands in the add-event card; this tip stays until 保存日程
+ * succeeds, so the user can review or edit every field first. */
+.voice-filled {
+  margin: 0 0 18rpx;
+  border-left-color: #b9c3d6;
+  background: #eef1f7;
+  color: #4a5a78;
+}
+
 .log-wrap {
   margin-top: 10rpx;
 }

@@ -98,9 +98,61 @@
   <view class="card">
     <view class="card-head">
       <view class="card-heading">
-        <text class="card-title">添加日程</text>
-        <text class="hint">{{connected ? '同时写入设备' : '先保存到云端'}}</text>
+        <text class="card-title">语音日程</text>
+        <text class="hint">{{voiceStatus}}</text>
       </view>
+    </view>
+
+    <textarea
+      class="input area voice-text"
+      placeholder="按住下方按钮说一句，例如：明天下午三点项目评审，会议室 A"
+      value="{{voiceText}}"
+      maxlength="500"
+      bindinput="onVoiceText"
+      disabled="{{voicePhase !== ''}}"
+    />
+
+    <view class="voice-actions">
+      <view
+        class="voice-hold {{voiceRecording ? 'recording' : ''}} {{voicePhase ? 'off' : ''}}"
+        bindtouchstart="startVoice"
+        bindtouchend="stopVoice"
+        bindtouchcancel="onVoiceTouchCancel"
+        catchtouchmove="noop"
+        hover-class="voice-hold-hover"
+        aria-role="button"
+        aria-label="按住说话"
+      >
+        <view class="voice-dot"></view>
+        <text>{{voiceButtonLabel}}</text>
+      </view>
+      <view class="voice-parse-slot">
+        <button
+          class="btn primary voice-confirm"
+          bindtap="confirmVoice"
+          loading="{{voicePhase === 'parsing'}}"
+          disabled="{{voicePhase !== '' || voiceRecording || busy}}"
+        >解析日程</button>
+      </view>
+    </view>
+
+    <view wx:if="{{voiceRecording}}" class="voice-note recording">
+      {{voiceSeconds}} 秒 · 松开自动识别，最长 60 秒
+    </view>
+    <view wx:elif="{{voiceError}}" class="banner error voice-error">{{voiceError}}</view>
+    <view wx:else class="voice-note">录音会发送到 DeepSeek 识别，确认文字后填入下方表单</view>
+  </view>
+
+  <view id="add-card" class="card">
+    <view class="card-head">
+      <view class="card-heading">
+        <text class="card-title">添加日程</text>
+        <text class="hint">{{voiceFilled ? '请确认后保存' : (connected ? '同时写入设备' : '先保存到云端')}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{voiceFilled}}" class="inline-tip voice-filled">
+      已按语音填入，请核对日期、时间和标题后点「保存日程」
     </view>
 
     <view class="pick-row">
@@ -171,7 +223,7 @@
       未连接设备蓝牙，保存后云端储存，连接设备时自动同步
     </view>
 
-    <button class="btn primary block" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">
+    <button class="btn primary block" bindtap="submit" loading="{{busy}}" disabled="{{busy || voicePhase !== ''}}">
       保存日程
     </button>
   </view>

@@ -1,13 +1,8 @@
 'use strict';
 
-const WECHAT_SESSION_URL = 'https://api.weixin.qq.com/sns/jscode2session';
+const { httpError } = require('./http-error');
 
-function httpError(status, message) {
-  const err = new Error(message);
-  err.status = status;
-  err.expose = true;
-  return err;
-}
+const WECHAT_SESSION_URL = 'https://api.weixin.qq.com/sns/jscode2session';
 
 /**
  * Exchange a wx.login() code for the user's openid.
@@ -60,4 +55,4 @@ async function exchangeCode(config, code) {
   return data;
 }
 
-module.exports = { exchangeCode, httpError };
+module.exports = { exchangeCode };

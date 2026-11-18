@@ -10,6 +10,7 @@ const cal = require('../../utils/calendar');
 const eventRules = require('../../utils/event');
 const fmt = require('../../utils/format');
 const utf8 = require('../../utils/utf8');
+const voice = require('../../utils/voice');
 
 const SYNC_PAST_DAYS = 7;
 const SYNC_FUTURE_DAYS = 120;
@@ -27,6 +28,9 @@ const AUTO_END_MINUTES = 30;
 // Chinese text at roughly a third of the budget.
 const TITLE_BYTES = eventRules.TITLE_BYTES;
 const NOTE_BYTES = eventRules.NOTE_BYTES;
+// The spoken sentence is free text for the AI parser, not a device field, so
+// cap it by characters and let the server condense it into 95/191 bytes.
+const VOICE_TEXT_MAX = 500;
 
 function defaultForm() {
   const now = new Date();
@@ -109,6 +113,14 @@ Page({
     noteBytes: 0,
     titleLimit: TITLE_BYTES,
     noteLimit: NOTE_BYTES,
+    voiceText: '',
+    voiceRecording: false,
+    voiceSeconds: 0,
+    voicePhase: '',
+    voiceButtonLabel: '按住 说话',
+    voiceStatus: '说一句，AI 帮你填好',
+    voiceFilled: false,
+    voiceError: '',
     busy: false,
     error: '',
     syncError: '',
@@ -171,6 +183,45 @@ Page({
         this.setData({ logs: this.data.logs.concat([entry]).slice(-40) });
       }
     });
+
+    this.voiceRecorder = voice.createRecorder({
+      onStart: () => {
+        this.voiceStartedAt = Date.now();
+        this.startVoiceTimer();
+        this.setData({
+          voiceRecording: true,
+          voiceSeconds: 0,
+          voiceError: '',
+          voiceButtonLabel: '松开 发送',
+          voiceStatus: '正在录音',
+        });
+      },
+      onStop: (audio) => {
+        this.stopVoiceTimer();
+        this.setData({ voiceRecording: false, voiceButtonLabel: '按住 说话' });
+        this.transcribeVoice(audio);
+      },
+      onCancel: () => {
+        this.stopVoiceTimer();
+        this.setData({
+          voiceRecording: false,
+          voiceButtonLabel: '按住 说话',
+          voicePhase: '',
+          voiceStatus: '已取消录音',
+        });
+      },
+      onError: (err) => {
+        this.stopVoiceTimer();
+        this.setData({
+          voiceRecording: false,
+          voiceButtonLabel: '按住 说话',
+          voicePhase: '',
+          voiceStatus: '说一句，AI 帮你填好',
+          voiceError: (err && err.message) || '录音失败，请重试',
+        });
+        if (err && err.code === 'permission') this.showRecordPermissionHelp();
+      },
+    });
   },
 
   onShow() {
@@ -199,6 +250,7 @@ Page({
     this.scanSession = (this.scanSession || 0) + 1;
     this.clearScanTimer();
     if (this.data.scanning) this.stopScan();
+    this.cancelVoiceRecording();
   },
 
   onUnload() {
@@ -207,6 +259,11 @@ Page({
     ble.stopScan().catch(() => {});
     if (this.offState) this.offState();
     if (this.offMessage) this.offMessage();
+    this.cancelVoiceRecording();
+    if (this.voiceRecorder) {
+      this.voiceRecorder.dispose();
+      this.voiceRecorder = null;
+    }
   },
 
   syncUser() {
@@ -588,6 +645,203 @@ Page({
     });
   },
 
+  // --- voice schedule ---------------------------------------------------
+  startVoice() {
+    if (!this.voiceRecorder) return;
+    if (this.data.voicePhase || this.data.busy || this.data.voiceRecording) return;
+    this.voicePressed = true;
+    this.setData({ voiceError: '', voiceStatus: '正在准备麦克风…' });
+    // Check permission before starting so a release while the system prompt is
+    // open does not produce a 0-second recording.
+    voice.ensurePermission()
+      .then(() => {
+        if (!this.voicePressed) {
+          this.setData({
+            voiceRecording: false,
+            voiceButtonLabel: '按住 说话',
+            voiceStatus: '麦克风已授权，请按住说话',
+          });
+          return null;
+        }
+        return this.voiceRecorder.start().catch((err) => {
+          this.setData({
+            voiceRecording: false,
+            voiceButtonLabel: '按住 说话',
+            voiceStatus: '说一句，AI 帮你填好',
+          });
+          if (err && err.code === 'permission') this.showRecordPermissionHelp();
+          else this.setData({ voiceError: (err && err.message) || '录音启动失败，请重试' });
+        });
+      })
+      .catch((err) => {
+        this.setData({
+          voiceRecording: false,
+          voiceButtonLabel: '按住 说话',
+          voiceStatus: '说一句，AI 帮你填好',
+        });
+        if (err && err.code === 'permission') this.showRecordPermissionHelp();
+        else this.setData({ voiceError: (err && err.message) || '录音启动失败，请重试' });
+      });
+  },
+
+  stopVoice() {
+    this.voicePressed = false;
+    if (this.voiceRecorder) this.voiceRecorder.stop();
+  },
+
+  onVoiceTouchCancel() {
+    this.voicePressed = false;
+    this.cancelVoiceRecording();
+    this.setData({ voicePhase: '', voiceStatus: '已取消录音' });
+  },
+
+  cancelVoiceRecording() {
+    this.voicePressed = false;
+    this.stopVoiceTimer();
+    if (this.voiceRecorder) this.voiceRecorder.cancel();
+  },
+
+  // The recorder keeps the touch area from scrolling while the user holds it.
+  noop() {},
+
+  startVoiceTimer() {
+    this.stopVoiceTimer();
+    this.voiceStartedAt = Date.now();
+    this.voiceTimer = setInterval(() => {
+      const elapsed = Date.now() - (this.voiceStartedAt || Date.now());
+      const seconds = Math.min(60, Math.floor(elapsed / 1000));
+      if (seconds !== this.data.voiceSeconds) this.setData({ voiceSeconds: seconds });
+    }, 500);
+  },
+
+  stopVoiceTimer() {
+    if (this.voiceTimer) {
+      clearInterval(this.voiceTimer);
+      this.voiceTimer = null;
+    }
+  },
+
+  onVoiceText(event) {
+    const value = String(event.detail.value || '').slice(0, VOICE_TEXT_MAX);
+    this.setData({ voiceText: value, voiceError: '' });
+  },
+
+  transcribeVoice(audio) {
+    if (!audio || !audio.base64) return;
+    this.setData({ voicePhase: 'transcribing', voiceStatus: '正在识别…', voiceError: '' });
+    api.transcribe(audio.base64, {
+      format: 'pcm',
+      sampleRate: audio.sampleRate,
+      channels: audio.channels,
+      bitsPerSample: audio.bitsPerSample,
+    })
+      .then((res) => {
+        const text = String((res && res.text) || '').trim();
+        if (!text) throw new Error('没有识别到内容，请再说一次');
+        this.setData({
+          voiceText: text.slice(0, VOICE_TEXT_MAX),
+          voicePhase: '',
+          voiceButtonLabel: '按住 说话',
+          voiceStatus: '识别完成，可以修改后解析',
+          voiceError: '',
+        });
+      })
+      .catch((err) => {
+        this.setData({
+          voicePhase: '',
+          voiceButtonLabel: '按住 说话',
+          voiceStatus: '说一句，AI 帮你填好',
+          voiceError: (err && err.message) || '语音识别失败，请重试',
+        });
+      });
+  },
+
+  showRecordPermissionHelp() {
+    wx.showModal({
+      title: '需要麦克风权限',
+      content: '语音日程需要麦克风。请在设置里允许微信使用麦克风，然后重新按住按钮说话。',
+      confirmText: '去设置',
+      cancelText: '稍后',
+      success: (res) => {
+        if (res.confirm && typeof wx.openSetting === 'function') wx.openSetting({});
+      },
+    });
+  },
+
+  confirmVoice() {
+    if (!this.voiceRecorder) return Promise.resolve(false);
+    if (this.data.voicePhase || this.data.busy || this.data.voiceRecording) {
+      return Promise.resolve(false);
+    }
+    const text = String(this.data.voiceText || '').trim();
+    if (!text) {
+      this.setData({ voiceError: '请先输入或说出日程内容' });
+      return Promise.resolve(false);
+    }
+
+    this.setData({ voicePhase: 'parsing', voiceStatus: 'AI 正在解析…', voiceError: '' });
+    return api.parseSchedule(text)
+      .then((event) => {
+        const draft = {
+          date: event.date,
+          start: event.start,
+          end: event.end,
+          title: event.title,
+          note: event.note || '',
+        };
+        const cursor = cal.cursorFrom(draft.date);
+        this.calYear = cursor.year;
+        this.calMonth = cursor.month;
+        this.setData({
+          form: draft,
+          calendarOpen: false,
+          titleBytes: utf8.byteLength(draft.title),
+          noteBytes: utf8.byteLength(draft.note),
+          voiceFilled: true,
+          voicePhase: '',
+          voiceButtonLabel: '按住 说话',
+          voiceStatus: '已填入下方表单，确认后保存',
+          voiceError: '',
+        }, () => this.revealAddForm());
+        return true;
+      })
+      .catch((err) => {
+        this.setData({
+          voicePhase: '',
+          voiceButtonLabel: '按住 说话',
+          voiceStatus: '说一句，AI 帮你填好',
+          voiceError: (err && err.message) || 'AI 解析失败，请重试',
+        });
+        return false;
+      });
+  },
+
+  // The AI draft lands in the add-event card below. Measure the whole card and
+  // scroll so its bottom is visible too, not just its top; when it already fits
+  // on screen no scrolling happens.
+  revealAddForm() {
+    if (typeof wx === 'undefined' || typeof wx.createSelectorQuery !== 'function') return;
+    const query = wx.createSelectorQuery();
+    query.select('#add-card').boundingClientRect();
+    query.selectViewport().scrollOffset();
+    query.exec((res) => {
+      const rect = res && res[0];
+      const view = res && res[1];
+      if (!rect || !view) return;
+      const info = typeof wx.getWindowInfo === 'function'
+        ? wx.getWindowInfo()
+        : wx.getSystemInfoSync();
+      const target = cal.revealScrollTop({
+        top: rect.top,
+        height: rect.height,
+        scrollTop: view.scrollTop,
+        viewport: info.windowHeight,
+      });
+      if (target == null) return;
+      wx.pageScrollTo({ scrollTop: target, duration: 200 });
+    });
+  },
+
   // --- add / delete -----------------------------------------------------
   onStart(event) {
     const start = event.detail.value;
@@ -614,21 +868,42 @@ Page({
   },
 
   submit() {
-    if (this.data.busy) return;
-    const form = this.data.form;
+    if (this.data.voicePhase) return Promise.resolve(false);
+    return this.saveForm(this.data.form).then((saved) => {
+      if (saved && this.data.voiceFilled) {
+        this.setData({
+          voiceFilled: false,
+          voiceText: '',
+          voiceButtonLabel: '按住 说话',
+          voiceStatus: '已保存，可以继续说下一条',
+          voiceError: '',
+        });
+      } else if (!saved && this.data.voiceFilled) {
+        this.setData({ voiceStatus: '保存失败，请检查后重试' });
+      }
+      return saved;
+    });
+  },
+
+  // Shared by the manual form and the AI-filled draft. Resolves to true only
+  // after the cloud write succeeds, so submit() knows whether to clear the
+  // voice text/flag.
+  saveForm(form) {
+    if (this.data.busy) return Promise.resolve(false);
     const title = String(form.title || '').trim();
     if (!title) {
       wx.showToast({ title: '请填写标题', icon: 'none' });
-      return;
+      return Promise.resolve(false);
     }
     if (form.end && form.end <= form.start) {
       wx.showToast({ title: '结束时间要晚于开始时间', icon: 'none' });
-      return;
+      return Promise.resolve(false);
     }
 
     this.setData({ busy: true, error: '' });
     let deviceError = '';
-    api.createEvent({
+    let saved = false;
+    return api.createEvent({
       date: form.date,
       start: form.start,
       end: form.end,
@@ -660,13 +935,17 @@ Page({
           titleBytes: 0,
           noteBytes: 0,
         });
+        saved = true;
       })
       .then(() => (ble.isConnected() ? ble.hello().catch(() => null) : null))
       .then((hello) => {
         if (hello) this.setData({ hello, deviceTime: fmt.deviceTime(hello) });
       })
       .catch((err) => this.setData({ error: err.message }))
-      .then(() => this.setData({ busy: false }));
+      .then(() => {
+        this.setData({ busy: false });
+        return saved;
+      });
   },
 
   // --- misc -------------------------------------------------------------

@@ -9,6 +9,9 @@ server/
 ├── src/
 │   ├── server.js    进程入口（读 .env、密钥校验、监听、优雅退出）
 │   ├── app.js       HTTP 路由、鉴权、头像存储
+│   ├── ai.js        DeepSeek ASR 与语音文本解析（API Key 只在服务端）
+│   ├── event-rules.js 日程日期/时间/标题校验与截断
+│   ├── http-error.js  可返回给客户端的错误
 │   ├── config.js    环境变量
 │   ├── crypto.js    AES-256-GCM 字段加密 + openid HMAC 索引 + 密钥环
 │   ├── auth.js      HMAC token 签发/校验
@@ -18,7 +21,7 @@ server/
 ├── scripts/
 │   ├── backup.js    npm run backup
 │   └── restore.js   npm run restore
-├── test/            node:test 用例（API / 加密 / 备份 / schema）
+├── test/            node:test 用例（API / AI / 加密 / 备份 / schema）
 ├── .env.example
 └── data/            users.json + events.json + avatars/（自动创建，已 gitignore）
 ```
@@ -41,6 +44,9 @@ npm test
 因此开发环境改 `SESSION_SECRET` 也会让旧数据无法解密。`NODE_ENV=production` 缺少任一密钥会
 拒绝启动。中途更换密钥必须把旧密钥放进 `DATA_OLD_KEYS` / `INDEX_OLD_KEYS`，否则已有数据无法解密。
 
+语音日程还需要 `DEEPSEEK_API_KEY`；不填时 `/api/ai/*` 返回 `503`、健康检查的 `ai` 为
+`false`，登录和日程功能不受影响。
+
 默认监听 `0.0.0.0:8787`。
 
 ## 配置
@@ -49,6 +55,11 @@ npm test
 |:---|:---|
 | `PORT` / `HOST` | 监听地址，默认 `8787` / `0.0.0.0` |
 | `WX_APPID` / `WX_SECRET` | 小程序后台「开发 → 开发设置」里的 AppID / AppSecret |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key，用于语音识别和日程解析；只放服务端 |
+| `DEEPSEEK_BASE_URL` | DeepSeek API 源站，默认 `https://api.deepseek.com` |
+| `DEEPSEEK_MODEL` | 解析语音文本用的模型，默认 `deepseek-flash`；可选 `deepseek-v4-pro` |
+| `DEEPSEEK_TIMEOUT_MS` | 调用 DeepSeek 的超时，默认 30000 |
+| `SCHEDULE_TIMEZONE` | 解析“明天/下周三”等相对日期的时区，默认 `Asia/Shanghai` |
 | `SESSION_SECRET` | token 的 HMAC 密钥；生产必须改，`openssl rand -hex 32` |
 | `ALLOW_DEV_LOGIN` | `1` 时允许 `{"dev":true}` 免微信登录；生产必须 `0` |
 | `TOKEN_TTL_DAYS` | 登录有效期，默认 7 天 |
@@ -62,7 +73,8 @@ npm test
 | `INDEX_OLD_KEYS` | 轮换时旧索引密钥，格式同上 |
 | `BACKUP_KEY` | `npm run backup` / `restore` 的独立备份密钥 |
 
-`WX_SECRET`、`DATA_KEY`、`INDEX_KEY`、`BACKUP_KEY` 只放在服务端；小程序里只有 `apiBase`。
+`WX_SECRET`、`DEEPSEEK_API_KEY`、`DATA_KEY`、`INDEX_KEY`、`BACKUP_KEY` 只放在服务端；
+小程序里只有 `apiBase`。
 
 ## API
 
@@ -72,10 +84,11 @@ npm test
 ### `GET /api/health`
 
 ```json
-{"ok":true,"wechat":false,"devLogin":true}
+{"ok":true,"wechat":false,"devLogin":true,"ai":false}
 ```
 
-也支持 `HEAD`，方便 `curl -I` 或只取状态码的探活。
+也支持 `HEAD`，方便 `curl -I` 或只取状态码的探活。`ai` 表示是否配置了
+`DEEPSEEK_API_KEY`；未配置时语音接口返回 `503`，其他功能不受影响。
 
 ### `POST /api/login`
 
@@ -126,6 +139,38 @@ npm test
 `cache-control: private, max-age=300`，不再是公开 URL。小程序端用
 `wx.downloadFile` 带 token 下载到临时文件，再交给 `<image>` 显示；
 正式环境还要把 API 域名加入微信后台的 `downloadFile 合法域名`。
+
+### `POST /api/ai/transcribe`
+
+把小程序录到的语音转成文字。请求体是 JSON（避免在服务端再实现一套 multipart 解析）：
+
+```json
+{"audio":"<base64>","format":"pcm","sampleRate":16000,"channels":1,"bitsPerSample":16}
+```
+
+- 小程序录制 16 kHz、16 位、单声道 PCM；服务端检测到裸 PCM 时补 44 字节 WAV 头，
+  已经带 `RIFF/WAVE` 或 `OggS` 头的文件原样转发；
+- 请求体上限 6 MB；音频解码后上限 8 MB；服务端按 PCM 时长限制最长 120 秒（与
+  DeepSeek 一致），小程序录音上限 60 秒；
+- 返回 `{"text":"明天下午三点项目评审","durationMs":3200,"requestId":"..."}`；
+- 需要登录；每个用户每分钟最多 20 次 AI/ASR 请求；未配置 Key 返回 `503`。
+
+### `POST /api/ai/schedule`
+
+把识别出的文字解析成日程草案（只解析，不保存；小程序把结果填入添加日程表单，
+用户点「保存日程」后才按原有 `POST /api/events` 保存并同步设备）：
+
+```json
+{"text":"明天下午三点项目评审，会议室 A"}
+```
+
+```json
+{"event":{"date":"2026-11-19","start":"15:00","end":"15:30","title":"项目评审","note":"会议室 A"}}
+```
+
+服务端把 `SCHEDULE_TIMEZONE` 的当前日期、时间、星期一起写进提示词，要求模型只输出
+JSON；返回后仍走 `normalizeEvent()` 校验和截断（标题 95 B、备注 191 B），日期无效或
+模型返回坏 JSON 时返回 `422` / `502`。用户没提结束时间时默认 30 分钟，与添加日程表单一致。
 
 ### `GET /api/events`
 
@@ -310,7 +355,7 @@ server {
   ssl_certificate_key /etc/letsencrypt/live/calendar.example.com/privkey.pem;
   ssl_protocols TLSv1.2 TLSv1.3;
 
-  client_max_body_size 4m;  # avatar JSON body is capped at 3 MB by the app
+  client_max_body_size 8m;  # avatar JSON (3 MB) + voice PCM base64 (6 MB)
 
   location / {
     proxy_pass http://127.0.0.1:8787;
@@ -319,7 +364,9 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 30s;
+    # ASR for a 60 s clip can take a while; leave room for the AI round trips
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
   }
 }
 ```
