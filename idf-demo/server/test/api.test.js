@@ -162,6 +162,28 @@ test('events are per user, map to a device id, soft delete and purge', async () 
     assert.equal(mapped.status, 200);
     assert.equal(mapped.body.event.deviceId, 7);
 
+    const edited = await json(base, 'POST', `/api/events/${id}`, {
+      date: '2026-11-21',
+      start: '10:30',
+      end: '11:30',
+      title: '项目评审（改期）',
+      note: '改到 302',
+    }, token);
+    assert.equal(edited.status, 200);
+    assert.equal(edited.body.event.id, id);
+    assert.equal(edited.body.event.title, '项目评审（改期）');
+    assert.equal(edited.body.event.date, '2026-11-21');
+    assert.equal(edited.body.event.start, '10:30');
+    // Editing must not break the device mapping; /device owns that field.
+    assert.equal(edited.body.event.deviceId, 7);
+    assert.equal(edited.body.event.createdAt, created.body.event.createdAt);
+
+    const partial = await json(base, 'PATCH', `/api/events/${id}`, { title: '只改标题' }, token);
+    assert.equal(partial.status, 200);
+    assert.equal(partial.body.event.title, '只改标题');
+    assert.equal(partial.body.event.note, '改到 302');
+    assert.equal(partial.body.event.deviceId, 7);
+
     const list = await json(base, 'GET', '/api/events?from=2026-11-01&to=2026-11-30', undefined, token);
     assert.equal(list.status, 200);
     assert.equal(list.body.events.length, 1);
@@ -169,6 +191,9 @@ test('events are per user, map to a device id, soft delete and purge', async () 
     const removed = await json(base, 'DELETE', `/api/events/${id}`, undefined, token);
     assert.equal(removed.status, 200);
     assert.ok(removed.body.event.deletedAt);
+
+    const editDeleted = await json(base, 'PATCH', `/api/events/${id}`, { title: 'x' }, token);
+    assert.equal(editDeleted.status, 409);
 
     const active = await json(base, 'GET', '/api/events', undefined, token);
     assert.equal(active.body.events.length, 0);
@@ -199,6 +224,16 @@ test('event validation rejects bad dates and clamps a missing end time', async (
     }, token);
     assert.equal(late.status, 201);
     assert.equal(late.body.event.end, '24:00');
+
+    const emptyTitle = await json(base, 'PATCH', `/api/events/${late.body.event.id}`, {
+      title: '   ',
+    }, token);
+    assert.equal(emptyTitle.status, 400);
+
+    const badEdit = await json(base, 'PATCH', `/api/events/${late.body.event.id}`, {
+      date: '2026-02-31',
+    }, token);
+    assert.equal(badEdit.status, 400);
 
     const unauth = await json(base, 'GET', '/api/events');
     assert.equal(unauth.status, 401);

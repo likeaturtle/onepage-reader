@@ -347,6 +347,22 @@ function createApp(config, store) {
       if (!event) throw httpError(404, '日程不存在');
       const action = segments[3] || '';
 
+      if ((req.method === 'PATCH' || req.method === 'POST') && !action) {
+        // wx.request does not document PATCH, so the mini program posts here;
+        // PATCH stays available for other clients.
+        if (event.deletedAt) throw httpError(409, '日程已删除');
+        const body = await readJson(req);
+        // PATCH is a content edit: merge with the stored event so a partial
+        // body keeps the other fields, then validate the result as a whole.
+        const input = normalizeEvent({ ...event, ...body });
+        // The cloud <-> device mapping belongs to /device; an edit must not
+        // clear it (the device update keeps the same numeric id).
+        delete input.deviceId;
+        const updated = store.updateEvent(user.id, id, input);
+        sendJson(res, 200, { event: updated });
+        return;
+      }
+
       if (req.method === 'DELETE' && !action) {
         const deleted = store.softDeleteEvent(user.id, id);
         sendJson(res, 200, { ok: true, event: deleted });

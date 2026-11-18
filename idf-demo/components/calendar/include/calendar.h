@@ -80,6 +80,9 @@ int calendar_upcoming(uint16_t from_day, uint16_t from_min, int cal, cal_event_t
                       int max);
 
 esp_err_t calendar_add_event(const cal_event_t *event, uint16_t *id_out, int *pruned_out);
+/* Replaces the event with `id` in place, keeping the id stable so a phone can
+ * edit an event without breaking the cloud <-> device mapping. */
+esp_err_t calendar_update_event(uint16_t id, const cal_event_t *event);
 esp_err_t calendar_delete_event(uint16_t id);
 
 /* Increments on every mutation (including a phone time sync), so the UI can

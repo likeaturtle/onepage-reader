@@ -14,6 +14,7 @@ const pagePath = path.join(__dirname, '..', 'pages', 'calendar', 'calendar.js');
 const blePath = require.resolve('../utils/ble');
 const apiPath = require.resolve('../utils/api');
 const authPath = require.resolve('../utils/auth');
+const deviceSyncPath = require.resolve('../utils/device-sync');
 const fmt = require('../utils/format');
 
 function tick() {
@@ -22,7 +23,16 @@ function tick() {
 
 function makePage(options = {}) {
   let definition = null;
-  const calls = { events: [], deleted: [], purged: [], deviceDeleted: [] };
+  const calls = {
+    events: [],
+    updated: [],
+    deleted: [],
+    purged: [],
+    mapped: [],
+    deviceDeleted: [],
+    deviceUpdated: [],
+    deviceAdded: [],
+  };
   const toasts = [];
   const events = options.events || [];
 
@@ -41,11 +51,18 @@ function makePage(options = {}) {
     loaded: true,
     exports: {
       isConnected: () => Boolean(options.connected),
+      update: (id, event) => {
+        calls.deviceUpdated.push({ id, event });
+        return Promise.resolve({ ok: true, cmd: 'update', id });
+      },
       del: (id) => {
         calls.deviceDeleted.push(id);
         return Promise.resolve({ ok: true });
       },
-      add: () => Promise.reject(new Error('not used')),
+      add: (event) => {
+        calls.deviceAdded.push(event);
+        return Promise.resolve({ ok: true, cmd: 'add', id: 99 });
+      },
     },
   };
   require.cache[apiPath] = {
@@ -57,8 +74,18 @@ function makePage(options = {}) {
         calls.events.push(query);
         return Promise.resolve(events);
       },
+      updateEvent: (id, data) => {
+        calls.updated.push({ id, data });
+        const target = events.find((event) => event.id === id);
+        if (target) Object.assign(target, data);
+        return Promise.resolve(Object.assign({}, target, { id, deviceId: target ? target.deviceId : null }));
+      },
       deleteEvent: (id) => { calls.deleted.push(id); return Promise.resolve({ ok: true }); },
       purgeEvent: (id) => { calls.purged.push(id); return Promise.resolve({ ok: true }); },
+      mapDevice: (id, deviceId) => {
+        calls.mapped.push({ id, deviceId });
+        return Promise.resolve({ id, deviceId });
+      },
     },
   };
   require.cache[authPath] = {
@@ -68,13 +95,21 @@ function makePage(options = {}) {
     exports: { getToken: () => 'token' },
   };
 
+  delete require.cache[deviceSyncPath];
   delete require.cache[pagePath];
   require(pagePath);
 
   const page = Object.assign({}, definition, {
     data: JSON.parse(JSON.stringify(definition.data)),
     setData(patch, callback) {
-      Object.assign(this.data, patch);
+      for (const key of Object.keys(patch)) {
+        if (key.indexOf('.') < 0) {
+          this.data[key] = patch[key];
+          continue;
+        }
+        const [head, tail] = key.split('.');
+        this.data[head] = Object.assign({}, this.data[head], { [tail]: patch[key] });
+      }
       if (typeof callback === 'function') callback();
     },
   });
@@ -159,4 +194,111 @@ test('a connected board also removes the device copy', async () => {
   assert.deepEqual(page.calls.deviceDeleted, [7]);
   assert.deepEqual(page.calls.purged, ['e9']);
   assert.ok(page.toasts.includes('已删除'));
+});
+
+test('editing an event updates the cloud and the same device id', async () => {
+  const todayText = today();
+  const page = makePage({
+    connected: true,
+    events: [{ id: 'e1', date: todayText, start: '09:00', end: '09:30', title: 'A', note: '', deviceId: 7 }],
+  });
+  page.onLoad();
+  await page.onShow();
+
+  page.edit({ currentTarget: { dataset: { id: 'e1' } } });
+  assert.equal(page.data.editorOpen, true);
+  assert.equal(page.data.editor.title, 'A');
+  assert.equal(page.data.editorTitleBytes, 1);
+
+  page.onEditorTitle({ detail: { value: '改后的标题' } });
+  page.onEditorNote({ detail: { value: '新备注' } });
+  page.onEditorStart({ detail: { value: '10:00' } });
+  assert.equal(page.data.editor.end, '10:30');
+
+  await page.saveEditor();
+
+  assert.deepEqual(page.calls.updated, [{
+    id: 'e1',
+    data: { date: todayText, start: '10:00', end: '10:30', title: '改后的标题', note: '新备注' },
+  }]);
+  assert.equal(page.calls.deviceUpdated.length, 1);
+  assert.equal(page.calls.deviceUpdated[0].id, 7);
+  assert.equal(page.calls.deviceUpdated[0].event.title, '改后的标题');
+  assert.equal(page.calls.deviceDeleted.length, 0);
+  assert.equal(page.data.editorOpen, false);
+  assert.equal(page.calls.events.length, 2); // first load plus the reload
+  assert.equal(page.data.groups[0].items[0].title, '改后的标题');
+  assert.ok(page.toasts.includes('已保存并同步到设备'));
+});
+
+test('an offline edit only writes the cloud and syncs on the next connect', async () => {
+  const todayText = today();
+  const page = makePage({
+    connected: false,
+    events: [{ id: 'e2', date: todayText, start: '09:00', end: '09:30', title: 'A', note: '', deviceId: 7 }],
+  });
+  page.onLoad();
+  await page.onShow();
+
+  page.edit({ currentTarget: { dataset: { id: 'e2' } } });
+  page.onEditorTitle({ detail: { value: '离线改' } });
+  await page.saveEditor();
+
+  assert.deepEqual(page.calls.updated.map((item) => item.id), ['e2']);
+  assert.equal(page.calls.deviceUpdated.length, 0);
+  assert.equal(page.calls.deviceDeleted.length, 0);
+  assert.ok(page.toasts.includes('已保存，连接设备后同步'));
+});
+
+test('editing a cloud-only event while connected adds it to the device', async () => {
+  const todayText = today();
+  const page = makePage({
+    connected: true,
+    events: [{ id: 'e3', date: todayText, start: '09:00', end: '09:30', title: 'A', note: '', deviceId: null }],
+  });
+  page.onLoad();
+  await page.onShow();
+
+  page.edit({ currentTarget: { dataset: { id: 'e3' } } });
+  page.onEditorTitle({ detail: { value: '只存过云端' } });
+  await page.saveEditor();
+
+  assert.equal(page.calls.deviceUpdated.length, 0);
+  assert.equal(page.calls.deviceAdded.length, 1);
+  assert.deepEqual(page.calls.mapped, [{ id: 'e3', deviceId: 99 }]);
+  assert.ok(page.toasts.includes('已保存并同步到设备'));
+});
+
+test('saving an edit validates the title and the time range', async () => {
+  const todayText = today();
+  const page = makePage({
+    events: [{ id: 'e4', date: todayText, start: '09:00', end: '09:30', title: 'A', note: '', deviceId: null }],
+  });
+  page.onLoad();
+  await page.onShow();
+
+  page.edit({ currentTarget: { dataset: { id: 'e4' } } });
+  page.onEditorTitle({ detail: { value: '   ' } });
+  await page.saveEditor();
+  assert.equal(page.data.editorError, '请填写标题');
+  assert.equal(page.calls.updated.length, 0);
+
+  page.onEditorTitle({ detail: { value: 'B' } });
+  page.onEditorStart({ detail: { value: '12:00' } });
+  page.onEditorEnd({ detail: { value: '11:00' } });
+  await page.saveEditor();
+  assert.equal(page.data.editorError, '结束时间要晚于开始时间');
+  assert.equal(page.calls.updated.length, 0);
+});
+
+test('a 24:00 end from the server opens as 23:59 in the native time picker', async () => {
+  const todayText = today();
+  const page = makePage({
+    events: [{ id: 'e5', date: todayText, start: '23:30', end: '24:00', title: '晚场', note: '', deviceId: null }],
+  });
+  page.onLoad();
+  await page.onShow();
+
+  page.edit({ currentTarget: { dataset: { id: 'e5' } } });
+  assert.equal(page.data.editor.end, '23:59');
 });

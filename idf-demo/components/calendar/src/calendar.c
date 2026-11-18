@@ -795,6 +795,25 @@ int calendar_upcoming(uint16_t from_day, uint16_t from_min, int cal, cal_event_t
   return count;
 }
 
+/* Clamps the end time and copies the text fields with the same rules for add
+ * and update, so an edit cannot introduce a longer title than an add could. */
+static void sanitize_event(cal_event_t *clean, const cal_event_t *event) {
+  if (clean->end_min == 0 && clean->start_min > 0) {
+    clean->end_min = 1440;
+  } else if (clean->end_min <= clean->start_min) {
+    clean->end_min = clean->start_min + 60;
+    if (clean->end_min > 1440) {
+      clean->end_min = 1440;
+    }
+  }
+  if (clean->end_min > 1440) {
+    clean->end_min = 1440;
+  }
+  copy_utf8(clean->title, CAL_TITLE_BYTES, event->title);
+  copy_utf8(clean->note, CAL_NOTE_BYTES, event->note);
+  clean->flags = 0;
+}
+
 esp_err_t calendar_add_event(const cal_event_t *event, uint16_t *id_out, int *pruned_out) {
   if (!event || !event->title[0]) {
     return ESP_ERR_INVALID_ARG;
@@ -807,20 +826,7 @@ esp_err_t calendar_add_event(const cal_event_t *event, uint16_t *id_out, int *pr
   }
 
   cal_event_t clean = *event;
-  if (clean.end_min == 0 && clean.start_min > 0) {
-    clean.end_min = 1440;
-  } else if (clean.end_min <= clean.start_min) {
-    clean.end_min = clean.start_min + 60;
-    if (clean.end_min > 1440) {
-      clean.end_min = 1440;
-    }
-  }
-  if (clean.end_min > 1440) {
-    clean.end_min = 1440;
-  }
-  copy_utf8(clean.title, CAL_TITLE_BYTES, event->title);
-  copy_utf8(clean.note, CAL_NOTE_BYTES, event->note);
-  clean.flags = 0;
+  sanitize_event(&clean, event);
 
   xSemaphoreTake(s_lock, portMAX_DELAY);
   if (s_event_count >= CAL_MAX_EVENTS) {
@@ -866,6 +872,42 @@ esp_err_t calendar_add_event(const cal_event_t *event, uint16_t *id_out, int *pr
     *pruned_out = pruned;
   }
   return ESP_OK;
+}
+
+esp_err_t calendar_update_event(uint16_t id, const cal_event_t *event) {
+  if (!event || !event->title[0]) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (event->cal >= (uint8_t)s_cal_count) {
+    return ESP_ERR_INVALID_ARG;
+  }
+  if (event->start_min > 1439) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  cal_event_t clean = *event;
+  sanitize_event(&clean, event);
+  clean.id = id;
+
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  const int idx = find_index_by_id(id);
+  if (idx < 0) {
+    xSemaphoreGive(s_lock);
+    return ESP_ERR_NOT_FOUND;
+  }
+  const cal_event_t previous = s_events[idx];
+  remove_at(idx);
+  insert_sorted(&clean);
+  /* keep_id protects the edited event if the store is at its byte cap. */
+  esp_err_t err = save_db_locked(id, NULL);
+  if (err != ESP_OK) {
+    remove_at(find_index_by_id(id));
+    insert_sorted(&previous);
+  } else {
+    s_generation++;
+  }
+  xSemaphoreGive(s_lock);
+  return err;
 }
 
 esp_err_t calendar_delete_event(uint16_t id) {

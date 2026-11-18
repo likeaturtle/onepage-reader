@@ -5,7 +5,9 @@ const ble = require('../../utils/ble');
 const auth = require('../../utils/auth');
 const api = require('../../utils/api');
 const avatar = require('../../utils/avatar');
+const deviceSync = require('../../utils/device-sync');
 const cal = require('../../utils/calendar');
+const eventRules = require('../../utils/event');
 const fmt = require('../../utils/format');
 const utf8 = require('../../utils/utf8');
 
@@ -23,8 +25,8 @@ const AUTO_END_MINUTES = 30;
 // The device stores titles/notes in 96/192-byte fields (95/191 usable). The
 // inputs are clamped by UTF-8 bytes here, because a character limit would stop
 // Chinese text at roughly a third of the budget.
-const TITLE_BYTES = 95;
-const NOTE_BYTES = 191;
+const TITLE_BYTES = eventRules.TITLE_BYTES;
+const NOTE_BYTES = eventRules.NOTE_BYTES;
 
 function defaultForm() {
   const now = new Date();
@@ -398,7 +400,28 @@ Page({
           }
         }
 
-        // 3. Import events that only exist on the device (web page, keys, etc.).
+        // 3. Push content edits to events the device already has. The device id
+        // stays the same (proto 2 `update`); older firmware is replaced by
+        // delete + add and the cloud record is remapped.
+        for (const event of active) {
+          if (event.deviceId == null || !deviceIds.has(event.deviceId)) continue;
+          const deviceEvent = deviceEvents.find((candidate) => candidate.id === event.deviceId);
+          if (!deviceEvent || sameEvent(deviceEvent, event)) continue;
+          const previousId = event.deviceId;
+          try {
+            const ack = await deviceSync.pushUpdate(event);
+            if (ack && ack.id !== previousId) {
+              claimed.add(ack.id);
+              deviceIds.delete(previousId);
+              deviceIds.add(ack.id);
+              removed.add(previousId);
+            }
+          } catch (err) {
+            errors.push(`修改设备日程失败：${err.message}`);
+          }
+        }
+
+        // 4. Import events that only exist on the device (web page, keys, etc.).
         for (const deviceEvent of deviceEvents) {
           if (claimed.has(deviceEvent.id) || removed.has(deviceEvent.id)) continue;
           try {
@@ -418,7 +441,7 @@ Page({
 
         const bounds = syncBounds();
 
-        // 4. Push cloud events that have never reached the device.
+        // 5. Push cloud events that have never reached the device.
         for (const event of active) {
           if (event.deviceId != null || !inWindow(event.date, bounds)) continue;
           try {
@@ -432,7 +455,7 @@ Page({
           }
         }
 
-        // 5. Deletions on the device also delete the cloud copy. A device reset
+        // 6. Deletions on the device also delete the cloud copy. A device reset
         // or a bulk deletion is confirmed first so a wiped NVS cannot silently
         // erase the user's cloud calendar.
         const missing = active.filter((event) =>

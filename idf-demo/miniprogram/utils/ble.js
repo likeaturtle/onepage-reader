@@ -521,6 +521,24 @@ async function add(event) {
   return throwIfError(ack, '添加日程失败');
 }
 
+async function update(id, event) {
+  const payload = {
+    cmd: 'update',
+    id,
+    date: event.date,
+    start: event.start,
+    end: event.end,
+    title: event.title,
+    note: event.note || '',
+  };
+  const ack = await command(
+    payload,
+    (m) => (isOk(m) && m.cmd === 'update') || m.ok === false,
+    9000
+  );
+  return throwIfError(ack, '修改日程失败');
+}
+
 async function del(id) {
   const ack = await command(
     { cmd: 'del', id },
@@ -578,6 +596,7 @@ module.exports = {
   time,
   list,
   add,
+  update,
   del,
   sleep: sleepDevice,
   ping,

@@ -119,6 +119,14 @@ function createEvent(event) {
   }).then((res) => res.event);
 }
 
+function updateEvent(id, event) {
+  return request(`/api/events/${encodeURIComponent(id)}`, {
+    // wx.request does not document PATCH; the server accepts POST here too.
+    method: 'POST',
+    data: event,
+  }).then((res) => res.event);
+}
+
 function deleteEvent(id) {
   return request(`/api/events/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -153,6 +161,7 @@ module.exports = {
   uploadAvatar,
   events,
   createEvent,
+  updateEvent,
   deleteEvent,
   mapDevice,
   purgeEvent,

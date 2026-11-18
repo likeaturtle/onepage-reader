@@ -1,6 +1,54 @@
 <view class="page">
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
 
+  <view wx:if="{{editorOpen}}" class="card editor">
+    <view class="card-head">
+      <view class="card-heading">
+        <text class="card-title">编辑日程</text>
+        <text class="hint">{{saving ? '保存中…' : '保存后同步到设备'}}</text>
+      </view>
+    </view>
+
+    <view class="edit-row">
+      <picker class="edit-item date" mode="date" value="{{editor.date}}" start="2020-01-01" end="2099-12-31" bindchange="onEditorDate">
+        <view class="edit-field">{{editor.date}}</view>
+      </picker>
+      <picker class="edit-item" mode="time" value="{{editor.start}}" bindchange="onEditorStart">
+        <view class="edit-field">{{editor.start}}</view>
+      </picker>
+      <text class="edit-dash">—</text>
+      <picker class="edit-item" mode="time" value="{{editor.end}}" bindchange="onEditorEnd">
+        <view class="edit-field">{{editor.end}}</view>
+      </picker>
+    </view>
+
+    <input
+      class="input"
+      placeholder="日程标题"
+      value="{{editor.title}}"
+      maxlength="-1"
+      bindinput="onEditorTitle"
+      confirm-type="done"
+    />
+    <view class="counter">{{editorTitleBytes}} / {{titleLimit}} 字节</view>
+
+    <textarea
+      class="input area"
+      placeholder="备注（可选）"
+      value="{{editor.note}}"
+      maxlength="-1"
+      bindinput="onEditorNote"
+    />
+    <view class="counter">{{editorNoteBytes}} / {{noteLimit}} 字节</view>
+
+    <view wx:if="{{editorError}}" class="banner error editor-error">{{editorError}}</view>
+
+    <view class="row editor-actions">
+      <button class="btn grow" bindtap="closeEditor" disabled="{{saving}}">取消</button>
+      <button class="btn primary grow" bindtap="saveEditor" loading="{{saving}}" disabled="{{saving}}">保存</button>
+    </view>
+  </view>
+
   <view class="card">
     <view class="card-head">
       <view class="card-heading">
@@ -27,11 +75,21 @@
           <view>{{event.start}}</view>
           <view class="event-end">{{event.end}}</view>
         </view>
-        <view class="event-main">
+        <view
+          class="event-main"
+          bindtap="edit"
+          data-id="{{event.id}}"
+          hover-class="event-main-hover"
+          aria-role="button"
+          aria-label="编辑日程"
+        >
           <view class="event-title">{{event.title}}</view>
           <view wx:if="{{event.note}}" class="event-note">{{event.note}}</view>
         </view>
-        <button class="btn tiny danger" catchtap="remove" data-id="{{event.id}}">删除</button>
+        <view class="event-actions">
+          <button class="btn tiny" catchtap="edit" data-id="{{event.id}}">编辑</button>
+          <button class="btn tiny danger" catchtap="remove" data-id="{{event.id}}">删除</button>
+        </view>
       </view>
     </view>
   </view>

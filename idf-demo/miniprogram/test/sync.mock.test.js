@@ -14,6 +14,7 @@ const pagePath = path.join(__dirname, '..', 'pages', 'index', 'index.js');
 const blePath = require.resolve('../utils/ble');
 const apiPath = require.resolve('../utils/api');
 const authPath = require.resolve('../utils/auth');
+const deviceSyncPath = require.resolve('../utils/device-sync');
 const fmt = require('../utils/format');
 
 function today() {
@@ -47,6 +48,7 @@ function makePage(ble, api, options = {}) {
       setUser() {},
     },
   };
+  delete require.cache[deviceSyncPath];
   delete require.cache[pagePath];
   require(pagePath);
 
@@ -60,8 +62,8 @@ function makePage(ble, api, options = {}) {
   return page;
 }
 
-function fakeBle(deviceEvents) {
-  const calls = { add: [], del: [] };
+function fakeBle(deviceEvents, options = {}) {
+  const calls = { add: [], del: [], update: [] };
   let nextId = 100;
   return {
     calls,
@@ -72,6 +74,11 @@ function fakeBle(deviceEvents) {
       calls.add.push(event);
       nextId += 1;
       return { ok: true, id: nextId };
+    },
+    update: async (id, event) => {
+      calls.update.push({ id, event });
+      if (options.updateError) throw new Error(options.updateError);
+      return { ok: true, cmd: 'update', id };
     },
     del: async (id) => {
       calls.del.push(id);
@@ -209,4 +216,51 @@ test('sync maps a cloud event back to an identical device event instead of dupli
   assert.deepEqual(api.calls.map, [{ id: 'c1', deviceId: 7 }]);
   assert.equal(api.calls.create.length, 0);
   assert.equal(ble.calls.add.length, 0);
+});
+
+test('a cloud edit updates the mapped device event in place', async () => {
+  const date = today();
+  const cloudEvents = [
+    { id: 'c1', date, start: '09:00', end: '10:00', title: '改后', note: '新备注', deviceId: 1, deletedAt: null },
+  ];
+  const deviceEvents = [
+    { id: 1, date, start: '09:00', end: '10:00', title: '旧标题', note: '' },
+  ];
+  const ble = fakeBle(deviceEvents);
+  const api = fakeApi(cloudEvents);
+  const page = makePage(ble, api);
+
+  await page.syncDevice();
+
+  assert.equal(ble.calls.update.length, 1);
+  assert.equal(ble.calls.update[0].id, 1);
+  assert.equal(ble.calls.update[0].event.title, '改后');
+  assert.equal(ble.calls.add.length, 0);
+  assert.equal(ble.calls.del.length, 0);
+  assert.equal(api.calls.create.length, 0);
+  assert.equal(api.calls.delete.length, 0);
+  assert.equal(page.data.syncError, '');
+});
+
+test('legacy firmware updates remap the event instead of importing a duplicate', async () => {
+  const date = today();
+  const cloudEvents = [
+    { id: 'c1', date, start: '09:00', end: '10:00', title: '改后', note: '', deviceId: 1, deletedAt: null },
+  ];
+  const deviceEvents = [
+    { id: 1, date, start: '09:00', end: '10:00', title: '旧标题', note: '' },
+  ];
+  const ble = fakeBle(deviceEvents, { updateError: 'unknown cmd' });
+  const api = fakeApi(cloudEvents);
+  const page = makePage(ble, api);
+
+  await page.syncDevice();
+
+  assert.deepEqual(ble.calls.del, [1]);
+  assert.equal(ble.calls.add.length, 1);
+  assert.equal(ble.calls.add[0].title, '改后');
+  assert.deepEqual(api.calls.map, [{ id: 'c1', deviceId: 101 }]);
+  assert.equal(api.calls.create.length, 0);
+  assert.equal(api.calls.delete.length, 0);
+  assert.equal(page.data.syncError, '');
 });

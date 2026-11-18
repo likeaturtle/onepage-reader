@@ -15,6 +15,7 @@ const pagePath = path.join(__dirname, '..', 'pages', 'index', 'index.js');
 const blePath = require.resolve('../utils/ble');
 const apiPath = require.resolve('../utils/api');
 const authPath = require.resolve('../utils/auth');
+const deviceSyncPath = require.resolve('../utils/device-sync');
 const fmt = require('../utils/format');
 
 function makePage(formDate, options = {}) {
@@ -67,6 +68,7 @@ function makePage(formDate, options = {}) {
     loaded: true,
     exports: { getToken: () => 'token', getUser: () => ({}), setUser() {} },
   };
+  delete require.cache[deviceSyncPath];
   delete require.cache[pagePath];
   require(pagePath);
 

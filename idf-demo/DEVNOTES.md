@@ -4,7 +4,7 @@
 以及后面基于它继续开发时从哪里接。硬件相关的结论都来自厂商 BSP
 (`../firmware/open-onepage-sdk`) 和真机验证，不是推测。
 
-最后更新：2026-11-17
+最后更新：2026-11-18
 
 ------
 
@@ -1051,3 +1051,56 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
   是无头 Chrome 按 `app.wxss` + `index.wxss` 的 rpx 1:1 渲染的四种状态排版检查图
   （未连接 / 连接中 / 已连接收起 / 已连接展开，已 gitignore，不是真机截图）。
   真机仍需在开发者工具/微信里确认。
+
+## 20. 2026-11-18：小程序支持编辑日程，BLE 增加 update（proto 2）
+
+### 20.1 为什么不能只改云端
+
+小程序原来只有「添加」和「删除」：`api.events` 返回的云端记录没有编辑入口；同步逻辑也只
+按设备 id 判断“有没有”，云端内容改了但 id 还在设备上时，`syncDevice()` 不会重写设备。
+所以编辑必须同时补三处：云端更新接口、设备原地更新命令、同步时的内容比对。
+
+### 20.2 固件
+
+- `calendar_update_event(id, event)`：按 id 找到旧记录，规范化结束时间（与 add 共用
+  `sanitize_event()`：end 缺失/不晚于 start 时补 60 分钟、最多 24:00），替换后重新排序、
+  用**原 id** 落盘；写盘失败时把旧记录插回去。`save_db_locked(id, …)` 传 `keep_id`，
+  数据库到字节上限时不会把正在编辑的这条当成“最老过去日程”清掉。
+- BLE 新增 `{"cmd":"update","id":…,…}`：字段/上限与 `add` 相同（标题 95 B、备注 191 B），
+  ack `{"ok":true,"cmd":"update","id":…,"trunc":false}`；未知 id 返回 `not found`。
+  `handle_add` 和 `handle_update` 共用 `parse_event()`，避免两套校验漂移。
+- `PROTO_VERSION` 1 → 2，`version.txt` 1.1.0 → 1.2.0。旧固件不认这个命令，会回
+  `unknown cmd`；小程序对此有删除+新增的回退，见 20.4。
+
+### 20.3 服务端
+
+- 新增修改路由：`POST /api/events/:id`（也接受 `PATCH`；小程序用 `POST`，因为
+  `wx.request` 没文档化支持 `PATCH`，昵称接口此前已因此用 `POST`）。
+- 请求体先与已存事件合并，再走 `normalizeEvent()` 校验；只改标题也不会把日期/时间清空。
+  `deviceId` 和 `createdAt` 保留——设备上的同一条记录仍按原 id 更新。已软删除的返回 409。
+
+### 20.4 小程序
+
+- 「日程」tab 每条右侧加了「编辑」：点开顶部编辑卡片，日期用原生 `mode="date"`
+  （2020–2099），开始/结束时间仍用系统时间滚轮；改动开始时间会自动把结束时间顺延
+  30 分钟。标题/备注按 UTF-8 字节截断（95/191，常量抽到 `utils/event.js`）。
+- 保存：`api.updateEvent()` 先写云端，再按连接状态推设备：
+  - 已映射到设备 → `utils/device-sync.js` 的 `pushUpdate()` 发 `update`，id 不变；
+  - 设备返回 `unknown cmd`（老固件）→ `del` + `add`，再把云端映射重指到新 id；`add`
+    失败时把映射清空，下一次同步会把改过的云端事件重新加上，而不是当成设备删除；
+  - 设备返回 `not found`（设备重置过）→ 直接 `add` 并重映射；
+  - 云端事件还没 `deviceId` 但当前连着设备 → 直接 `add` + `mapDevice`，不用等下一次同步。
+- `syncDevice()` 增加第 3 步：云端和设备都有、但内容不同（`sameEvent()` 为假）时推送
+  `update`；老固件回退后同步 `deviceIds/claimed/removed` 集合，避免把刚删掉的旧 id
+  当成设备独有事件重新导入。离线编辑就靠这一步在下次连接时落到设备。
+- 「我的」页的 `config.protocol` 同步改成 2；README/协议文档补了编辑和 `update` 的说明。
+
+### 20.5 验证
+
+- `idf.py build` 通过；`mocheng_calcal.bin` 0x1514d0，factory 3 MB 余 56%。
+- 服务端 `node --test` 18 个用例通过（含 `POST`/`PATCH` 修改、局部字段、保留 deviceId、
+  已删除 409、空标题/坏日期 400）。
+- 小程序 `node --test test/*.test.js` 59 个用例通过：新增 `device-sync.test.js`，月列表
+  覆盖“连线编辑同步/离线只改云端/云端独有事件补加/参数校验/24:00 显示”，
+  `sync.mock` 覆盖“原地 update”和“老固件回退不重复导入”，BLE mock 覆盖 `update` 命令。
+- 未上板：`update` 的 ack、旧固件回退和同步后的设备列表仍需按 README 的真机清单验证。

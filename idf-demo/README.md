@@ -185,9 +185,10 @@ See [`web/README.md`](web/README.md) for the page details and
 `miniprogram/` 是名为 **墨程CalCal** 的原生小程序客户端，复用同一套 BLE 协议，Android 和 iOS 都能用
 （iOS 不依赖 Web Bluetooth）。它额外带微信登录和**云端日程**：`wx.login` 的 code
 交给 `server/` 换取 openid，服务端签发 token，昵称、头像和日程都存在服务端。
-没带设备时也能在手机上查看/添加/删除日程；连接设备后，云端与设备双向补齐：
-设备有、云端没有的导入云端；云端有、设备没有的推到设备；**设备端删除的日程也会删除
-云端记录**。设备为空（可能是重置）或一次消失多条时会先弹窗确认，避免误删云端数据。
+没带设备时也能在手机上查看/添加/编辑/删除日程；连接设备后，云端与设备双向补齐：
+设备有、云端没有的导入云端；云端有、设备没有的推到设备；**云端修改过的日程会原地
+更新设备上的同一条记录**；**设备端删除的日程也会删除云端记录**。设备为空（可能是
+重置）或一次消失多条时会先弹窗确认，避免误删云端数据。
 
 ```bash
 cd idf-demo/server
@@ -233,6 +234,7 @@ Core commands:
 {"cmd":"time","epoch":1762703820,"tz":480}
 {"cmd":"list","from":"2026-11-01","to":"2026-11-30"}
 {"cmd":"add","date":"2026-11-10","start":"09:00","end":"10:00","title":"项目评审","note":"会议室 A"}
+{"cmd":"update","id":7,"date":"2026-11-11","start":"09:30","end":"10:30","title":"项目评审（改期）","note":"会议室 B"}
 {"cmd":"del","id":12}
 {"cmd":"sleep"}
 ```
@@ -436,6 +438,11 @@ The following is what to verify on a real board. Compilation cannot cover these:
    logo + `墨程CalCal` legible next to BLE/battery/clock, and the lock screen
    shows the logo/name/subtitle without clipping; `CalCal` keeps its
    capitalisation.
+10. **Edit sync (mini program)** — connect from the mini program, edit a saved
+    event and save; the board shows the new title/time under the same numeric
+    id (`update` ack). With a proto 1 board the mini program falls back to
+    delete + add and remaps the cloud copy; a following `list` must not contain
+    a duplicate.
 
 The validation status in this repository is **build + offline UI preview**.
 Please treat the BLE and power numbers as unverified until the checklist is

@@ -24,7 +24,7 @@ for a personal device on a desk, not for an untrusted environment.
 The INFO characteristic is a convenience for generic BLE apps:
 
 ```json
-{"name":"墨程CalCal","fw":"1.0.0","proto":1,"events":12,"calendars":1,"time_valid":true}
+{"name":"墨程CalCal","fw":"1.2.0","proto":2,"events":12,"calendars":1,"time_valid":true}
 ```
 
 `fw` is the image version built from the project's `version.txt` (the firmware
@@ -61,7 +61,7 @@ instead of a single ack.
 Response:
 
 ```json
-{"ev":"hello","proto":1,"fw":"1.0.0","name":"墨程CalCal","now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
+{"ev":"hello","proto":2,"fw":"1.2.0","name":"墨程CalCal","now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
 ```
 
 This build exposes a single calendar. `cals` still exists for protocol
@@ -70,6 +70,10 @@ compatibility but has one entry, and `cal` in commands/events is ignored
 the device epoch, `tz` is minutes east of UTC, and `time_synced` is false when
 the clock was restored from NVS after a power loss rather than from the RTC or
 a phone sync. The page sends `time` after every connect.
+
+`proto` 2 adds the `update` command. Firmware before that answers
+`{"ok":false,"error":"unknown cmd"}`, so a client that edits events on an older
+board can fall back to `del` + `add` (and remap the new id).
 
 ### `time`
 
@@ -127,9 +131,30 @@ Response:
 ```
 
 `id` is assigned by the device and is stable for the lifetime of the event.
-`pruned` is the number of old past events dropped to fit the NVS partition;
+`pruned` is the number of old past events dropped to fit the storage partition;
 when no past events are left and the store is still full, the response is
 `{"ok":false,"error":"calendar full"}` and nothing is added.
+
+### `update`
+
+```json
+{"cmd":"update","id":7,"date":"2026-11-11","start":"09:30","end":"10:30","title":"项目评审（改期）","note":"会议室 B"}
+```
+
+Replaces the content of an existing event and keeps its numeric `id`, so the
+phone's cloud record does not need to be remapped. The fields and limits are
+the same as `add`; `cal` is ignored. A missing `id` or unknown id is an error,
+and nothing is changed.
+
+Response:
+
+```json
+{"ok":true,"cmd":"update","id":7,"trunc":false}
+```
+
+`{"ok":false,"error":"not found"}` means the id no longer exists (for example
+after a device reset); the client should add the event again and remap the
+cloud copy. Firmware older than proto 2 does not know this command.
 
 ### `del`
 
@@ -171,6 +196,7 @@ Useful for checking that the link and the command task are alive.
 | `missing cmd` | no `cmd` string |
 | `unknown cmd` | unsupported command |
 | `bad date`, `bad start`, `bad end` | malformed or out-of-range year/time |
+| `bad id` | `id` is missing or outside 1..65535 |
 | `empty title` | title is missing/empty |
 | `calendar full` | 96 events and no past events left to prune |
 | `not found` | event id does not exist |
@@ -190,6 +216,9 @@ Useful for checking that the link and the command task are alive.
 - Only one command should be in flight at a time. The reference page serialises
   writes and resolves a command on its ack (`ok` + `cmd`) or on `ev:"done"` for
   `list`.
+- To edit an event, keep its id and send `update`. On a board that answers
+  `unknown cmd`, delete the old id, add the edited event, then remap the cloud
+  record to the new id.
 - After `sleep`, do not attempt to reconnect automatically; the radio is off.
 
 ## Testing without the web page

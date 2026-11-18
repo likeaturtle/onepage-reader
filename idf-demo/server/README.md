@@ -158,6 +158,17 @@ GET /api/events?includeDeleted=1
 超出会按字符截断；`end` 缺失或不晚于 `start` 时自动补成 `start + 60 分钟`（最多 24:00），
 与固件行为一致。
 
+### `POST /api/events/:id`（修改日程）
+
+```json
+{"date":"2026-11-11","start":"09:30","end":"10:30","title":"项目评审（改期）","note":"会议室 B"}
+```
+
+修改日程内容，返回 `{"event":{...}}`。请求体可以只带要改的字段（与存储值合并后再按
+新增同样的规则校验），`deviceId` 和 `createdAt` 保持不变；所以设备上的同一条记录仍能
+按原 id 更新。`PATCH` 也接受（小程序用 `POST`，因为 `wx.request` 没文档化支持 `PATCH`）。
+已软删除的日程返回 `409`。
+
 ### `DELETE /api/events/:id`
 
 软删除（写入 `deletedAt`），返回 `{"ok":true,"event":{...}}`。客户端在设备上删除成功后

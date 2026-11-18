@@ -81,7 +81,7 @@ class FakeWx {
     setTimeout(() => {
       options.success({});
       // The firmware sends hello as soon as TX notifications are enabled.
-      this.notify({ ev: 'hello', proto: 1, fw: '1.0.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
+      this.notify({ ev: 'hello', proto: 2, fw: '1.2.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
     }, 0);
   }
 
@@ -103,7 +103,7 @@ class FakeWx {
   handleCommand(command) {
     this.commands.push(command);
     if (command.cmd === 'hello') {
-      this.notify({ ev: 'hello', proto: 1, fw: '1.0.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
+      this.notify({ ev: 'hello', proto: 2, fw: '1.2.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
     } else if (command.cmd === 'time') {
       this.notify({ ok: true, cmd: 'time', local: '2026-11-10 10:00', persist: true });
     } else if (command.cmd === 'add') {
@@ -112,6 +112,20 @@ class FakeWx {
     } else if (command.cmd === 'list') {
       this.events.forEach((event) => this.notify(event));
       this.notify({ ev: 'done', n: this.events.length });
+    } else if (command.cmd === 'update') {
+      const target = this.events.find((event) => event.id === command.id);
+      if (!target) {
+        this.notify({ ok: false, error: 'not found' });
+      } else {
+        Object.assign(target, {
+          date: command.date,
+          start: command.start,
+          end: command.end,
+          title: command.title,
+          note: command.note || '',
+        });
+        this.notify({ ok: true, cmd: 'update', id: command.id, trunc: false });
+      }
     } else if (command.cmd === 'del') {
       this.events = this.events.filter((event) => event.ev !== 'ev' || event.id !== command.id);
       this.notify({ ok: true, cmd: 'del', id: command.id });
@@ -176,6 +190,13 @@ test('BLE client connects, parses streamed events and chunks writes at 20 bytes'
 
   const ack = await ble.add({ date: '2026-11-11', start: '14:00', end: '15:00', title: '新的日程', note: '备注' });
   assert.equal(ack.id, 8);
+
+  const edited = await ble.update(ack.id, {
+    date: '2026-11-11', start: '14:30', end: '15:30', title: '改期的日程', note: '',
+  });
+  assert.equal(edited.id, 8);
+  assert.equal(fake.events.find((event) => event.id === 8).title, '改期的日程');
+  assert.equal(fake.events.find((event) => event.id === 8).start, '14:30');
 
   await ble.del(7);
   assert.equal(fake.events.length, 1);

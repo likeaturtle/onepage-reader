@@ -31,7 +31,7 @@ void ble_store_config_init(void);
 
 static const char *TAG = "ble_cal";
 
-#define PROTO_VERSION 1
+#define PROTO_VERSION 2
 #define RX_BUF_SIZE 2048
 #define LINE_BUF_SIZE 768
 #define NOTIFY_BUF_SIZE 900
@@ -423,9 +423,11 @@ static void handle_list(cJSON *root) {
   notify_json(json);
 }
 
-static void handle_add(cJSON *root) {
+/* Parses the fields shared by add and update. `title_out`/`note_out` point into
+ * the cJSON tree, so callers can report truncation without copying them again. */
+static bool parse_event(cJSON *root, cal_event_t *event, const char **title_out,
+                        const char **note_out) {
   /* Single-calendar build: everything is filed into calendar 0. */
-  const int cal = 0;
   const char *date = get_string(root, "date");
   const char *start = get_string(root, "start");
   const char *title = get_string(root, "title");
@@ -437,28 +439,48 @@ static void handle_add(cJSON *root) {
   uint16_t end_min = 0;
   if (!date || !calendar_parse_date(date, &day)) {
     send_error("bad date");
-    return;
+    return false;
   }
   if (!start || !calendar_parse_time(start, &start_min)) {
     send_error("bad start");
-    return;
+    return false;
   }
   if (end && end[0] && !calendar_parse_time(end, &end_min)) {
     send_error("bad end");
-    return;
+    return false;
   }
   if (!title || !title[0]) {
     send_error("empty title");
-    return;
+    return false;
   }
 
-  cal_event_t event = {0};
-  event.cal = (uint8_t)cal;
-  event.day = day;
-  event.start_min = start_min;
-  event.end_min = end_min;
-  snprintf(event.title, sizeof(event.title), "%s", title);
-  snprintf(event.note, sizeof(event.note), "%s", note ? note : "");
+  memset(event, 0, sizeof(*event));
+  event->cal = 0;
+  event->day = day;
+  event->start_min = start_min;
+  event->end_min = end_min;
+  snprintf(event->title, sizeof(event->title), "%s", title);
+  snprintf(event->note, sizeof(event->note), "%s", note ? note : "");
+  if (title_out) {
+    *title_out = title;
+  }
+  if (note_out) {
+    *note_out = note;
+  }
+  return true;
+}
+
+static bool event_truncated(const char *title, const char *note) {
+  return strlen(title) >= CAL_TITLE_BYTES || (note && strlen(note) >= CAL_NOTE_BYTES);
+}
+
+static void handle_add(cJSON *root) {
+  cal_event_t event;
+  const char *title = NULL;
+  const char *note = NULL;
+  if (!parse_event(root, &event, &title, &note)) {
+    return;
+  }
 
   uint16_t id = 0;
   int pruned = 0;
@@ -472,14 +494,47 @@ static void handle_add(cJSON *root) {
     return;
   }
 
-  const bool truncated = strlen(title) >= CAL_TITLE_BYTES ||
-                         (note && strlen(note) >= CAL_NOTE_BYTES);
-  ESP_LOGD(TAG, "add id=%u cal=%d day=%u start=%u end=%u", (unsigned)id, cal,
-           (unsigned)day, (unsigned)start_min, (unsigned)event.end_min);
+  ESP_LOGD(TAG, "add id=%u day=%u start=%u end=%u", (unsigned)id, (unsigned)event.day,
+           (unsigned)event.start_min, (unsigned)event.end_min);
   char json[160];
   snprintf(json, sizeof(json),
            "{\"ok\":true,\"cmd\":\"add\",\"id\":%u,\"pruned\":%d,\"trunc\":%s}",
-           (unsigned)id, pruned, truncated ? "true" : "false");
+           (unsigned)id, pruned, event_truncated(title, note) ? "true" : "false");
+  notify_json(json);
+  if (s_callbacks.on_change) {
+    s_callbacks.on_change();
+  }
+}
+
+static void handle_update(cJSON *root) {
+  double id = 0;
+  if (!get_number(root, "id", &id) || id < 1 || id > 65535) {
+    send_error("bad id");
+    return;
+  }
+  cal_event_t event;
+  const char *title = NULL;
+  const char *note = NULL;
+  if (!parse_event(root, &event, &title, &note)) {
+    return;
+  }
+
+  const esp_err_t err = calendar_update_event((uint16_t)id, &event);
+  if (err == ESP_ERR_NOT_FOUND) {
+    send_error("not found");
+    return;
+  }
+  if (err != ESP_OK) {
+    send_error("save failed");
+    return;
+  }
+
+  ESP_LOGD(TAG, "update id=%u day=%u start=%u end=%u", (unsigned)id, (unsigned)event.day,
+           (unsigned)event.start_min, (unsigned)event.end_min);
+  char json[160];
+  snprintf(json, sizeof(json),
+           "{\"ok\":true,\"cmd\":\"update\",\"id\":%u,\"trunc\":%s}", (unsigned)id,
+           event_truncated(title, note) ? "true" : "false");
   notify_json(json);
   if (s_callbacks.on_change) {
     s_callbacks.on_change();
@@ -549,6 +604,8 @@ static void process_line(const char *line) {
     handle_list(root);
   } else if (strcmp(cmd, "add") == 0) {
     handle_add(root);
+  } else if (strcmp(cmd, "update") == 0) {
+    handle_update(root);
   } else if (strcmp(cmd, "del") == 0) {
     handle_delete(root);
   } else if (strcmp(cmd, "ping") == 0) {
