@@ -243,6 +243,22 @@ test('parseSchedule sends local time context and normalizes the draft', async ()
   assert.equal(body.messages[1].content, '明天下午三点项目评审，会议室 A');
   assert.match(body.messages[0].content, /2026-11-18 21:55/);
   assert.match(body.messages[0].content, /星期三/);
+  assert.match(body.messages[0].content, /ASR 会按停顿自动加句号/);
+  assert.match(body.messages[0].content, /只取第一件/);
+  assert.match(body.messages[0].content, /明天 2026-11-19/);
+  assert.match(body.messages[0].content, /后天 2026-11-20/);
+  assert.match(body.messages[0].content, /大后天 2026-11-21/);
+  assert.match(body.messages[0].content, /没有提日期时默认今天/);
+});
+
+test('parseSchedule strips trailing sentence punctuation from the title', async () => {
+  const config = makeConfig({
+    fetchImpl: async () => response(chatReply(JSON.stringify(draft({ title: '项目评审。' })))),
+  });
+
+  const event = await parseSchedule(config, '明天下午三点项目评审。', NOW);
+
+  assert.equal(event.title, '项目评审');
 });
 
 test('parseSchedule defaults to deepseek-flash and disables thinking', async () => {

@@ -197,19 +197,49 @@ function localNow(now, timeZone) {
   };
 }
 
+function addDays(date, days) {
+  const [year, month, day] = String(date).split('-').map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + days));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
+}
+
 function buildSystemPrompt(current, timeZone) {
+  const tomorrow = addDays(current.date, 1);
+  const dayAfter = addDays(current.date, 2);
+  const fourDays = addDays(current.date, 3);
   return [
-    '你是墨程CalCal 的日程解析助手。把用户的一句话解析成一条日程，只输出一个 JSON 对象，不要输出解释或 Markdown。',
+    '你是墨程CalCal 的日程解析助手。把用户口述的内容解析成一条日程，只输出一个 JSON 对象，不要解释、不要 Markdown、不要代码围栏。',
     `当前本地时间：${current.date} ${current.time}（${current.weekday}，时区 ${timeZone}）。`,
-    '输出格式：',
+    `日期锚点：今天 ${current.date}，明天 ${tomorrow}，后天 ${dayAfter}，大后天 ${fourDays}。`,
+    '输出格式（字段固定，不要增删；note 没有内容用空字符串）：',
     '{"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","title":"...","note":"..."}',
-    '规则：',
-    '1. date 必须是绝对日期，按当前时间换算“今天/明天/后天/这周X/下周X/下个月X号”等相对说法。',
-    '2. start 使用 24 小时制。只说“上午/下午/晚上”时用合理时刻（上午 9:00、下午 15:00、晚上 19:00）；完全没提时间时，从当前时间往后取最近的 15 分钟。',
-    '3. end 必须晚于 start。提到“半小时/一小时/两小时”等按该时长；没提时长默认 30 分钟；跨到第二天时 end 用 "24:00"。',
-    '4. title 是简短标题（不超过 30 个汉字），不要把日期或时间写进标题。',
-    '5. note 放地点、参与人、补充说明；没有就填空字符串。',
-    '6. 如果用户说了多件事，只取第一件。',
+    '',
+    '日期规则：',
+    '1. date 用绝对日期 YYYY-MM-DD，年月日补零；没有提日期时默认今天。',
+    '2. “今天/明天/后天/大后天”按日期锚点换算；“这周X/本周X”取本周内的星期X，若已过则顺延到下一次该星期；“下周X”取下一个自然周的星期X；“下周”没有具体星期时取下周一；“下个月X号”取下个月的第 X 天。',
+    '3. “周末/这周末”取今天或之后最近的周六，“下周末”取下周六；“月底”取本月最后一天，“下个月底”取下月最后一天；日期超出当月天数时取最后一天。没有年份且该日期已过时，取下一次（通常是明年）。',
+    '',
+    '时间规则：',
+    '4. start/end 用 24 小时制 HH:MM。明确说“凌晨/早上/上午/中午/下午/傍晚/晚上”时以修饰词为准；只说时段时：凌晨 05:00、早上/清晨 08:00、上午 09:00、中午/午饭 12:00、下午 15:00、傍晚/下班后 18:30、晚上/晚饭 19:00；“晚上十二点/午夜”按次日 00:00 处理。',
+    '5. 没有说明上午/下午的 1–6 点按下午（13:00–18:00）理解，7–11 点按上午，12 点按中午。若算出的时间已过且用户没有明确说“今天”，顺延到次日同一时间；用户明确说“今天”或过去的日期时保留原日期，不要擅自改天。',
+    '6. 只说日期没说时间时：目标日期 09:00；如果目标日期是今天且 09:00 已过，取当前时间之后最近的 15 分钟，最晚 23:59。说“现在/马上”时取当前时间之后最近的 15 分钟。',
+    '7. “九点到十点”“下午两点到四点”直接作为 start/end；“半小时/一个小时/一个半小时/两个小时”作为时长；“半小时后”表示开始时间往后推 30 分钟，不是时长；“十点前/后”“下班后”等模糊说法取最接近的合理整点/半点，并把原话保留到 note。',
+    '8. end 必须晚于 start；缺失或算错时按默认 30 分钟补，跨到第二天时 end 用 "24:00"。',
+    '',
+    '标题与备注：',
+    '9. title 精简成动作/事项（不超过 30 个汉字），去掉“提醒我/帮我安排/帮我记一下”等口头词，不要写日期和时间，末尾不加标点；保留“请客/请张三”这类有实际含义的“请”。',
+    '10. note 放地点、人物、准备事项、链接/电话、补充条件；没有就留空。只写用户提到的信息，不要编造地点/人物/链接；不要重复 title 和日期时间，保留“重要/线上/带电脑”等关键限定；已经用于计算 end 的时长不要重复写进 note。',
+    '11. 明显的同音/形近错字可按上下文纠正（如“评身”→“评审”），不确定的专有名词、人名、地点保留原样；用户中途改口时以最后一次明确说法为准。',
+    '',
+    'ASR 与多件事：',
+    '12. ASR 会按停顿自动加句号/问号，这些标点不一定代表多件事；整段话在描述同一件事时，把后续内容并入 title/note，不要截断。',
+    '13. 如果后一句有独立的时间/日期（如“后天四点见客户”）或明确用“另外/还有/第二件事/然后”引出，视为两件独立事项，只取第一件；如果第二件信息完整，在 note 末尾用“另有：…”简短保留（不超过 30 字），不要把独立的两件事硬合并成一条。',
+    '14. 每天/每周/每月等重复日程只取最近一次，并把周期原话写进 note（如“每周一”）；不要声称已经创建了重复日程。',
+    '',
+    '输出约束：',
+    '15. 只输出一个 JSON 对象，字段齐全，不要额外字段；无法确定的信息用上面的默认值，不要反问用户。',
+    '16. 即使内容不像完整日程，也按用户想记录的事项生成一条，title 用精简后的原话，避免返回空标题。',
+    '17. 规则冲突时，优先保证 date 在 2021–2100、start 在 00:00–23:59、end 在 00:00–24:00 且晚于 start、title 非空、只输出 JSON。',
   ].join('\n');
 }
 
@@ -238,6 +268,12 @@ function parseJsonObject(content) {
   }
 }
 
+function cleanTitle(value) {
+  // The prompt forbids a trailing sentence mark; strip it anyway because the
+  // model is not deterministic and the title feeds the device's byte budget.
+  return String(value || '').trim().replace(/[。！？!?；;，,、]+$/u, '').trim();
+}
+
 function parseDraft(content, sourceText, current) {
   const raw = parseJsonObject(content);
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -249,7 +285,7 @@ function parseDraft(content, sourceText, current) {
     end: raw.end,
     // The model occasionally drops the title; the spoken sentence is a better
     // fallback than rejecting an otherwise usable date/time.
-    title: String(raw.title || '').trim() || sourceText,
+    title: cleanTitle(raw.title) || cleanTitle(sourceText) || '日程',
     note: raw.note == null ? '' : String(raw.note),
   };
   try {
