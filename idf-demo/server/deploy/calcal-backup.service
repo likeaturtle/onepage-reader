@@ -1,0 +1,22 @@
+[Unit]
+Description=Encrypted backup for 墨程CalCal
+Documentation=file:///home/ubuntu/calcal-server/README.md
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/calcal-server
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/calcal-node --env-file-if-exists=.env scripts/backup.js /home/ubuntu/calcal-server/backups
+
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/calcal-server/backups
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=calcal-backup

@@ -22,6 +22,7 @@ server/
 │   ├── backup.js    npm run backup
 │   └── restore.js   npm run restore
 ├── test/            node:test 用例（API / AI / 加密 / 备份 / schema）
+├── deploy/          systemd unit（开机自启 / 每日加密备份）
 ├── .env.example
 └── data/            users.json + events.json + avatars/（自动创建，已 gitignore）
 ```
@@ -407,7 +408,106 @@ server {
 }
 ```
 
-- 用 systemd / pm2 守护进程，`NODE_ENV=production`，进程使用独立系统用户；
+### systemd（开机自启）
+
+`deploy/` 下有可直接安装的 unit。默认按 `server/` 部署在 `/home/ubuntu/calcal-server`、
+以 `ubuntu` 用户运行；换路径或用户时同步改 `WorkingDirectory`、`ReadWritePaths`、
+`ExecStart` 里的路径和 `User`/`Group`。
+
+```bash
+# node 用 nvm 装的：把当前版本固定成一个稳定软链，unit 只认这个路径
+sudo ln -sfn "$(readlink -f "$(nvm which default)")" /usr/local/bin/calcal-node
+/usr/local/bin/calcal-node -v          # 需要 v22+
+
+install -d -m 700 /home/ubuntu/calcal-server/data /home/ubuntu/calcal-server/backups
+
+sudo cp deploy/calcal-server.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now calcal-server
+```
+
+`data/` 和 `backups/` 必须先存在：unit 用 `ReadWritePaths=` 给这两个目录开口子，
+路径不存在时 systemd 会直接拒绝启动（不会替你 mkdir）。
+
+#### node 来自 nvm
+
+问题不在路径，而在加载方式：nvm 是写进 `.bashrc` / `.profile` 的 shell 函数，靠改
+`PATH` 生效；systemd 用 `execve` 直接拉起进程，不读 shell 配置，`PATH` 固定为
+`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`。所以 unit 里写
+`node`、`npm start` 或 `nvm use 22 && ...` 都不可靠（后两种还多一层 shell，影响
+`SIGTERM` 传递）。nvm 装的 `node` 本身是普通二进制，运行时不需要 nvm 参与，
+给 systemd 一个绝对路径就够了。
+
+难点只在于 nvm 的路径带版本号，每次 `nvm install` 都会变，所以用
+`/usr/local/bin/calcal-node` 这层软链把「unit 用哪个 node」和「nvm 当前默认哪个
+node」解耦：
+
+```bash
+# 以 ubuntu 用户执行，不是 root（root 的 nvm 在 /root/.nvm，服务读不到）
+readlink -f "$(nvm which default)"   # /home/ubuntu/.nvm/versions/node/v22.x.y/bin/node
+sudo ln -sfn "$(readlink -f "$(nvm which default)")" /usr/local/bin/calcal-node
+/usr/local/bin/calcal-node -v        # 需要 v22+
+```
+
+`nvm which default` 不认别名时换成 `nvm which 22` 或 `nvm which current`。
+
+升级 node 后重指软链并重启：
+
+```bash
+sudo ln -sfn "$(readlink -f "$(nvm which default)")" /usr/local/bin/calcal-node
+sudo systemctl restart calcal-server
+```
+
+不想维护软链，就把 `readlink -f ...` 的输出直接写进 `ExecStart=`，代价是每次升级
+node 都要改 unit 再 `daemon-reload`。
+
+几个坑：
+
+- nvm 装在 `/root/.nvm` 时服务读不到（`ubuntu` 用户 + `ProtectHome=read-only`），
+  要么在 ubuntu 用户下重装 nvm 并建链，要么给服务装一份系统级 node（NodeSource 的
+  `/usr/bin/node`），nvm 只留给交互式开发；
+- `ProtectHome=read-only` 不挡 `~/.nvm`：只读挂载允许读和执行二进制，挡的只是写；
+- 运行时只需要 `node`，不需要 `npm`、`nvm`，不用往 unit 里写 `NVM_DIR` 或
+  `.nvm/nvm.sh`；`--env-file-if-exists=.env` 由 node 自己解析；
+- 软链放 `/usr/local/bin` 而不是 `~/.nvm` 里，重装或升级 nvm 自身不会把它删掉。
+
+验证：
+
+```bash
+systemctl status calcal-server
+journalctl -u calcal-server -f
+curl -s http://127.0.0.1:8787/api/health   # {"ok":true,...}
+sudo systemctl restart calcal-server       # 改完 .env 后重启才生效
+```
+
+systemd 负责三件事：`enable` 后开机自启、进程异常退出后按 `Restart=on-failure`
+拉起、`SIGTERM` 时给 `src/server.js` 的优雅退出留时间（unit 里
+`TimeoutStopSec=15` 覆盖它自带的 5 秒强退）。配置错误导致 `exit(1)` 时会重试 5 次
+后停在 failed，原因看 `journalctl -u calcal-server`，不会无限重启刷 CPU。修好配置后先
+`sudo systemctl reset-failed calcal-server` 再 `start`，否则可能仍被启动频率限制拦住。
+
+unit 里的 `NODE_ENV` / `HOST` / `TRUST_PROXY` 会覆盖 `.env`（`node --env-file` 只在
+变量未定义时填充），所以生产契约不依赖 `.env` 写没写对；代价是改这三项要改 unit 并
+`daemon-reload`。`.env` 的权限保持 `600`，它仍然是密钥的唯一来源。
+
+每天加密备份用配套 timer，不需要再写 cron：
+
+```bash
+sudo cp deploy/calcal-backup.service deploy/calcal-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now calcal-backup.timer
+systemctl list-timers calcal-backup.timer
+journalctl -u calcal-backup -n 20
+```
+
+timer 按服务器本地时间触发（`timedatectl` 确认时区），`Persistent=true` 会补跑宕机
+错过的那次；`backups/` 不会自动清理，按需加保留策略。恢复前先
+`systemctl stop calcal-server`，恢复完再 start。
+
+nginx 自己也要开机自启（`systemctl enable --now nginx`），否则重启后 443 没人监听。
+不想用 systemd 的话 pm2 也能做同样的事（`pm2 start src/server.js --name calcal-server`、
+`pm2 startup`、`pm2 save`），但会多一个运行时依赖，和「只用 Node 内置模块」的现状不符。
+
 - `HOST=127.0.0.1`、`TRUST_PROXY=1`，只让 nginx 访问 Node；不要直接暴露 8787；
 - 用 `npm run backup` 做加密备份，不要直接 `tar data/`；
 - 反向代理负责 HTTPS；Node 进程只监听回环地址或内网；

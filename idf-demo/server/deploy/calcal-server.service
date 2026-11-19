@@ -1,0 +1,58 @@
+[Unit]
+Description=墨程CalCal API server
+Documentation=file:///home/ubuntu/calcal-server/README.md
+After=network-online.target
+Wants=network-online.target
+# A misconfigured .env makes the process exit(1) on purpose; stop retrying
+# after a few attempts instead of hammering the CPU in a restart loop.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+# --env-file-if-exists=.env and scripts/... are resolved from the CWD, so the
+# service must run from the server root, not from /.
+WorkingDirectory=/home/ubuntu/calcal-server
+
+# Real environment variables win over .env (node --env-file only fills gaps),
+# so the production contract is enforced here even if .env drifts.
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=TRUST_PROXY=1
+
+# Node 22+. With nvm the real binary lives under ~/.nvm/versions/node/<ver>, which
+# changes on every upgrade, so point at a stable symlink instead (see README):
+#   sudo ln -sfn "$(readlink -f "$(nvm which default)")" /usr/local/bin/calcal-node
+ExecStart=/usr/local/bin/calcal-node --env-file-if-exists=.env src/server.js
+
+Restart=on-failure
+RestartSec=3
+# src/server.js force-exits 5 s after SIGTERM; leave headroom for open sockets.
+TimeoutStopSec=15
+KillMode=mixed
+
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# AF_NETLINK is needed by glibc's getaddrinfo (AI_ADDRCONFIG) for the outbound
+# calls to WeChat and DeepSeek; without it DNS lookups can fail.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# ProtectHome=read-only makes /home read-only; punch holes for the two dirs the
+# process writes. Both must exist before the unit starts (see README install).
+ReadWritePaths=/home/ubuntu/calcal-server/data /home/ubuntu/calcal-server/backups
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=calcal-server
+
+[Install]
+WantedBy=multi-user.target

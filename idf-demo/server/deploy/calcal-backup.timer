@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily encrypted backup for 墨程CalCal
+
+[Timer]
+# Server local time; check with `timedatectl` (a UTC VPS fires at 11:30 Beijing).
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=600
+AccuracySec=1min
+# Run the missed backup after downtime instead of silently skipping a day.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
