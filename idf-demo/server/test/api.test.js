@@ -239,3 +239,38 @@ test('event validation rejects bad dates and clamps a missing end time', async (
     assert.equal(unauth.status, 401);
   });
 });
+
+test('a device can be claimed, listed and unbound by its account', async () => {
+  await withServer(makeConfig(), async (base) => {
+    const login = await json(base, 'POST', '/api/login', { dev: true });
+    assert.equal(login.status, 200);
+    const token = login.body.token;
+    const did = '0123456789ABCDEF0123456789ABCDEF';
+
+    const claim = await json(base, 'POST', '/api/devices/claim', { did, name: '书桌' }, token);
+    assert.equal(claim.status, 200);
+    assert.equal(claim.body.device.did, did);
+    assert.equal(claim.body.device.name, '书桌');
+    assert.equal(claim.body.device.userId, undefined);
+
+    const list = await json(base, 'GET', '/api/devices', undefined, token);
+    assert.equal(list.status, 200);
+    assert.equal(list.body.devices.length, 1);
+    assert.equal(list.body.devices[0].did, did);
+
+    const duplicate = await json(base, 'POST', '/api/devices/claim', { did, name: '书房' }, token);
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.body.device.name, '书房');
+    assert.equal((await json(base, 'GET', '/api/devices', undefined, token)).body.devices.length, 1);
+
+    const invalid = await json(base, 'POST', '/api/devices/claim', { did: 'nope' }, token);
+    assert.equal(invalid.status, 400);
+
+    const unbind = await json(base, 'POST', `/api/devices/${did}/unbind`, {}, token);
+    assert.equal(unbind.status, 200);
+    assert.equal((await json(base, 'GET', '/api/devices', undefined, token)).body.devices.length, 0);
+
+    const anonymous = await json(base, 'GET', '/api/devices');
+    assert.equal(anonymous.status, 401);
+  });
+});

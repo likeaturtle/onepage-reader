@@ -20,6 +20,8 @@ static const char *TAG = "ble-auth";
 
 #define AUTH_NAMESPACE "calauth"
 #define AUTH_KEY_NAME "key"
+#define AUTH_ID_NAME "id"
+#define ID_BYTES 16
 #define KEY_BYTES 32
 #define NONCE_BYTES 16
 #define CODE_LEN 12
@@ -43,7 +45,8 @@ typedef struct {
   uint8_t key[KEY_BYTES];
   uint8_t nonce[NONCE_BYTES];
   char nonce_hex[NONCE_BYTES * 2 + 1];
-  char did[13];
+  char pid[13];
+  char did[33];
   char code[CODE_BUF];
   int64_t pairing_deadline_ms;
   int64_t blocked_until_ms;
@@ -163,13 +166,13 @@ static bool hkdf_sha256(const uint8_t *salt, size_t salt_len, const uint8_t *ikm
   return ok;
 }
 
-static bool derive_pair_key(const char *code, const char *did, uint8_t out[32]) {
-  return hkdf_sha256((const uint8_t *)did, strlen(did), (const uint8_t *)code, strlen(code),
+static bool derive_pair_key(const char *code, const char *pid, uint8_t out[32]) {
+  return hkdf_sha256((const uint8_t *)pid, strlen(pid), (const uint8_t *)code, strlen(code),
                      "mochen-calcal-pair-v1", out);
 }
 
-static bool derive_long_key(const char *code, const char *did, uint8_t out[32]) {
-  return hkdf_sha256((const uint8_t *)did, strlen(did), (const uint8_t *)code, strlen(code),
+static bool derive_long_key(const char *code, const char *pid, uint8_t out[32]) {
+  return hkdf_sha256((const uint8_t *)pid, strlen(pid), (const uint8_t *)code, strlen(code),
                      "mochen-calcal-key-v1", out);
 }
 
@@ -190,12 +193,12 @@ static bool derive_session(const uint8_t long_key[32], const char *nonce_d, cons
                      s_auth.k_mac_d2c);
 }
 
-static bool auth_proof(bool client, const uint8_t key[32], const char *did, const char *nonce_d,
+static bool auth_proof(bool client, const uint8_t key[32], const char *pid, const char *nonce_d,
                        const char *nonce_a, const char *mode, char out_hex[65]) {
   char input[256];
   uint8_t digest[32];
   const int n = snprintf(input, sizeof(input), "mochen-calcal-%s-v1|%s|%s|%s|%s",
-                         client ? "client" : "device", did,
+                         client ? "client" : "device", pid,
                          client ? nonce_d : nonce_a, client ? nonce_a : nonce_d, mode);
   if (n <= 0 || (size_t)n >= sizeof(input) ||
       !hmac_sha256(key, 32, (const uint8_t *)input, (size_t)n, digest)) {
@@ -356,6 +359,27 @@ static bool base64_decode(const char *in, uint8_t *out, size_t out_len, size_t *
   return true;
 }
 
+static void load_device_id(void) {
+  uint8_t id[ID_BYTES];
+  size_t len = sizeof(id);
+  bool loaded = s_auth.nvs_open &&
+                nvs_get_blob(s_auth.nvs, AUTH_ID_NAME, id, &len) == ESP_OK &&
+                len == sizeof(id);
+  if (!loaded) {
+    esp_fill_random(id, sizeof(id));
+    if (s_auth.nvs_open) {
+      esp_err_t err = nvs_set_blob(s_auth.nvs, AUTH_ID_NAME, id, sizeof(id));
+      if (err == ESP_OK) {
+        err = nvs_commit(s_auth.nvs);
+      }
+      if (err != ESP_OK) {
+        ESP_LOGW(TAG, "store device id: %s", esp_err_to_name(err));
+      }
+    }
+  }
+  bytes_to_hex(id, sizeof(id), s_auth.did);
+}
+
 static void load_key(void) {
   if (!s_auth.nvs_open) {
     return;
@@ -423,10 +447,10 @@ esp_err_t ble_auth_init(void) {
 
   uint8_t mac[6] = {0};
   if (esp_read_mac(mac, ESP_MAC_BT) == ESP_OK) {
-    snprintf(s_auth.did, sizeof(s_auth.did), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2],
+    snprintf(s_auth.pid, sizeof(s_auth.pid), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2],
              mac[3], mac[4], mac[5]);
   } else {
-    snprintf(s_auth.did, sizeof(s_auth.did), "000000000000");
+    snprintf(s_auth.pid, sizeof(s_auth.pid), "000000000000");
   }
 
   const esp_err_t err = nvs_open(AUTH_NAMESPACE, NVS_READWRITE, &s_auth.nvs);
@@ -436,8 +460,10 @@ esp_err_t ble_auth_init(void) {
   } else {
     ESP_LOGE(TAG, "nvs_open: %s", esp_err_to_name(err));
   }
+  load_device_id();
   s_auth.inited = true;
-  ESP_LOGI(TAG, "auth ready, did %s, %s", s_auth.did, s_auth.has_key ? "paired" : "unpaired");
+  ESP_LOGI(TAG, "auth ready, pid %s, %s", s_auth.pid, s_auth.has_key ? "paired" : "unpaired");
+  ESP_LOGD(TAG, "device id %s", s_auth.did);
   return err;
 }
 
@@ -459,6 +485,10 @@ bool ble_auth_is_authed(void) {
 
 bool ble_auth_has_key(void) {
   return s_auth.has_key;
+}
+
+const char *ble_auth_pid(void) {
+  return s_auth.pid;
 }
 
 const char *ble_auth_did(void) {
@@ -600,15 +630,15 @@ bool ble_auth_handle_auth(cJSON *root, char *response, size_t response_len, bool
     return true;
   }
 
-  const char *did = get_string(root, "did");
+  const char *pid = get_string(root, "pid");
   const char *nonce_text = get_string(root, "nonce");
   const char *proof_text = get_string(root, "proof");
   const bool pairing_request = get_bool(root, "pair", false);
   uint8_t nonce_a[NONCE_BYTES];
   uint8_t proof[32];
   char nonce_a_hex[NONCE_BYTES * 2 + 1];
-  if (!did || !nonce_text || !proof_text || strlen(did) != strlen(s_auth.did) ||
-      strcasecmp(did, s_auth.did) != 0 ||
+  if (!pid || !nonce_text || !proof_text || strlen(pid) != strlen(s_auth.pid) ||
+      strcasecmp(pid, s_auth.pid) != 0 ||
       !hex_to_bytes(nonce_text, nonce_a, sizeof(nonce_a)) ||
       !hex_to_bytes(proof_text, proof, sizeof(proof))) {
     auth_error(response, response_len, "bad auth request");
@@ -634,7 +664,7 @@ bool ble_auth_handle_auth(cJSON *root, char *response, size_t response_len, bool
       auth_error(response, response_len, "pairing not active");
       return true;
     }
-    if (!derive_pair_key(pairing_code, s_auth.did, key)) {
+    if (!derive_pair_key(pairing_code, s_auth.pid, key)) {
       auth_error(response, response_len, "auth unavailable");
       return true;
     }
@@ -647,7 +677,7 @@ bool ble_auth_handle_auth(cJSON *root, char *response, size_t response_len, bool
   }
 
   char expected_hex[65];
-  if (!auth_proof(true, key, s_auth.did, s_auth.nonce_hex, nonce_a_hex, mode, expected_hex)) {
+  if (!auth_proof(true, key, s_auth.pid, s_auth.nonce_hex, nonce_a_hex, mode, expected_hex)) {
     auth_error(response, response_len, "auth unavailable");
     return true;
   }
@@ -667,7 +697,7 @@ bool ble_auth_handle_auth(cJSON *root, char *response, size_t response_len, bool
 
   uint8_t long_key[32];
   if (pairing_request) {
-    if (!derive_long_key(pairing_code, s_auth.did, long_key)) {
+    if (!derive_long_key(pairing_code, s_auth.pid, long_key)) {
       memset(key, 0, sizeof(key));
       auth_error(response, response_len, "auth unavailable");
       return true;
@@ -700,7 +730,7 @@ bool ble_auth_handle_auth(cJSON *root, char *response, size_t response_len, bool
   }
 
   char device_proof_hex[65];
-  if (!auth_proof(false, long_key, s_auth.did, s_auth.nonce_hex, nonce_a_hex, mode,
+  if (!auth_proof(false, long_key, s_auth.pid, s_auth.nonce_hex, nonce_a_hex, mode,
                   device_proof_hex)) {
     memset(key, 0, sizeof(key));
     memset(long_key, 0, sizeof(long_key));

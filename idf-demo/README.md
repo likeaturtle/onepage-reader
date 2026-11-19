@@ -8,8 +8,9 @@ the next appointments. When idle the device parks the panel and enters deep
 sleep, so it can run for a long time on a battery.
 
 > **Status: build-verified (2026-11-19), hardware smoke-tested (2026-11-09).**
-> The protocol 3 pairing/auth/encryption path is build- and unit-tested but
-> still needs the on-device pairing pass listed in the checklist below.
+> The protocol 3 pairing/auth/encryption path and the server-side device
+> claim/binding path are build- and unit-tested, but still need the on-device
+> pairing + account-conflict pass listed in the checklist below.
 > The firmware compiles/links with ESP-IDF 6.1; on the real board the portrait
 > panel, keys, single-calendar migration, BLE add from the web page and
 > automatic redraw were verified. The automatic-light-sleep regression is fixed
@@ -193,6 +194,14 @@ The device stores one phone key: pairing a new phone replaces the previous one.
 Older firmware/clients are rejected with `auth required`; update both sides.
 Erasing NVS (`idf.py erase-flash` / a full `flash -a` after a partition reset) or
 clearing the mini program/site storage also removes the key; pair again.
+
+The mini program additionally records the random `did` (revealed only inside
+the authenticated hello) against the logged-in WeChat account. A device bound to
+another account can still be reached over BLE after a physical re-pair, but the
+official mini program refuses cloud sync until the owner unbinds it under
+**我的 → 我的设备** or the device is factory-reset (which creates a new `did`).
+The web client has no account login and does not participate in this cloud
+binding.
 
 See [`web/README.md`](web/README.md) for the page details and
 [`docs/ble-protocol.md`](docs/ble-protocol.md) for the wire protocol.
@@ -477,6 +486,12 @@ The following is what to verify on a real board. Compilation cannot cover these:
     text. A replayed frame or a modified `d`/`m` must be rejected (the client
     reports a timeout/`bad frame`). Power-cycle the device: the key must persist
     and the phone must reconnect without a code.
+12. **Account binding** — pair from account A; the mini program's **我的设备**
+    shows the device. Log in as account B, physically re-pair the device, then
+    connect: B's claim must be rejected (409), B must not sync, and A's binding
+    must remain. After A unbinds in **我的设备** (or the device is factory-reset),
+    B can claim it. The did must not appear in the pre-auth hello or in the BLE
+    advertisement.
 
 The validation status in this repository is **build + offline UI preview**.
 Please treat the BLE and power numbers as unverified until the checklist is

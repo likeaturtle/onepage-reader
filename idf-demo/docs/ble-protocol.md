@@ -57,12 +57,16 @@ The code alphabet is Crockford base32 (`0-9`, `A-Z` without `I`, `L`, `O`,
 BLE; it is only used as HKDF input:
 
 ```
-K_pair = HKDF-SHA256(ikm=code, salt=did, info="mochen-calcal-pair-v1", 32)
-K_long = HKDF-SHA256(ikm=code, salt=did, info="mochen-calcal-key-v1", 32)
+K_pair = HKDF-SHA256(ikm=code, salt=pid, info="mochen-calcal-pair-v1", 32)
+K_long = HKDF-SHA256(ikm=code, salt=pid, info="mochen-calcal-key-v1", 32)
 ```
 
-`did` is the uppercase 12-hex-digit Bluetooth MAC (for example
-`A1B2C3D4E5F6`). HKDF is RFC 5869 with SHA-256; `code` and `did` are ASCII.
+`pid` is the uppercase 12-hex-digit Bluetooth MAC (for example
+`A1B2C3D4E5F6`), used as the public pairing/handshake identifier and as the
+mini program/website key-storage key. `did` is a **separate random 128-bit
+device identity** stored in NVS and revealed only inside the authenticated full
+hello; it is used for server-side account binding, never as crypto input. HKDF
+is RFC 5869 with SHA-256; `code` and `pid` are ASCII.
 
 The device stores exactly one `K_long`. A successful pairing replaces the old
 key, so the previous phone stops working on its next connection. The pairing
@@ -73,7 +77,7 @@ code is discarded as soon as pairing succeeds.
 When notifications are enabled the device sends a minimal, unencrypted hello:
 
 ```json
-{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","did":"A1B2C3D4E5F6",
+{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","pid":"A1B2C3D4E5F6",
  "auth":true,"paired":false,"pairing":true,"nonce":"<32 hex>"}
 ```
 
@@ -85,13 +89,13 @@ open. The client registers for this event and may also send
 The client sends:
 
 ```json
-{"cmd":"auth","did":"A1B2C3D4E5F6","nonce":"<32 hex>","proof":"<64 hex>","pair":true}
+{"cmd":"auth","pid":"A1B2C3D4E5F6","nonce":"<32 hex>","proof":"<64 hex>","pair":true}
 ```
 
 - `nonce` is a fresh 16-byte client nonce (hex).
 - `pair` is `true` only when using the code shown on screen; otherwise the
   client uses its stored `K_long`.
-- `proof = HMAC-SHA256(K_auth, "mochen-calcal-client-v1|" + did + "|" +
+- `proof = HMAC-SHA256(K_auth, "mochen-calcal-client-v1|" + pid + "|" +
   nonce_d + "|" + nonce_a + "|" + mode)`, where `nonce_d` is the device nonce,
   `nonce_a` the client nonce, `mode` is `pair` or `auth`, and `K_auth` is
   `K_pair` for pairing or the stored `K_long` otherwise.
@@ -103,7 +107,7 @@ request that is not encrypted):
 {"ev":"auth","ok":true,"proto":3,"paired":true,"pairing":false,"proof":"<64 hex>"}
 ```
 
-The device proof is `HMAC-SHA256(K_long, "mochen-calcal-device-v1|" + did +
+The device proof is `HMAC-SHA256(K_long, "mochen-calcal-device-v1|" + pid +
 "|" + nonce_a + "|" + nonce_d + "|" + mode)`. Note the reversed nonce order;
 this prevents reflecting the client proof. On pairing success the client
 derives `K_long` with the same code and verifies this proof, then stores
@@ -151,9 +155,50 @@ wrapper line:
   clients.
 
 The `hello` command sent by an authenticated client returns the full hello
-(the old fields: `now`, `tz`, `time_valid`, `events`, `calendars`, `cals`)
-inside an encrypted frame. Old clients/browsers that only speak proto 2 will
-receive `auth required`; update them before using a proto 3 device.
+inside an encrypted frame. It adds `pid` (the public BLE MAC) and `did` (the
+random device identity) to the old fields (`now`, `tz`, `time_valid`, `events`,
+`calendars`, `cals`):
+
+```json
+{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","pid":"A1B2C3D4E5F6",
+ "did":"0123456789abcdef0123456789abcdef","auth":true,"authed":true,
+ "now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,
+ "calendars":1,"cals":["日历"]}
+```
+
+The full hello is the only place the `did` is sent; the pre-auth hello carries
+only `pid`. Old clients/browsers that only speak proto 2 will receive
+`auth required`; update them before using a proto 3 device.
+
+### Account binding (cloud)
+
+BLE authentication binds a **client key** to the device. It does not tell the
+server which WeChat account owns the device. The mini program adds that layer
+after a successful handshake:
+
+1. The authenticated full hello provides `did`.
+2. The mini program calls `POST /api/devices/claim` with `{did, pid, name}`.
+3. The server stores one binding `did -> user_id` (plus name, boundAt,
+   lastSeenAt). Claiming an already-bound device with another account returns
+   `409`; claiming it with the same account is idempotent and updates the name
+   and last-seen time.
+4. Only after a successful claim does the mini program start cloud sync. If the
+   device is bound to another account, it shows an error and disconnects; the
+   other account must unbind it in `我的设备`, or the device must be factory
+   reset (NVS erased) so a new `did` is generated and can be claimed.
+5. `GET /api/devices` lists the account's devices and
+   `POST /api/devices/:did/unbind` removes the cloud binding. Unbinding does
+   not erase the device's BLE key; the owner should also hold CONFIRM for 8 s
+   (or re-pair from the new phone, which replaces the key).
+
+The `did` is hidden until authentication so a nearby central cannot read it
+from the pre-auth hello and claim an unbound device remotely. A client that has
+already paired (and therefore has physical access and the key) can claim the
+device; that is the physical trust anchor. The device itself has no network and
+cannot verify the WeChat account, so the binding is enforced by the server and
+the official app, not by the BLE peripheral. The browser client does not log in;
+it remains a local Web Bluetooth tool and does not participate in account
+binding.
 
 ### Security notes
 
@@ -170,7 +215,8 @@ receive `auth required`; update them before using a proto 3 device.
   encrypted end to end.
 - Pairing is gated by a physical CONFIRM hold. A nearby device that imitates
   the advertisement can still be selected by the user (phishing); check the
-  `did`/name shown by the client.
+  `pid`/name shown by the client. `did` is only revealed after auth, which keeps
+  the cloud claim from being triggered from radio range alone.
 - `INFO` stays unauthenticated and exposes the firmware version, event count
   and clock validity only.
 
@@ -205,7 +251,7 @@ instead of a single ack.
 Pre-auth response (also pushed automatically when notifications are enabled):
 
 ```json
-{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","did":"A1B2C3D4E5F6",
+{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","pid":"A1B2C3D4E5F6",
  "auth":true,"paired":true,"pairing":false,"nonce":"<32 hex>"}
 ```
 
@@ -213,9 +259,10 @@ Post-auth response (encrypted wrapper; this is what a client should use for the
 device name, clock and event count):
 
 ```json
-{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","did":"A1B2C3D4E5F6",
- "auth":true,"authed":true,"now":1762703820,"tz":480,"time_valid":true,
- "time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
+{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","pid":"A1B2C3D4E5F6",
+ "did":"0123456789abcdef0123456789abcdef","auth":true,"authed":true,
+ "now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,
+ "calendars":1,"cals":["日历"]}
 ```
 
 The full response is only sent after a successful handshake. A pre-auth hello

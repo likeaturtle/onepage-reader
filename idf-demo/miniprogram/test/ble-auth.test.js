@@ -13,7 +13,7 @@ const path = require('node:path');
 
 const auth = require('../utils/ble-auth');
 
-const DID = 'A1B2C3D4E5F6';
+const PID = 'A1B2C3D4E5F6';
 const CODE = 'K7Q4M2X9B3TF';
 const NONCE_D = '000102030405060708090a0b0c0d0e0f';
 const NONCE_A = 'f0e0d0c0b0a090807060504030201000';
@@ -48,18 +48,18 @@ test('pairing codes normalize Crockford look-alikes and group by four', () => {
 
 test('HKDF-SHA256 matches Node for all protocol derivations', () => {
   const code = Buffer.from(auth.normalizeCode(CODE), 'utf8');
-  const did = Buffer.from(DID, 'utf8');
+  const pid = Buffer.from(PID, 'utf8');
   assert.deepEqual(
-    Buffer.from(auth.derivePairKey(CODE, DID)),
-    hkdf(code, did, 'mochen-calcal-pair-v1')
+    Buffer.from(auth.derivePairKey(CODE, PID)),
+    hkdf(code, pid, 'mochen-calcal-pair-v1')
   );
   assert.deepEqual(
-    Buffer.from(auth.deriveLongKey(CODE, DID)),
-    hkdf(code, did, 'mochen-calcal-key-v1')
+    Buffer.from(auth.deriveLongKey(CODE, PID)),
+    hkdf(code, pid, 'mochen-calcal-key-v1')
   );
 
   const salt = Buffer.concat([Buffer.from(NONCE_D, 'hex'), Buffer.from(NONCE_A, 'hex')]);
-  const longKey = Buffer.from(auth.deriveLongKey(CODE, DID));
+  const longKey = Buffer.from(auth.deriveLongKey(CODE, PID));
   const keys = auth.deriveSessionKeys(longKey, NONCE_D, NONCE_A);
   for (const [name, value] of Object.entries({
     encC2D: 'enc-c2d',
@@ -76,19 +76,19 @@ test('HKDF-SHA256 matches Node for all protocol derivations', () => {
 });
 
 test('client and device proofs match the documented HMAC inputs', () => {
-  const pairKey = Buffer.from(auth.derivePairKey(CODE, DID));
+  const pairKey = Buffer.from(auth.derivePairKey(CODE, PID));
   const expectedClient = hmac(
     pairKey,
-    `mochen-calcal-client-v1|${DID}|${NONCE_D}|${NONCE_A}|pair`
+    `mochen-calcal-client-v1|${PID}|${NONCE_D}|${NONCE_A}|pair`
   ).toString('hex');
-  assert.equal(auth.clientProof(pairKey, DID, NONCE_D, NONCE_A, 'pair'), expectedClient);
+  assert.equal(auth.clientProof(pairKey, PID, NONCE_D, NONCE_A, 'pair'), expectedClient);
 
-  const longKey = Buffer.from(auth.deriveLongKey(CODE, DID));
+  const longKey = Buffer.from(auth.deriveLongKey(CODE, PID));
   const expectedDevice = hmac(
     longKey,
-    `mochen-calcal-device-v1|${DID}|${NONCE_A}|${NONCE_D}|auth`
+    `mochen-calcal-device-v1|${PID}|${NONCE_A}|${NONCE_D}|auth`
   ).toString('hex');
-  assert.equal(auth.deviceProof(longKey, DID, NONCE_A, NONCE_D, 'auth'), expectedDevice);
+  assert.equal(auth.deviceProof(longKey, PID, NONCE_A, NONCE_D, 'auth'), expectedDevice);
 
   // Reflection must not verify: the device binds the nonces in the other order.
   assert.notEqual(expectedDevice, expectedClient);
@@ -98,7 +98,7 @@ test('encrypted frames round-trip between app and device, and reject tampering/r
   t.after(() => auth.setRandomSource(null));
   auth.setRandomSource(deterministicRandom());
 
-  const longKey = auth.deriveLongKey(CODE, DID);
+  const longKey = auth.deriveLongKey(CODE, PID);
   const app = auth.createSession(longKey, NONCE_D, NONCE_A, 'app');
   const device = auth.createSession(longKey, NONCE_D, NONCE_A, 'device');
 
@@ -131,16 +131,16 @@ test('the paired handshake establishes a session both ways', async (t) => {
   t.after(() => auth.setRandomSource(null));
   auth.setRandomSource(deterministicRandom());
 
-  const longKey = auth.deriveLongKey(CODE, DID);
-  const clientProof = auth.clientProof(longKey, DID, NONCE_D, NONCE_A, 'auth');
+  const longKey = auth.deriveLongKey(CODE, PID);
+  const clientProof = auth.clientProof(longKey, PID, NONCE_D, NONCE_A, 'auth');
   // Device-side verification, as the firmware does it.
   assert.equal(
     clientProof,
-    auth.clientProof(Buffer.from(longKey), DID, NONCE_D, NONCE_A, 'auth')
+    auth.clientProof(Buffer.from(longKey), PID, NONCE_D, NONCE_A, 'auth')
   );
 
-  const proof = auth.deviceProof(longKey, DID, NONCE_A, NONCE_D, 'auth');
-  assert.equal(auth.secureEqualHex(proof, auth.deviceProof(longKey, DID, NONCE_A, NONCE_D, 'auth')), true);
+  const proof = auth.deviceProof(longKey, PID, NONCE_A, NONCE_D, 'auth');
+  assert.equal(auth.secureEqualHex(proof, auth.deviceProof(longKey, PID, NONCE_A, NONCE_D, 'auth')), true);
   assert.equal(auth.secureEqualHex(proof, clientProof), false);
 
   const app = auth.createSession(longKey, NONCE_D, NONCE_A, 'app');
@@ -153,26 +153,26 @@ test('pairing derives K_long and the same session on both sides', async (t) => {
   t.after(() => auth.setRandomSource(null));
   auth.setRandomSource(deterministicRandom());
 
-  const pairKey = auth.derivePairKey(CODE, DID);
-  const longKey = auth.deriveLongKey(CODE, DID);
-  const proof = auth.clientProof(pairKey, DID, NONCE_D, NONCE_A, 'pair');
+  const pairKey = auth.derivePairKey(CODE, PID);
+  const longKey = auth.deriveLongKey(CODE, PID);
+  const proof = auth.clientProof(pairKey, PID, NONCE_D, NONCE_A, 'pair');
   assert.equal(
     proof,
     Buffer.from(
       hmac(
         Buffer.from(pairKey),
-        `mochen-calcal-client-v1|${DID}|${NONCE_D}|${NONCE_A}|pair`
+        `mochen-calcal-client-v1|${PID}|${NONCE_D}|${NONCE_A}|pair`
       )
     ).toString('hex')
   );
 
-  const deviceProof = auth.deviceProof(longKey, DID, NONCE_A, NONCE_D, 'pair');
+  const deviceProof = auth.deviceProof(longKey, PID, NONCE_A, NONCE_D, 'pair');
   assert.equal(
     deviceProof,
     Buffer.from(
       hmac(
         Buffer.from(longKey),
-        `mochen-calcal-device-v1|${DID}|${NONCE_A}|${NONCE_D}|pair`
+        `mochen-calcal-device-v1|${PID}|${NONCE_A}|${NONCE_D}|pair`
       )
     ).toString('hex')
   );

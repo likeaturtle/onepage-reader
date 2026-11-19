@@ -114,6 +114,13 @@ function storedKey(did) {
   }
 }
 
+function forgetDevice(pid) {
+  const keys = readKeys();
+  if (!keys[pid]) return;
+  delete keys[pid];
+  writeKeys(keys);
+}
+
 function rememberKey(did, keyBytes) {
   const keys = readKeys();
   keys[did] = auth.bytesToBase64(keyBytes);
@@ -448,11 +455,11 @@ function throwIfError(message, fallback) {
 
 /* --- protocol v3 authentication --------------------------------------- */
 
-async function runAuth(did, nonceD, key, mode) {
+async function runAuth(pid, nonceD, key, mode) {
   const nonceA = auth.bytesToHex(await auth.randomBytes(16));
-  const proof = auth.clientProof(key, did, nonceD, nonceA, mode);
+  const proof = auth.clientProof(key, pid, nonceD, nonceA, mode);
   const response = await commandPlain(
-    { cmd: 'auth', did, nonce: nonceA, proof, pair: mode === 'pair' },
+    { cmd: 'auth', pid, nonce: nonceA, proof, pair: mode === 'pair' },
     (message) => Boolean(message) && message.ev === 'auth',
     7000
   );
@@ -464,9 +471,9 @@ async function runAuth(did, nonceD, key, mode) {
   return { nonceA, response };
 }
 
-async function authenticateWithKey(longKey, did, nonceD) {
-  const { nonceA, response } = await runAuth(did, nonceD, longKey, 'auth');
-  const expected = auth.deviceProof(longKey, did, nonceA, nonceD, 'auth');
+async function authenticateWithKey(longKey, pid, nonceD) {
+  const { nonceA, response } = await runAuth(pid, nonceD, longKey, 'auth');
+  const expected = auth.deviceProof(longKey, pid, nonceA, nonceD, 'auth');
   if (!auth.secureEqualHex(expected, response.proof)) {
     throw new Error('设备身份校验失败');
   }
@@ -474,17 +481,17 @@ async function authenticateWithKey(longKey, did, nonceD) {
   state.authed = true;
 }
 
-async function pairWithCode(code, did, nonceD) {
-  const pairKey = auth.derivePairKey(code, did);
-  const longKey = auth.deriveLongKey(code, did);
-  const { nonceA, response } = await runAuth(did, nonceD, pairKey, 'pair');
-  const expected = auth.deviceProof(longKey, did, nonceA, nonceD, 'pair');
+async function pairWithCode(code, pid, nonceD) {
+  const pairKey = auth.derivePairKey(code, pid);
+  const longKey = auth.deriveLongKey(code, pid);
+  const { nonceA, response } = await runAuth(pid, nonceD, pairKey, 'pair');
+  const expected = auth.deviceProof(longKey, pid, nonceA, nonceD, 'pair');
   if (!auth.secureEqualHex(expected, response.proof)) {
     throw new Error('设备身份校验失败');
   }
   state.session = auth.createSession(longKey, nonceD, nonceA, 'app');
   state.authed = true;
-  rememberKey(did, longKey);
+  rememberKey(pid, longKey);
 }
 
 function pairingError(err) {
@@ -501,16 +508,16 @@ function pairingError(err) {
 }
 
 async function authenticate(hello, options) {
-  const did = String(hello.did || '');
+  const pid = String(hello.pid || '');
   const nonceD = String(hello.nonce || '');
-  if (!did || !/^[0-9a-f]{32}$/.test(nonceD)) {
+  if (!pid || !/^[0-9a-f]{12}$/i.test(pid) || !/^[0-9a-f]{32}$/i.test(nonceD)) {
     throw new Error('设备认证信息不完整，请升级固件后重试');
   }
 
-  const stored = storedKey(did);
+  const stored = storedKey(pid);
   if (stored) {
     try {
-      await authenticateWithKey(stored, did, nonceD);
+      await authenticateWithKey(stored, pid, nonceD);
       return;
     } catch (err) {
       if (err.code !== 'bad proof' && err.code !== 'not paired') throw err;
@@ -536,7 +543,7 @@ async function authenticate(hello, options) {
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const entered = await options.requestPairingCode({
-      did,
+      pid,
       error: lastError ? lastError.message : '',
     });
     if (!entered) throw new Error('已取消配对');
@@ -545,7 +552,7 @@ async function authenticate(hello, options) {
       continue;
     }
     try {
-      await pairWithCode(entered, did, nonceD);
+      await pairWithCode(entered, pid, nonceD);
       return;
     } catch (err) {
       lastError = pairingError(err);
@@ -825,6 +832,7 @@ module.exports = {
   command,
   send,
   isConnected,
+  forgetDevice,
   getState,
   onState,
   onMessage,

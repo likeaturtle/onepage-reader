@@ -366,11 +366,43 @@ Page({
     })
       .then((hello) => {
         this.setData({ hello, deviceTime: fmt.deviceTime(hello) });
-        wx.showToast({ title: '已连接，正在同步', icon: 'none' });
-        return this.syncDevice();
+        return this.claimDevice(hello).then((device) => {
+          if (!device) return null;
+          wx.showToast({ title: '已连接，正在同步', icon: 'none' });
+          return this.syncDevice();
+        });
       })
       .catch((err) => this.setData({ error: err.message }))
       .then(() => this.setData({ connecting: false }));
+  },
+
+  // BLE auth proves this phone has the device key; the claim records which
+  // WeChat account owns the physical device. The random `did` is only revealed
+  // inside the authenticated hello, so it cannot be claimed from a distance.
+  claimDevice(hello) {
+    const did = String(hello.did || '');
+    if (!did) {
+      this.setData({ error: '设备身份缺失，请升级固件后重试' });
+      ble.disconnect().catch(() => {});
+      return Promise.resolve(null);
+    }
+    return api.claimDevice(did, hello.name || this.data.appName || '墨程CalCal', hello.pid)
+      .then((res) => res.device)
+      .catch((err) => {
+        if (err.status === 409) {
+          this.setData({ error: '该设备已绑定其他微信账号' });
+          wx.showModal({
+            title: '设备已绑定其他账号',
+            content: '这台设备已归属另一个微信账号。请原账号在「我的」页解绑，或在设备上恢复出厂设置后用当前账号重新配对。',
+            showCancel: false,
+            confirmText: '知道了',
+          });
+        } else {
+          this.setData({ error: `设备归属校验失败：${err.message}` });
+        }
+        ble.disconnect().catch(() => {});
+        return null;
+      });
   },
 
   // Called by utils/ble.js when the device is in pairing mode and this phone

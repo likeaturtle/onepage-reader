@@ -156,6 +156,24 @@ function deleteEvent(id) {
   }).then((res) => res.event);
 }
 
+function claimDevice(did, name, pid) {
+  return request('/api/devices/claim', {
+    method: 'POST',
+    data: { did, name, pid },
+  });
+}
+
+function devices() {
+  return request('/api/devices');
+}
+
+function unbindDevice(did) {
+  return request(`/api/devices/${encodeURIComponent(did)}/unbind`, {
+    method: 'POST',
+    data: {},
+  });
+}
+
 function mapDevice(id, deviceId) {
   return request(`/api/events/${encodeURIComponent(id)}/device`, {
     method: 'POST',
@@ -188,6 +206,9 @@ module.exports = {
   createEvent,
   updateEvent,
   deleteEvent,
+  claimDevice,
+  devices,
+  unbindDevice,
   mapDevice,
   purgeEvent,
   logout,

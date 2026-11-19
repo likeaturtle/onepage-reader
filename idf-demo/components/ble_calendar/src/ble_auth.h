@@ -22,6 +22,7 @@ esp_err_t ble_auth_init(void);
 void ble_auth_reset_session(void);
 bool ble_auth_is_authed(void);
 bool ble_auth_has_key(void);
+const char *ble_auth_pid(void);
 const char *ble_auth_did(void);
 const char *ble_auth_nonce_hex(void);
 

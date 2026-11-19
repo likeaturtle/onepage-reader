@@ -6,6 +6,10 @@ const crypto = require('node:crypto');
 const { isBox } = require('./crypto');
 
 const SCHEMA_VERSION = 3;
+const DEVICES_SCHEMA_VERSION = 1;
+const DEVICE_DID_RE = /^[0-9A-F]{12,32}$/;
+const DEVICE_PID_RE = /^[0-9A-F]{12}$/;
+const DEVICE_NAME_MAX = 64;
 const AVATAR_RE = /^[A-Za-z0-9_-]+\.(png|jpg|jpeg|webp)$/i;
 
 function userAad(userId, field) {
@@ -22,6 +26,37 @@ function cleanProfile(value) {
     nickname: String(profile.nickname || ''),
     avatarId: String(profile.avatarId || ''),
   };
+}
+
+function normalizeDid(value) {
+  const did = String(value || '').trim().toUpperCase();
+  return DEVICE_DID_RE.test(did) ? did : '';
+}
+
+function normalizePid(value) {
+  const pid = String(value || '').trim().toUpperCase();
+  return DEVICE_PID_RE.test(pid) ? pid : '';
+}
+
+function cleanDeviceName(value) {
+  return String(value || '').trim().slice(0, DEVICE_NAME_MAX);
+}
+
+function publicDevice(device) {
+  return {
+    did: device.did,
+    pid: device.pid,
+    name: device.name,
+    boundAt: device.boundAt,
+    lastSeenAt: device.lastSeenAt,
+  };
+}
+
+function deviceError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  err.expose = true;
+  return err;
 }
 
 /**
@@ -44,6 +79,7 @@ class Store {
     this.keys = keyrings;
     this.file = path.join(dataDir, 'users.json');
     this.eventsFile = path.join(dataDir, 'events.json');
+    this.devicesFile = path.join(dataDir, 'devices.json');
     this.avatarDir = path.join(dataDir, 'avatars');
 
     fs.mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
@@ -52,6 +88,7 @@ class Store {
 
     this.data = this.load();
     this.events = this.loadEvents();
+    this.devices = this.loadDevices();
     this.verifyKeyMaterial();
   }
 
@@ -118,6 +155,39 @@ class Store {
     this.writeAtomic(this.eventsFile, { v: SCHEMA_VERSION, byUser: this.events.byUser });
   }
 
+  loadDevices() {
+    const raw = this.readJson(this.devicesFile);
+    if (!raw) return { byDid: {} };
+    if (raw.v !== DEVICES_SCHEMA_VERSION) {
+      throw new Error(
+        `[store] devices.json schema v${raw.v} is unsupported; this build only reads v${DEVICES_SCHEMA_VERSION}. ` +
+        'Delete the old data directory instead of migrating pre-release data.',
+      );
+    }
+    const byDid = {};
+    const source = raw.byDid && typeof raw.byDid === 'object' ? raw.byDid : {};
+    for (const [key, value] of Object.entries(source)) {
+      const did = normalizeDid(key);
+      if (!did || !value || typeof value.userId !== 'string' || !value.userId) continue;
+      byDid[did] = {
+        did,
+        pid: normalizePid(value.pid),
+        userId: value.userId,
+        name: cleanDeviceName(value.name),
+        boundAt: typeof value.boundAt === 'string' ? value.boundAt : new Date().toISOString(),
+        lastSeenAt: typeof value.lastSeenAt === 'string' ? value.lastSeenAt : new Date().toISOString(),
+      };
+    }
+    return { byDid };
+  }
+
+  saveDevices() {
+    this.writeAtomic(this.devicesFile, {
+      v: DEVICES_SCHEMA_VERSION,
+      byDid: this.devices.byDid,
+    });
+  }
+
   writeAtomic(file, value) {
     const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(value, null, 2), { mode: 0o600 });
@@ -152,7 +222,7 @@ class Store {
 
     chmod(this.dataDir, 0o700);
     chmod(this.avatarDir, 0o700);
-    for (const file of [this.file, this.eventsFile]) {
+    for (const file of [this.file, this.eventsFile, this.devicesFile]) {
       if (fs.existsSync(file)) chmod(file, 0o600);
     }
 
@@ -543,6 +613,60 @@ class Store {
     }
   }
 
+  // --- devices ----------------------------------------------------------
+
+  listDevices(userId) {
+    return Object.values(this.devices.byDid)
+      .filter((device) => device.userId === userId)
+      .sort((a, b) => String(a.boundAt).localeCompare(String(b.boundAt)))
+      .map(publicDevice);
+  }
+
+  getDevice(did) {
+    const key = normalizeDid(did);
+    return key ? this.devices.byDid[key] || null : null;
+  }
+
+  claimDevice(userId, did, name, pid) {
+    const key = normalizeDid(did);
+    if (!key) throw deviceError(400, '设备 ID 不合法');
+    const linkId = normalizePid(pid);
+    if (pid !== undefined && pid !== null && String(pid) && !linkId) {
+      throw deviceError(400, '设备广播 ID 不合法');
+    }
+    const existing = this.devices.byDid[key];
+    if (existing && existing.userId !== userId) {
+      throw deviceError(409, '设备已绑定其他账号');
+    }
+    const now = new Date().toISOString();
+    const device = existing || {
+      did: key,
+      pid: linkId,
+      userId,
+      name: cleanDeviceName(name),
+      boundAt: now,
+      lastSeenAt: now,
+    };
+    device.userId = userId;
+    if (linkId) device.pid = linkId;
+    if (name !== undefined && name !== null) device.name = cleanDeviceName(name);
+    device.lastSeenAt = now;
+    this.devices.byDid[key] = device;
+    this.saveDevices();
+    return publicDevice(device);
+  }
+
+  unbindDevice(userId, did) {
+    const key = normalizeDid(did);
+    if (!key) throw deviceError(400, '设备 ID 不合法');
+    const existing = this.devices.byDid[key];
+    if (!existing) throw deviceError(404, '设备未绑定');
+    if (existing.userId !== userId) throw deviceError(403, '无权解绑该设备');
+    delete this.devices.byDid[key];
+    this.saveDevices();
+    return publicDevice(existing);
+  }
+
   /** Never let openid or internal timestamps leak to the client. */
   publicUser(user) {
     const profile = this.openProfile(user);
@@ -557,4 +681,4 @@ class Store {
   }
 }
 
-module.exports = { Store, SCHEMA_VERSION };
+module.exports = { Store, SCHEMA_VERSION, normalizeDid };

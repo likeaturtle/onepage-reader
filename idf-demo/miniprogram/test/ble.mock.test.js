@@ -32,7 +32,8 @@ class FakeWx {
       { ev: 'ev', id: 7, cal: 0, date: '2026-11-10', start: '09:00', end: '10:00', title: '项目评审', note: '会议室 A' },
     ];
     this.storage = new Map();
-    this.did = 'A1B2C3D4E5F6';
+    this.pid = 'A1B2C3D4E5F6';
+    this.did = '0123456789abcdef0123456789abcdef';
     this.pairing = Boolean(options.pairing);
     this.pairingCode = options.code || 'K7Q4M2X9B3TF';
     this.key = this.pairing ? null : Buffer.alloc(32, 0x42);
@@ -112,7 +113,7 @@ class FakeWx {
       proto: 3,
       fw: '1.2.0',
       name: '墨程CalCal',
-      did: this.did,
+      pid: this.pid,
       auth: true,
       paired: Boolean(this.key),
       pairing: this.pairing,
@@ -163,7 +164,8 @@ class FakeWx {
     this.commands.push(command);
     if (command.cmd === 'hello') {
       this.notify({
-        ev: 'hello', proto: 3, fw: '1.2.0', name: '墨程CalCal', did: this.did,
+        ev: 'hello', proto: 3, fw: '1.2.0', name: '墨程CalCal',
+        pid: this.pid, did: this.did,
         auth: true, authed: true, now: 1762703820, tz: 480, time_valid: true,
         time_synced: true, events: this.events.length, calendars: 1, cals: ['日历'],
       });
@@ -203,12 +205,12 @@ class FakeWx {
   handleAuth(command) {
     const pair = Boolean(command.pair);
     const nonceA = String(command.nonce || '');
-    const did = String(command.did || '');
+    const pid = String(command.pid || '');
     const fail = (error) => this.notifyPlain({
       ev: 'auth', ok: false, proto: 3, error,
       paired: Boolean(this.key), pairing: this.pairing,
     });
-    if (did !== this.did || !/^[0-9a-f]{32}$/i.test(nonceA)) {
+    if (pid !== this.pid || !/^[0-9a-f]{32}$/i.test(nonceA)) {
       fail('bad auth request');
       return;
     }
@@ -218,7 +220,7 @@ class FakeWx {
         fail('pairing not active');
         return;
       }
-      keyAuth = auth.derivePairKey(this.pairingCode, this.did);
+      keyAuth = auth.derivePairKey(this.pairingCode, this.pid);
     } else {
       if (!this.key) {
         fail('not paired');
@@ -226,7 +228,7 @@ class FakeWx {
       }
       keyAuth = this.key;
     }
-    const expected = auth.clientProof(keyAuth, this.did, this.nonceD, nonceA,
+    const expected = auth.clientProof(keyAuth, this.pid, this.nonceD, nonceA,
       pair ? 'pair' : 'auth');
     if (!auth.secureEqualHex(expected, command.proof)) {
       fail('bad proof');
@@ -234,13 +236,13 @@ class FakeWx {
     }
     let longKey = this.key;
     if (pair) {
-      longKey = auth.deriveLongKey(this.pairingCode, this.did);
+      longKey = auth.deriveLongKey(this.pairingCode, this.pid);
       this.key = longKey;
       this.pairing = false;
     }
     this.deviceSession = auth.createSession(longKey, this.nonceD, nonceA, 'device');
     this.authed = true;
-    const proof = auth.deviceProof(longKey, this.did, nonceA, this.nonceD,
+    const proof = auth.deviceProof(longKey, this.pid, nonceA, this.nonceD,
       pair ? 'pair' : 'auth');
     this.notifyPlain({ ev: 'auth', ok: true, proto: 3, paired: true, pairing: false, proof });
   }
@@ -299,7 +301,7 @@ test('BLE client connects, parses streamed events and chunks writes at 20 bytes'
   const fake = new FakeWx();
   global.wx = fake;
   fake.setStorageSync('calcal.bleAuthKeys', {
-    [fake.did]: auth.bytesToBase64(fake.key),
+    [fake.pid]: auth.bytesToBase64(fake.key),
   });
 
   delete require.cache[require.resolve('../utils/ble')];
@@ -350,7 +352,7 @@ test('a new phone pairs with the one-time code shown on the device', async () =>
   const hello = await ble.connect('device-1', {
     requestPairingCode: async (info) => {
       asked += 1;
-      assert.equal(info.did, fake.did);
+      assert.equal(info.pid, fake.pid);
       return asked === 1 ? 'K7Q4-M2X9-B3TF' : '';
     },
   });
@@ -360,8 +362,8 @@ test('a new phone pairs with the one-time code shown on the device', async () =>
   assert.equal(fake.authed, true);
   assert.equal(fake.pairing, false);
   const stored = fake.getStorageSync('calcal.bleAuthKeys');
-  assert.ok(stored[fake.did]);
-  assert.deepEqual(Buffer.from(auth.base64ToBytes(stored[fake.did])), Buffer.from(fake.key));
+  assert.ok(stored[fake.pid]);
+  assert.deepEqual(Buffer.from(auth.base64ToBytes(stored[fake.pid])), Buffer.from(fake.key));
 
   const events = await ble.list('2026-11-01', '2026-11-30');
   assert.equal(events.length, 1);
@@ -373,7 +375,7 @@ test('a failed authentication keeps the stored key for a later real device', asy
   global.wx = fake;
   const previous = Buffer.alloc(32, 0x11);
   fake.setStorageSync('calcal.bleAuthKeys', {
-    [fake.did]: auth.bytesToBase64(previous),
+    [fake.pid]: auth.bytesToBase64(previous),
   });
 
   delete require.cache[require.resolve('../utils/ble')];
@@ -381,5 +383,5 @@ test('a failed authentication keeps the stored key for a later real device', asy
 
   await assert.rejects(() => ble.connect('device-1'), /认证失败|重置/);
   const stored = fake.getStorageSync('calcal.bleAuthKeys');
-  assert.deepEqual(Buffer.from(auth.base64ToBytes(stored[fake.did])), previous);
+  assert.deepEqual(Buffer.from(auth.base64ToBytes(stored[fake.pid])), previous);
 });

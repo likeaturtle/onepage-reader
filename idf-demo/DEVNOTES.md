@@ -1257,18 +1257,20 @@ PCM，但没有 WAV 头；更关键的是 **API Key 不能放进小程序源码*
 - 设备在**未连接手机**时长按 CONFIRM 3 秒进入 3 分钟配对窗口，墨水屏显示一次性 12 位
   Crockford base32 码（`XXXX-XXXX-XXXX`，60 bit）。长按 8 秒先清除旧密钥再进入配对。
 - 配对码只用于 HKDF：
-  `K_pair = HKDF(code, salt=did, "mochen-calcal-pair-v1")`，
-  `K_long = HKDF(code, salt=did, "mochen-calcal-key-v1")`；`did` 是 BLE MAC 的 12 位大写
-  hex。配对成功后设备只保存 `K_long`，配对码作废。
+  `K_pair = HKDF(code, salt=pid, "mochen-calcal-pair-v1")`，
+  `K_long = HKDF(code, salt=pid, "mochen-calcal-key-v1")`；`pid` 是公开的 BLE MAC
+  （12 位大写 hex，用于握手和小程序本地密钥索引）；`did` 是另一个随机 128-bit 设备身份，
+  只存在 NVS、只在认证后的 full hello 下发，用于服务端账号归属。配对成功后设备只保存
+  `K_long`，配对码作废。
 - 设备只保存一个密钥槽：重新配对会替换旧手机；长按 CONFIRM 8 秒或擦除 NVS 才能清掉。
 - 配对码**不经过 BLE**；手机把它输入小程序/网页，用 HMAC 证明持有它。
 
 ### 22.3 握手和帧
 
-- 订阅通知后设备先发 minimal hello（`did`、`paired`、`pairing`、`nonce`、`auth:true`），
+- 订阅通知后设备先发 minimal hello（`pid`、`paired`、`pairing`、`nonce`、`auth:true`），
   不含日程数量和时钟；认证成功后客户端再发 `hello` 取完整信息。
-- 客户端 `auth`：`nonce_a` + `proof = HMAC(K_auth, "mochen-calcal-client-v1|did|nonce_d|nonce_a|mode")`；
-  设备用 `"mochen-calcal-device-v1|did|nonce_a|nonce_d|mode"` 回证。`mode` 为 `pair`/`auth`。
+- 客户端 `auth`：`nonce_a` + `proof = HMAC(K_auth, "mochen-calcal-client-v1|pid|nonce_d|nonce_a|mode")`；
+  设备用 `"mochen-calcal-device-v1|pid|nonce_a|nonce_d|mode"` 回证。`mode` 为 `pair`/`auth`。
 - 会话四把钥匙用 HKDF（salt=`nonce_d||nonce_a`，IKM=`K_long`，info 分别
   `enc-c2d`/`mac-c2d`/`enc-d2c`/`mac-d2c`）。
 - 认证后的每行都是 `{"s","iv","d","m"}`：AES-256-CBC + PKCS#7，`m` 覆盖
@@ -1298,7 +1300,7 @@ PCM，但没有 WAV 头；更关键的是 **API Key 不能放进小程序源码*
 - 小程序没有 WebCrypto，随机数用 `wx.getRandomValues`；网页用 `crypto.getRandomValues`。
 - 小程序在 `connect()` 里 pre-hello → auth → 加密 `hello` → `time`；配对码用
   `wx.showModal({editable:true})` 输入。网页用 `window.prompt`，密钥存
-  `localStorage['calcal.auth.<did>']`；小程序存 `calcal.bleAuthKeys`。
+  `localStorage['calcal.auth.<pid>']`；小程序存 `calcal.bleAuthKeys`（按 `pid` 索引）。
 - 网页从单文件变成 `index.html` + `ble-auth.js` + `vendor/`，托管时要整套 `web/` 一起上传。
 
 ### 22.6 已知取舍
@@ -1306,7 +1308,8 @@ PCM，但没有 WAV 头；更关键的是 **API Key 不能放进小程序源码*
 - 60 bit 配对码 + 3 分钟窗口：抓到配对握手可以离线爆破；个人桌面设备可接受，后续可换
   二维码/128 bit 而不改帧格式。
 - 设备密钥明文存 NVS；手机端在系统沙箱/localStorage。需要防拆机时再开 NVS/flash 加密。
-- 没有多手机密钥槽；重新配对替换旧手机。云端“设备归属”仍未实现，BLE 认证只保护链路。
+- 没有多手机密钥槽；重新配对替换旧手机。云端“设备归属”见第 23 节；BLE 认证只保护链路，
+  归属由服务端 + 官方小程序执行。
 - `INFO` 特征保持公开（固件版本/日程条数/时钟有效性）；它不提供日程内容。
 
 ### 22.7 验证
@@ -1318,3 +1321,49 @@ PCM，但没有 WAV 头；更关键的是 **API Key 不能放进小程序源码*
   的布局渲染配对码三行/提示/页脚，检查过 480x800 不重叠。
 - 真机仍需验证：首次配对码显示、错误码重试、断线重连、换手机/8 秒清绑定、深睡后重新
   配对、iOS/Android 微信的键盘弹窗。**没有上板验证前不要把“已验证”写死。**
+
+## 23. 2026-11-19：设备归属绑定到微信账号
+
+### 23.1 为什么拆成 pid 和 did
+
+BLE 认证需要在小程序拿到密钥前就有一个稳定 ID 来查本地密钥，这个 ID 只能是 pre-auth
+hello 里的 `pid`。如果直接用 `pid`（BLE MAC）做云端归属，任何在射频范围内扫到 MAC 的
+人都能调 claim 接口抢绑。于是把身份拆成两层：
+
+- `pid`：BLE MAC（12 位大写 hex，公开），用于 HKDF salt、HMAC 证明输入和小程序本地
+  密钥索引；pre-auth hello 只带它。
+- `did`：首次启动生成的随机 128-bit 设备身份，存 NVS 的 auth namespace；只在认证后的
+  full hello 中下发，是服务端 `devices` 表的唯一键。它不参与任何密码学计算。
+
+这样未认证的 BLE central 看不到 `did`，不能远程抢绑；能完成配对的人本来就有物理访问
+和密钥。
+
+### 23.2 服务端
+
+- `devices.json`（schema v1，随 dataDir 一起备份）：
+  `byDid[did] = { did, pid, userId, name, boundAt, lastSeenAt }`；不存 BLE 密钥。
+- `GET /api/devices`：当前账号的设备列表。
+- `POST /api/devices/claim {did,pid,name}`：未绑定则绑定；同账号幂等更新名称/lastSeen；
+  其他账号返回 409。
+- `POST /api/devices/:did/unbind`：仅绑定账号可解绑。
+- 设备 DID 校验 12–32 位 hex（兼容旧 MAC 长度），pid 12 位 hex；数据文件权限 0600。
+
+### 23.3 小程序
+
+- `ble-auth.js` 的 `did` 参数已改名为 `pid`；小程序按 `pid` 存 `K_long`。
+- `connect()` 成功后先调 `api.claimDevice(hello.did, hello.name, hello.pid)`，成功才
+  `syncDevice()`；409 时弹“设备已绑定其他账号”并断开，不导入/推送云端数据。
+- 「我的」页新增「我的设备」：列出 `did` 后缀、名称、绑定日期；解绑调
+  `/api/devices/:did/unbind`，同时按服务端返回的 `pid` 删掉本地密钥并断开，避免下次
+  自动认证后又 claim 回来。
+
+### 23.4 边界
+
+- 设备没有网络，不能自己验证微信账号；归属是**官方小程序 + 服务端**的约束。另一个
+  账号物理重新配对后仍能用 BLE 本地读写设备，只是不能同步自己的云端日程。
+- 解绑只删云端归属，不清设备 NVS 里的 `K_long`；彻底收回要 CONFIRM 8 秒或恢复出厂。
+- 恢复出厂（擦 NVS）会生成新的 `did`，设备在服务端变成一台“新设备”；旧绑定记录需要
+  原账号删掉（或自建服务里清理）。这是无 PKI 情况下可接受的转移方式。
+- 网页端不登录，不参与账号归属；它仍是一个带本地密钥的 Web Bluetooth 工具。
+- 服务端目前不在事件 API 上强制 `did`（事件仍按 user 存）；归属校验发生在小程序
+  claim 这一步。要防改包客户端，需要把设备签名/设备身份引入事件同步，属于下一层。

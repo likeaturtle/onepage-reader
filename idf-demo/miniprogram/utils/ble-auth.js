@@ -179,20 +179,20 @@
       : code;
   }
 
-  function derivePairKey(code, did) {
-    return hkdfSha256(utf8Bytes(normalizeCode(code)), utf8Bytes(did), 'mochen-calcal-pair-v1', 32);
+  function derivePairKey(code, pid) {
+    return hkdfSha256(utf8Bytes(normalizeCode(code)), utf8Bytes(pid), 'mochen-calcal-pair-v1', 32);
   }
 
-  function deriveLongKey(code, did) {
-    return hkdfSha256(utf8Bytes(normalizeCode(code)), utf8Bytes(did), 'mochen-calcal-key-v1', 32);
+  function deriveLongKey(code, pid) {
+    return hkdfSha256(utf8Bytes(normalizeCode(code)), utf8Bytes(pid), 'mochen-calcal-key-v1', 32);
   }
 
-  function clientProof(key, did, nonceD, nonceA, mode) {
-    return hmacHex(key, `mochen-calcal-client-v1|${did}|${nonceD}|${nonceA}|${mode}`);
+  function clientProof(key, pid, nonceD, nonceA, mode) {
+    return hmacHex(key, `mochen-calcal-client-v1|${pid}|${nonceD}|${nonceA}|${mode}`);
   }
 
-  function deviceProof(key, did, nonceA, nonceD, mode) {
-    return hmacHex(key, `mochen-calcal-device-v1|${did}|${nonceA}|${nonceD}|${mode}`);
+  function deviceProof(key, pid, nonceA, nonceD, mode) {
+    return hmacHex(key, `mochen-calcal-device-v1|${pid}|${nonceA}|${nonceD}|${mode}`);
   }
 
   function deriveSessionKeys(longKey, nonceD, nonceA) {

@@ -120,3 +120,43 @@
   color: #7c7664;
   margin-top: 10rpx;
 }
+
+.devices-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin-bottom: 16rpx;
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-top: 1rpx solid #f0e9da;
+}
+
+.device-row:first-of-type {
+  border-top: none;
+}
+
+.device-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.device-row-name {
+  font-size: 27rpx;
+  color: #26251f;
+  font-weight: 500;
+}
+
+.device-row-meta {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #9a9482;
+  word-break: break-all;
+}
+
+.device-row .btn {
+  flex: none;
+}

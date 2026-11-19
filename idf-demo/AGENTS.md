@@ -60,6 +60,9 @@
   `miniprogram/utils/ble-auth.js` 与 `web/ble-auth.js` 必须保持字节一致（有测试检查），
   改握手/帧格式时同步改固件 `ble_auth.c`、`docs/ble-protocol.md` 和两端客户端；
   旧客户端会被 `auth required` 拒绝。配对码/密钥不要写进日志。
+- 设备身份拆成 `pid`（公开 BLE MAC，握手/本地密钥索引）和 `did`（随机 128-bit，只允许
+  在认证后的 hello 下发，用于服务端 `/api/devices` 账号归属）。不要把 `did` 加回
+  pre-auth hello 或广播，否则未认证的 BLE central 可以远程抢占绑定。
 - 日历数据在 `storage` 分区（LittleFS）的 `/lfs/calendar.db`，NVS 只放时钟/时区/校准；
   改 `partitions.csv` 后必须 `idf.py flash -a`，否则找不到分区会启动失败。
 - `font_gb2312_24.bin` / `font_cjk_large.c` 是 `tools/gen_cjk_bitmaps.py` 生成的，

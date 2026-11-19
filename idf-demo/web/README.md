@@ -51,7 +51,9 @@ key:
 
 The device stores one phone key, so pairing another phone replaces the current
 one. Protocol 3 rejects clients that only speak the old unauthenticated
-protocol.
+protocol. This page has no WeChat login and therefore does not claim the device
+for an account; account ownership is a mini program feature (the device's random
+`did` is only used by the mini program's cloud claim).
 
 ## Use
 

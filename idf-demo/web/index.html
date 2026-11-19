@@ -650,11 +650,11 @@
     }
   }
 
-  async function runAuth(did, nonceD, key, mode) {
+  async function runAuth(pid, nonceD, key, mode) {
     const nonceA = auth.bytesToHex(await auth.randomBytes(16));
-    const proof = auth.clientProof(key, did, nonceD, nonceA, mode);
+    const proof = auth.clientProof(key, pid, nonceD, nonceA, mode);
     const response = await commandPlain(
-      { cmd: "auth", did, nonce: nonceA, proof, pair: mode === "pair" },
+      { cmd: "auth", pid, nonce: nonceA, proof, pair: mode === "pair" },
       (m) => m && m.ev === "auth",
       7000
     );
@@ -666,9 +666,9 @@
     return { nonceA, response };
   }
 
-  async function authWithKey(longKey, did, nonceD) {
-    const { nonceA, response } = await runAuth(did, nonceD, longKey, "auth");
-    const expected = auth.deviceProof(longKey, did, nonceA, nonceD, "auth");
+  async function authWithKey(longKey, pid, nonceD) {
+    const { nonceA, response } = await runAuth(pid, nonceD, longKey, "auth");
+    const expected = auth.deviceProof(longKey, pid, nonceA, nonceD, "auth");
     if (!auth.secureEqualHex(expected, response.proof)) {
       throw new Error("设备身份校验失败");
     }
@@ -676,17 +676,17 @@
     state.authed = true;
   }
 
-  async function pairWithCode(code, did, nonceD) {
-    const pairKey = auth.derivePairKey(code, did);
-    const longKey = auth.deriveLongKey(code, did);
-    const { nonceA, response } = await runAuth(did, nonceD, pairKey, "pair");
-    const expected = auth.deviceProof(longKey, did, nonceA, nonceD, "pair");
+  async function pairWithCode(code, pid, nonceD) {
+    const pairKey = auth.derivePairKey(code, pid);
+    const longKey = auth.deriveLongKey(code, pid);
+    const { nonceA, response } = await runAuth(pid, nonceD, pairKey, "pair");
+    const expected = auth.deviceProof(longKey, pid, nonceA, nonceD, "pair");
     if (!auth.secureEqualHex(expected, response.proof)) {
       throw new Error("设备身份校验失败");
     }
     state.session = auth.createSession(longKey, nonceD, nonceA, "app");
     state.authed = true;
-    rememberKey(did, longKey);
+    rememberKey(pid, longKey);
   }
 
   function pairingError(err) {
@@ -704,17 +704,16 @@
 
   async function authenticate(pre) {
     if (!auth) throw new Error("认证模块未加载，请刷新页面");
-    const did = String(pre.did || "");
+    const pid = String(pre.pid || "");
     const nonceD = String(pre.nonce || "");
-    if (!did || !/^[0-9a-f]{32}$/.test(nonceD)) {
+    if (!pid || !/^[0-9a-f]{12}$/i.test(pid) || !/^[0-9a-f]{32}$/i.test(nonceD)) {
       throw new Error("设备认证信息不完整，请升级固件后重试");
     }
-    state.did = did;
 
-    const key = storedKey(did);
+    const key = storedKey(pid);
     if (key) {
       try {
-        await authWithKey(key, did, nonceD);
+        await authWithKey(key, pid, nonceD);
         return;
       } catch (err) {
         if (err.code !== "bad proof" && err.code !== "not paired") throw err;
@@ -748,7 +747,7 @@
         continue;
       }
       try {
-        await pairWithCode(entered, did, nonceD);
+        await pairWithCode(entered, pid, nonceD);
         return;
       } catch (err) {
         lastError = pairingError(err);

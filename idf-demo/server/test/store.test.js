@@ -246,3 +246,41 @@ test('older schema files are rejected instead of migrated', (t) => {
 
   assert.throws(() => new Store(dir, makeKeys()), /users\.json schema v2 is unsupported/);
 });
+
+test('devices bind to one account, list, persist and unbind', (t) => {
+  const dir = tmpDir();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const store = new Store(dir, makeKeys());
+  const alice = store.createUser('openid-alice');
+  const bob = store.createUser('openid-bob');
+  const did = '0123456789ABCDEF0123456789ABCDEF';
+
+  const claimed = store.claimDevice(alice.id, did, '书桌', 'A1B2C3D4E5F6');
+  assert.equal(claimed.did, did);
+  assert.equal(claimed.name, '书桌');
+  assert.equal(claimed.pid, 'A1B2C3D4E5F6');
+  assert.equal(claimed.userId, undefined);
+
+  // Reloading must keep the binding.
+  const reopened = new Store(dir, makeKeys());
+  assert.equal(reopened.getDevice(did).userId, alice.id);
+  assert.equal(reopened.listDevices(alice.id).length, 1);
+
+  // Idempotent for the owner; the name can change.
+  const again = reopened.claimDevice(alice.id, did.toLowerCase(), '书房');
+  assert.equal(again.name, '书房');
+  assert.equal(reopened.listDevices(alice.id).length, 1);
+
+  // Another account cannot claim or unbind it.
+  assert.throws(() => reopened.claimDevice(bob.id, did, '抢占'), (err) => err.status === 409);
+  assert.throws(() => reopened.unbindDevice(bob.id, did), (err) => err.status === 403);
+  assert.equal(reopened.listDevices(bob.id).length, 0);
+
+  // The owner can unbind; after that another account can claim.
+  reopened.unbindDevice(alice.id, did);
+  assert.equal(reopened.getDevice(did), null);
+  const bobClaim = reopened.claimDevice(bob.id, did, '新主人');
+  assert.equal(bobClaim.did, did);
+  assert.equal(reopened.listDevices(bob.id).length, 1);
+});

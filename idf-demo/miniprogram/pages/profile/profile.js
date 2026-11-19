@@ -45,6 +45,10 @@ Page({
     apiBase: config.apiBase,
     version: clientVersion(),
     protocol: config.protocol,
+    devices: [],
+    devicesLoading: false,
+    deviceError: '',
+    unbinding: false,
   },
 
   onShow() {
@@ -53,12 +57,56 @@ Page({
       return;
     }
     this.sync();
+    this.loadDevices();
     api.me()
       .then((res) => {
         auth.setUser(res.user);
         this.sync();
       })
       .catch(() => {});
+  },
+
+  loadDevices() {
+    if (this.data.devicesLoading) return;
+    this.setData({ devicesLoading: true, deviceError: '' });
+    api.devices()
+      .then((res) => {
+        const devices = (res.devices || []).map((device) => ({
+          ...device,
+          shortDid: String(device.did || '').slice(-8),
+          boundLabel: String(device.boundAt || '').slice(0, 10),
+        }));
+        this.setData({ devices });
+      })
+      .catch((err) => this.setData({ deviceError: err.message }))
+      .then(() => this.setData({ devicesLoading: false }));
+  },
+
+  unbindDevice(event) {
+    const did = event.currentTarget.dataset.did;
+    const pid = event.currentTarget.dataset.pid;
+    if (!did || this.data.unbinding) return;
+    wx.showModal({
+      title: '解绑设备',
+      content: '解绑后该设备不再归属当前账号。要阻止本机继续连接，请再到设备上长按 CONFIRM 8 秒清除密钥。',
+      confirmText: '解绑',
+      confirmColor: '#9c3427',
+      success: (res) => {
+        if (!res.confirm) return;
+        this.setData({ unbinding: true, deviceError: '' });
+        api.unbindDevice(did)
+          .then(() => {
+            if (pid) ble.forgetDevice(pid);
+            ble.disconnect().catch(() => null);
+            this.setData({
+              devices: this.data.devices.filter((device) => device.did !== did),
+            });
+            wx.showToast({ title: '已解绑', icon: 'success' });
+          })
+          .catch((err) => this.setData({ deviceError: err.message }))
+          .then(() => this.setData({ unbinding: false }));
+      },
+    });
   },
 
   sync() {

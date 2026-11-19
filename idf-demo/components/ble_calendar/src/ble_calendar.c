@@ -335,9 +335,9 @@ static void send_hello(void) {
     char hello[360];
     const int n = snprintf(
         hello, sizeof(hello),
-        "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\",\"did\":\"%s\","
+        "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\",\"pid\":\"%s\","
         "\"auth\":true,\"paired\":%s,\"pairing\":%s,\"nonce\":\"%s\"}",
-        PROTO_VERSION, fw_version(), BRAND_NAME, ble_auth_did(),
+        PROTO_VERSION, fw_version(), BRAND_NAME, ble_auth_pid(),
         ble_auth_has_key() ? "true" : "false",
         ble_auth_pairing_active() ? "true" : "false", ble_auth_nonce_hex());
     if (n > 0 && n < (int)sizeof(hello)) {
@@ -362,11 +362,11 @@ static void send_hello(void) {
   char json[800];
   const int n = snprintf(
       json, sizeof(json),
-      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\",\"did\":\"%s\","
-      "\"auth\":true,\"authed\":true,"
+      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\",\"pid\":\"%s\","
+      "\"did\":\"%s\",\"auth\":true,\"authed\":true,"
       "\"now\":%u,\"tz\":%d,\"time_valid\":%s,\"time_synced\":%s,\"events\":%d,"
       "\"calendars\":%d,\"cals\":[%s]}",
-      PROTO_VERSION, fw_version(), BRAND_NAME, ble_auth_did(),
+      PROTO_VERSION, fw_version(), BRAND_NAME, ble_auth_pid(), ble_auth_did(),
       (unsigned)calendar_now_epoch(), calendar_tz_minutes(),
       calendar_time_valid() ? "true" : "false",
       calendar_time_synced() ? "true" : "false", calendar_event_count(), calendar_count(),

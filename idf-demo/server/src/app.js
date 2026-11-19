@@ -306,6 +306,40 @@ function createApp(config, store) {
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/api/devices') {
+      const user = requireUser(req);
+      sendJson(res, 200, { devices: store.listDevices(user.id) });
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/devices/claim') {
+      const user = requireUser(req);
+      const body = await readJson(req);
+      const did = String((body && body.did) || '');
+      const name = body && body.name !== undefined ? String(body.name || '') : undefined;
+      const pid = body && body.pid !== undefined ? String(body.pid || '') : undefined;
+      const device = store.claimDevice(user.id, did, name, pid);
+      sendJson(res, 200, { device });
+      return;
+    }
+
+    if (pathname.startsWith('/api/devices/')) {
+      const user = requireUser(req);
+      const segments = pathname.split('/').filter(Boolean);
+      let did;
+      try {
+        did = decodeURIComponent(segments[2] || '');
+      } catch (_) {
+        throw httpError(400, '设备 ID 不合法');
+      }
+      if (req.method === 'POST' && segments[3] === 'unbind') {
+        store.unbindDevice(user.id, did);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      throw httpError(404, '接口不存在');
+    }
+
     if (req.method === 'GET' && pathname === '/api/events') {
       const user = requireUser(req);
       const from = (url.searchParams.get('from') || '').trim();
