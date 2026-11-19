@@ -470,7 +470,7 @@ Page({
   sleepDevice() {
     wx.showModal({
       title: '锁屏并休眠',
-      content: '设备会显示接下来的日程并进入深睡，之后按 POWER 键唤醒。',
+      content: '设备会显示接下来的日程并进入深睡，之后按电源键唤醒。',
       confirmText: '锁屏',
       success: (res) => {
         if (!res.confirm) return;

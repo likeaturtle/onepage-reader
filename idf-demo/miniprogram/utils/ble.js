@@ -499,7 +499,7 @@ function pairingError(err) {
     case 'bad proof':
       return new Error('配对码错误');
     case 'pairing not active':
-      return new Error('配对已过期，请在设备上重新长按 CONFIRM 3 秒');
+      return new Error('配对已过期，请在设备上重新长按确认键 3 秒');
     case 'too many attempts':
       return new Error('尝试次数过多，请稍后重试');
     default:
@@ -525,16 +525,16 @@ async function authenticate(hello, options) {
       // must not be able to erase it. A successful re-pair below overwrites it.
       if (!hello.pairing) {
         throw new Error(hello.paired
-          ? '设备认证失败（可能已被其他手机重新配对），请在设备上长按 CONFIRM 3 秒重新配对'
-          : '设备已重置，请在设备上长按 CONFIRM 3 秒重新配对');
+          ? '设备认证失败（可能已被其他手机重新配对），请在设备上长按确认键 3 秒重新配对'
+          : '设备已重置，请在设备上长按确认键 3 秒重新配对');
       }
     }
   }
 
   if (!hello.pairing) {
     throw new Error(hello.paired
-      ? '此手机尚未绑定该设备，请在设备上长按 CONFIRM 3 秒后重试'
-      : '设备未绑定，请在设备上长按 CONFIRM 3 秒后重试');
+      ? '此手机尚未绑定该设备，请在设备上长按确认键 3 秒后重试'
+      : '设备未绑定，请在设备上长按确认键 3 秒后重试');
   }
   if (!options || typeof options.requestPairingCode !== 'function') {
     throw new Error('需要设备屏幕上显示的配对码');

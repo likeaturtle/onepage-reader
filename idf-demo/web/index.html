@@ -161,7 +161,7 @@
 
   <section class="card">
     <h2>连接设备</h2>
-    <p class="lead">先唤醒设备（按 POWER），再点击连接。设备广播名为 <strong>Mochen CalCal</strong>，连接后显示为 <strong>墨程CalCal</strong>。</p>
+    <p class="lead">先唤醒设备（按电源键），再点击连接。设备广播名为 <strong>Mochen CalCal</strong>，连接后显示为 <strong>墨程CalCal</strong>。</p>
     <div class="row">
       <button id="connectBtn" class="grow">连接蓝牙设备</button>
       <button id="sleepBtn" class="ghost" disabled>让设备锁屏</button>
@@ -694,7 +694,7 @@
       case "bad proof":
         return new Error("配对码错误");
       case "pairing not active":
-        return new Error("配对已过期，请在设备上重新长按 CONFIRM 3 秒");
+        return new Error("配对已过期，请在设备上重新长按确认键 3 秒");
       case "too many attempts":
         return new Error("尝试次数过多，请稍后重试");
       default:
@@ -721,16 +721,16 @@
         // else must not be able to erase it. A successful re-pair overwrites it.
         if (!pre.pairing) {
           throw new Error(pre.paired
-            ? "设备认证失败（可能已被其他手机重新配对），请在设备上长按 CONFIRM 3 秒重新配对"
-            : "设备已重置，请在设备上长按 CONFIRM 3 秒重新配对");
+            ? "设备认证失败（可能已被其他手机重新配对），请在设备上长按确认键 3 秒重新配对"
+            : "设备已重置，请在设备上长按确认键 3 秒重新配对");
         }
       }
     }
 
     if (!pre.pairing) {
       throw new Error(pre.paired
-        ? "此浏览器尚未绑定该设备，请在设备上长按 CONFIRM 3 秒后重试"
-        : "设备未绑定，请在设备上长按 CONFIRM 3 秒后重试");
+        ? "此浏览器尚未绑定该设备，请在设备上长按确认键 3 秒后重试"
+        : "设备未绑定，请在设备上长按确认键 3 秒后重试");
     }
 
     let lastError = null;
@@ -844,7 +844,7 @@
 
   async function sleepDevice() {
     if (!state.connected) return;
-    if (!window.confirm("让设备立刻锁屏并进入深睡？之后按设备 POWER 键唤醒。")) return;
+    if (!window.confirm("让设备立刻锁屏并进入深睡？之后按设备电源键唤醒。")) return;
     try {
       await send({ cmd: "sleep" });
       toast("设备正在锁屏，屏幕会显示接下来的日程");

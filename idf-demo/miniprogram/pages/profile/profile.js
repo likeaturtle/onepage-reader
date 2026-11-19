@@ -87,7 +87,7 @@ Page({
     if (!did || this.data.unbinding) return;
     wx.showModal({
       title: '解绑设备',
-      content: '解绑后该设备不再归属当前账号。要阻止本机继续连接，请再到设备上长按 CONFIRM 8 秒清除密钥。',
+      content: '解绑后该设备不再归属当前账号。要阻止本机继续连接，请再到设备上长按确认键 8 秒清除密钥。',
       confirmText: '解绑',
       confirmColor: '#9c3427',
       success: (res) => {

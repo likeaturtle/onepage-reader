@@ -380,17 +380,9 @@ def header(s, clock="15:57", battery="78%", connected=True, available=True):
 
 
 def power_hint(s, y):
-    # Mirror draw_power_hint(): 5x7 R has 3 px of trailing blank in its cell,
-    # so use a 15 px advance after POWER and 18 px before it for equal optical gaps.
-    left_w = s.text_width("按")
-    key_w = s.text5x7_width("POWER", 3)
-    right_w = s.text_width("唤醒")
-    x = (W - (left_w + 18 + key_w + 15 + right_w)) // 2
-    s.text_utf8(x, y, "按")
-    x += left_w + 18
-    s.text5x7(x, y, "POWER", 3)
-    x += key_w + 15
-    s.text_utf8(x, y, "唤醒")
+    # Mirror draw_power_hint(): the key name is Chinese now, so the hint is one
+    # centered UTF-8 run.
+    s.centered(y, "按电源键唤醒")
 
 
 def footer(s, back, left_right, confirm):
@@ -620,10 +612,10 @@ def pairing_preview():
     s.centered(500, "配对码 3 分钟内有效")
     s.centered(540, "配对后所有日程指令都会加密")
     s.centered(580, "重新配对会替换当前手机")
-    s.centered(620, "长按 CONFIRM 8 秒可清除绑定")
+    s.centered(620, "长按确认键 8 秒可清除绑定")
 
     s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
-    s.text_utf8(MARGIN, FOOTER_TEXT_Y, "BACK 取消")
+    s.text_utf8(MARGIN, FOOTER_TEXT_Y, "返回取消")
     s.save("preview_pairing.png")
 
 

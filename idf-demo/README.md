@@ -54,6 +54,9 @@ eFuse wrapper) are preserved in [`docs/bringup-demo.md`](docs/bringup-demo.md).
 | **CONFIRM 3 s** | pairing mode (no phone connected) | same | same | same |
 | **CONFIRM 8 s** | erase key + pairing mode | same | same | same |
 
+界面和中文文档统一用中文键名：`BACK`=返回键、`CONFIRM`=确认键、`LEFT/RIGHT`=左右键、
+`UP/DOWN`=上下键、`POWER`=电源键；代码标识符和串口日志仍用英文。
+
 Event detail uses a two-step delete: the first CONFIRM only shows the
 confirmation box, so a single accidental click cannot remove an event.
 
@@ -219,9 +222,9 @@ See [`web/README.md`](web/README.md) for the page details and
 由 DeepSeek 解析并填入下方添加日程表单；用户核对/修改后点「保存日程」才真正保存
 （服务端配置 `DEEPSEEK_API_KEY` 后可用）。
 
-BLE 连接需要认证：首次连接或换手机时，长按设备 **CONFIRM 3 秒**，在弹窗里输入墨水屏
-上的 12 位配对码；设备只保存一台手机的密钥，重新配对会替换旧手机，长按 **CONFIRM
-8 秒** 会清除绑定。之后每次连接都会自动做 HMAC 挑战并用 AES-256-CBC 加密所有指令
+BLE 连接需要认证：首次连接或换手机时，长按设备**确认键 3 秒**，在弹窗里输入墨水屏
+上的 12 位配对码；设备只保存一台手机的密钥，重新配对会替换旧手机，长按**确认键
+8 秒**会清除绑定。之后每次连接都会自动做 HMAC 挑战并用 AES-256-CBC 加密所有指令
 和日程数据（详见协议文档）。
 
 ```bash

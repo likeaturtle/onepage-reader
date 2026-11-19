@@ -543,22 +543,12 @@ void ui_draw_detail(uint8_t *fb, const ui_detail_t *view) {
 
 /* --- sleep screen ------------------------------------------------------- */
 
-/* "按 POWER 唤醒" needs optical spacing: the 5x7 POWER run ends with three
- * blank columns in its last cell, so a normal 18 px space after R looks 3 px
- * wider than the space before POWER. Draw the three runs explicitly with a
- * 20 px optical gap on both sides (18 px advance before, 15 px after). */
+/* Lock-screen footer. The key name is Chinese now, so the hint is one
+ * centered UTF-8 run; the old 5x7 "POWER" optical spacing is unnecessary. */
 static void draw_power_hint(uint8_t *fb, int y) {
-  const int left_w = gfx_text_utf8_width("按");
-  const int key_w = gfx_text_width("POWER", 3);
-  const int right_w = gfx_text_utf8_width("唤醒");
-  const int gap_before = 18;
-  const int gap_after = 15;
-  int x = (UI_W - (left_w + gap_before + key_w + gap_after + right_w)) / 2;
-  gfx_text_utf8(fb, x, y, "按", true);
-  x += left_w + gap_before;
-  gfx_text(fb, x, y, "POWER", 3, true);
-  x += key_w + gap_after;
-  gfx_text_utf8(fb, x, y, "唤醒", true);
+  const char *hint = "按电源键唤醒";
+  const int width = gfx_text_utf8_width(hint);
+  gfx_text_utf8(fb, (UI_W - width) / 2, y, hint, true);
 }
 
 /* Section title and the top of the list band on the lock screen; the empty
@@ -686,10 +676,10 @@ void ui_draw_pairing(uint8_t *fb, const ui_pairing_t *view) {
   if (view->has_key) {
     draw_centered(fb, 580, "重新配对会替换当前手机", true);
   }
-  draw_centered(fb, 620, "长按 CONFIRM 8 秒可清除绑定", true);
+  draw_centered(fb, 620, "长按确认键 8 秒可清除绑定", true);
 
   gfx_hline(fb, MARGIN, FOOTER_RULE_Y, CONTENT_W, true);
-  gfx_text_utf8(fb, MARGIN, FOOTER_TEXT_Y, "BACK 取消", true);
+  gfx_text_utf8(fb, MARGIN, FOOTER_TEXT_Y, "返回取消", true);
 }
 
 void ui_draw_toast(uint8_t *fb, const char *text) {
