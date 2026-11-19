@@ -203,6 +203,31 @@ test('recording fills the text box with the recognized sentence', async () => {
   assert.equal(page.data.voiceStatus, '识别完成，可以修改后解析');
 });
 
+test('the hold button doubles as the recording progress bar', () => {
+  const page = makePage();
+  page.onLoad();
+
+  page.emit('onStart');
+  // Pin the clock instead of waiting, so the fill percentage is exact.
+  page.voiceStartedAt = Date.now() - 12300;
+  page.updateVoiceTimer();
+  assert.equal(page.data.voiceRecording, true);
+  assert.equal(page.data.voiceSeconds, 12);
+  assert.equal(page.data.voiceElapsed, '0:12');
+  // 12.3 s of the 60 s limit.
+  assert.ok(page.data.voiceProgress >= 20.4 && page.data.voiceProgress <= 20.6);
+
+  page.voiceStartedAt = Date.now() - 65000;
+  page.updateVoiceTimer();
+  assert.equal(page.data.voiceSeconds, 60);
+  assert.equal(page.data.voiceElapsed, '1:00');
+  assert.equal(page.data.voiceProgress, 100);
+
+  page.stopVoiceTimer();
+  assert.equal(page.data.voiceProgress, 0);
+  assert.equal(page.data.voiceElapsed, '0:00');
+});
+
 test('a failed transcription keeps the phase idle and shows the message', async () => {
   const page = makePage({ transcribeError: new Error('语音识别太频繁，请稍后再试') });
   page.onLoad();

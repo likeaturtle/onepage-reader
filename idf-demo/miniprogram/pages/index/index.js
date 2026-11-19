@@ -116,6 +116,10 @@ Page({
     voiceText: '',
     voiceRecording: false,
     voiceSeconds: 0,
+    // The 70%-wide hold button is also the recording progress bar, so the
+    // duration stays visible under the finger that covers the row below.
+    voiceProgress: 0,
+    voiceElapsed: '0:00',
     voicePhase: '',
     voiceButtonLabel: '按住 说话',
     voiceStatus: '说一句，AI 帮你填好',
@@ -191,6 +195,8 @@ Page({
         this.setData({
           voiceRecording: true,
           voiceSeconds: 0,
+          voiceProgress: 0,
+          voiceElapsed: '0:00',
           voiceError: '',
           voiceButtonLabel: '松开 发送',
           voiceStatus: '正在录音',
@@ -707,17 +713,32 @@ Page({
   startVoiceTimer() {
     this.stopVoiceTimer();
     this.voiceStartedAt = Date.now();
-    this.voiceTimer = setInterval(() => {
-      const elapsed = Date.now() - (this.voiceStartedAt || Date.now());
-      const seconds = Math.min(60, Math.floor(elapsed / 1000));
-      if (seconds !== this.data.voiceSeconds) this.setData({ voiceSeconds: seconds });
-    }, 500);
+    this.updateVoiceTimer();
+    this.voiceTimer = setInterval(() => this.updateVoiceTimer(), 500);
+  },
+
+  // Keeps both the elapsed seconds and the fill percentage of the hold
+  // button in sync with the recorder's 60 s limit.
+  updateVoiceTimer() {
+    const elapsed = Date.now() - (this.voiceStartedAt || Date.now());
+    const seconds = Math.min(60, Math.floor(elapsed / 1000));
+    const progress = Math.min(100, Math.round(elapsed / 60) / 10);
+    const label = `${Math.floor(seconds / 60)}:${fmt.pad(seconds % 60)}`;
+    if (seconds === this.data.voiceSeconds &&
+        progress === this.data.voiceProgress &&
+        label === this.data.voiceElapsed) {
+      return;
+    }
+    this.setData({ voiceSeconds: seconds, voiceProgress: progress, voiceElapsed: label });
   },
 
   stopVoiceTimer() {
     if (this.voiceTimer) {
       clearInterval(this.voiceTimer);
       this.voiceTimer = null;
+    }
+    if (this.data.voiceProgress || this.data.voiceSeconds || this.data.voiceElapsed !== '0:00') {
+      this.setData({ voiceProgress: 0, voiceSeconds: 0, voiceElapsed: '0:00' });
     }
   },
 

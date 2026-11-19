@@ -403,16 +403,16 @@
  * slot and fills it, so native <button> sizing never decides the ratio. */
 
 /* Hold-to-talk is a plain view: a <button> would swallow touchstart/end and
- * fire its own tap feedback. */
+ * fire its own tap feedback. It is also the recording progress bar: while the
+ * finger covers the row below, the fill and the elapsed time stay on the
+ * button itself. */
 .voice-hold {
+  position: relative;
   flex: 7 1 0;
   width: auto;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12rpx;
   height: 84rpx;
+  overflow: hidden;
   border-radius: 20rpx;
   background: #efe8d9;
   color: #2b2a24;
@@ -425,13 +425,49 @@
   user-select: none;
 }
 
+.voice-hold-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  height: 100%;
+  min-width: 0;
+}
+
+/* The red recording layer is clipped to the elapsed share of the 60 s limit,
+ * so the button keeps its idle beige background and the fill grows over it.
+ * It repeats the content in white; the base content stays dark, which keeps
+ * the label readable on the beige part and on the red part. */
+.voice-fill {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  background: #9c3427;
+  color: #fffdf8;
+  transition: clip-path 0.15s linear;
+  -webkit-transition: clip-path 0.15s linear;
+  pointer-events: none;
+}
+
+.voice-elapsed {
+  font-size: 26rpx;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
 .voice-hold-hover {
   background: #e4d9c3;
 }
 
+/* The button itself keeps the idle beige; only the red fill grows, and the
+ * lamp turns green to mark an active recording. */
 .voice-hold.recording {
-  background: #9c3427;
-  color: #ffffff;
+  background: #efe8d9;
 }
 
 .voice-hold.off {
@@ -439,14 +475,16 @@
 }
 
 .voice-dot {
+  flex: none;
   width: 14rpx;
   height: 14rpx;
   border-radius: 50%;
   background: #9c3427;
 }
 
-.voice-hold.recording .voice-dot {
-  background: #ffffff;
+.voice-hold.recording .voice-dot,
+.voice-fill .voice-dot {
+  background: #2c8a6f;
   animation: voice-pulse 1s infinite;
 }
 
@@ -474,10 +512,6 @@
   font-size: 22rpx;
   line-height: 1.5;
   color: #9a9482;
-}
-
-.voice-note.recording {
-  color: #9c3427;
 }
 
 .voice-error {

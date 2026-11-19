@@ -121,10 +121,28 @@
         catchtouchmove="noop"
         hover-class="voice-hold-hover"
         aria-role="button"
-        aria-label="按住说话"
+        aria-label="{{voiceRecording ? '松开结束录音' : '按住说话'}}"
       >
-        <view class="voice-dot"></view>
-        <text>{{voiceButtonLabel}}</text>
+        <view class="voice-hold-content">
+          <view class="voice-dot"></view>
+          <text>{{voiceButtonLabel}}</text>
+          <text wx:if="{{voiceRecording}}" class="voice-elapsed">{{voiceElapsed}}</text>
+        </view>
+        <!-- Red progress layer clipped to the elapsed share of the 60 s
+         * limit. It repeats the button content in white so the label stays
+         * readable over both the beige rest and the red fill. -->
+        <view
+          wx:if="{{voiceRecording}}"
+          class="voice-fill"
+          style="clip-path: inset(0 {{100 - voiceProgress}}% 0 0); -webkit-clip-path: inset(0 {{100 - voiceProgress}}% 0 0)"
+          aria-hidden="true"
+        >
+          <view class="voice-hold-content">
+            <view class="voice-dot"></view>
+            <text>{{voiceButtonLabel}}</text>
+            <text class="voice-elapsed">{{voiceElapsed}}</text>
+          </view>
+        </view>
       </view>
       <view class="voice-parse-slot">
         <button
@@ -136,11 +154,8 @@
       </view>
     </view>
 
-    <view wx:if="{{voiceRecording}}" class="voice-note recording">
-      {{voiceSeconds}} 秒 · 松开自动识别，最长 60 秒
-    </view>
-    <view wx:elif="{{voiceError}}" class="banner error voice-error">{{voiceError}}</view>
-    <view wx:else class="voice-note">录音会发送到 DeepSeek 识别，确认文字后填入下方表单</view>
+    <view wx:if="{{voiceError}}" class="banner error voice-error">{{voiceError}}</view>
+    <view wx:else class="voice-note">录音会发送到 DeepSeek 识别，单次最长 60 秒，确认文字后填入下方表单</view>
   </view>
 
   <view id="add-card" class="card">
