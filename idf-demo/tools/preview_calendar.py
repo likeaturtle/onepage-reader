@@ -10,9 +10,9 @@ footer baseline at y=752.
     /Users/fujd/.espressif/tools/python/v6.1/venv/bin/python tools/preview_calendar.py
 
 Outputs tools/preview_month.png, preview_day.png, preview_detail.png,
-preview_delete.png, preview_sleep.png, preview_sleep_empty.png and
-preview_boot.png. It also reads the generated brand logo bitmaps so the top
-bar, lock screen and boot splash match the firmware exactly.
+preview_delete.png, preview_sleep.png, preview_sleep_empty.png,
+preview_boot.png and preview_pairing.png. It also reads the generated brand logo
+bitmaps so the top bar, lock screen and boot splash match the firmware exactly.
 """
 
 import datetime as dt
@@ -603,6 +603,30 @@ def boot_preview():
     s.save("preview_boot.png")
 
 
+def pairing_preview():
+    code = "K7Q4M2X9B3TF"
+    s = Screen()
+    s.text_utf8(MARGIN, 28, BRAND_NAME)
+    s.text_right(28, "BLE 配对")
+    s.hline(MARGIN, HEADER_RULE_Y, CONTENT_W)
+
+    s.text_utf8(MARGIN, 100, "设备配对")
+    s.text_utf8(MARGIN, 140, "在小程序中输入以下配对码")
+    for row in range(3):
+        line = code[row * 4:(row + 1) * 4]
+        width = s.text5x7_width(line, 6)
+        s.text5x7((W - width) // 2, 200 + row * 80, line, 6)
+
+    s.centered(500, "配对码 3 分钟内有效")
+    s.centered(540, "配对后所有日程指令都会加密")
+    s.centered(580, "重新配对会替换当前手机")
+    s.centered(620, "长按 CONFIRM 8 秒可清除绑定")
+
+    s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
+    s.text_utf8(MARGIN, FOOTER_TEXT_Y, "BACK 取消")
+    s.save("preview_pairing.png")
+
+
 def main():
     month_preview()
     day_preview()
@@ -612,6 +636,7 @@ def main():
     sleep_preview()
     sleep_preview(empty=True)
     boot_preview()
+    pairing_preview()
 
 
 if __name__ == "__main__":

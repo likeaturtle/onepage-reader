@@ -6,6 +6,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "ble_auth.h"
 #include "brand.h"
 #include "calendar.h"
 #include "cJSON.h"
@@ -31,10 +32,11 @@ void ble_store_config_init(void);
 
 static const char *TAG = "ble_cal";
 
-#define PROTO_VERSION 2
+#define PROTO_VERSION 3
 #define RX_BUF_SIZE 2048
-#define LINE_BUF_SIZE 768
-#define NOTIFY_BUF_SIZE 900
+#define LINE_BUF_SIZE 1024
+#define NOTIFY_BUF_SIZE 1536
+#define INNER_BUF_SIZE 1024
 #define MAX_NOTIFY_CHUNK 180
 
 /* The firmware version has exactly one source: version.txt at the project root.
@@ -80,6 +82,9 @@ static SemaphoreHandle_t s_stopped;
 static uint8_t s_rx_buf[RX_BUF_SIZE];
 static size_t s_rx_len;
 static bool s_rx_overflow;
+static char s_notify_line[NOTIFY_BUF_SIZE];
+static char s_encrypted_line[NOTIFY_BUF_SIZE];
+static char s_inner_line[INNER_BUF_SIZE];
 static volatile bool s_hello_pending;
 static volatile bool s_shutting_down;
 static volatile bool s_stop_requested;
@@ -253,13 +258,27 @@ static bool notify_bytes(const char *data, size_t len) {
   return true;
 }
 
-static void notify_json(const char *json) {
-  char line[NOTIFY_BUF_SIZE];
-  const int n = snprintf(line, sizeof(line), "%s\n", json);
+static void notify_json_plain(const char *json) {
+  const int n = snprintf(s_notify_line, sizeof(s_notify_line), "%s\n", json);
   if (n <= 0) {
     return;
   }
-  notify_bytes(line, (size_t)n < sizeof(line) ? (size_t)n : sizeof(line) - 1);
+  notify_bytes(s_notify_line, (size_t)n < sizeof(s_notify_line) ? (size_t)n
+                                                               : sizeof(s_notify_line) - 1);
+}
+
+/* Every command response and event goes through here: after auth the JSON is
+ * wrapped in an encrypted frame, before auth (hello/auth) it is plaintext. */
+static void notify_json(const char *json) {
+  if (!ble_auth_is_authed()) {
+    notify_json_plain(json);
+    return;
+  }
+  if (!ble_auth_encrypt_line(json, s_encrypted_line, sizeof(s_encrypted_line))) {
+    ESP_LOGE(TAG, "frame encryption failed");
+    return;
+  }
+  notify_json_plain(s_encrypted_line);
 }
 
 static void send_error(const char *message) {
@@ -312,6 +331,21 @@ static void send_event(const cal_event_t *event) {
 }
 
 static void send_hello(void) {
+  if (!ble_auth_is_authed()) {
+    char hello[360];
+    const int n = snprintf(
+        hello, sizeof(hello),
+        "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\",\"did\":\"%s\","
+        "\"auth\":true,\"paired\":%s,\"pairing\":%s,\"nonce\":\"%s\"}",
+        PROTO_VERSION, fw_version(), BRAND_NAME, ble_auth_did(),
+        ble_auth_has_key() ? "true" : "false",
+        ble_auth_pairing_active() ? "true" : "false", ble_auth_nonce_hex());
+    if (n > 0 && n < (int)sizeof(hello)) {
+      notify_json_plain(hello);
+    }
+    return;
+  }
+
   char cals[420];
   size_t off = 0;
   cals[0] = '\0';
@@ -325,14 +359,15 @@ static void send_hello(void) {
     off += (size_t)n;
   }
 
-  char json[700];
+  char json[800];
   const int n = snprintf(
       json, sizeof(json),
-      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\","
+      "{\"ev\":\"hello\",\"proto\":%d,\"fw\":\"%s\",\"name\":\"%s\",\"did\":\"%s\","
+      "\"auth\":true,\"authed\":true,"
       "\"now\":%u,\"tz\":%d,\"time_valid\":%s,\"time_synced\":%s,\"events\":%d,"
       "\"calendars\":%d,\"cals\":[%s]}",
-      PROTO_VERSION, fw_version(), BRAND_NAME, (unsigned)calendar_now_epoch(),
-      calendar_tz_minutes(),
+      PROTO_VERSION, fw_version(), BRAND_NAME, ble_auth_did(),
+      (unsigned)calendar_now_epoch(), calendar_tz_minutes(),
       calendar_time_valid() ? "true" : "false",
       calendar_time_synced() ? "true" : "false", calendar_event_count(), calendar_count(),
       cals);
@@ -583,19 +618,7 @@ static void handle_sleep(cJSON *root) {
   }
 }
 
-static void process_line(const char *line) {
-  cJSON *root = cJSON_Parse(line);
-  if (!root) {
-    send_error("bad json");
-    return;
-  }
-  const char *cmd = get_string(root, "cmd");
-  if (!cmd) {
-    send_error("missing cmd");
-    cJSON_Delete(root);
-    return;
-  }
-
+static void dispatch_command(cJSON *root, const char *cmd) {
   if (strcmp(cmd, "hello") == 0) {
     handle_hello(root);
   } else if (strcmp(cmd, "time") == 0) {
@@ -615,6 +638,57 @@ static void process_line(const char *line) {
   } else {
     send_error("unknown cmd");
   }
+}
+
+static void process_line(const char *line) {
+  cJSON *root = cJSON_Parse(line);
+  if (!root) {
+    send_error("bad json");
+    return;
+  }
+  const char *cmd = get_string(root, "cmd");
+
+  if (!ble_auth_is_authed()) {
+    if (cmd && strcmp(cmd, "auth") == 0) {
+      char response[320];
+      bool paired_now = false;
+      ble_auth_handle_auth(root, response, sizeof(response), &paired_now);
+      (void)paired_now;
+      notify_json_plain(response);
+    } else if (cmd && strcmp(cmd, "hello") == 0) {
+      handle_hello(root);
+    } else {
+      send_error("auth required");
+    }
+    cJSON_Delete(root);
+    return;
+  }
+
+  /* Once authenticated every command is an encrypted wrapper object. */
+  if (cmd || !cJSON_GetObjectItemCaseSensitive(root, "s")) {
+    send_error("encrypted frame required");
+    cJSON_Delete(root);
+    return;
+  }
+  if (!ble_auth_decrypt_frame(root, s_inner_line, sizeof(s_inner_line))) {
+    send_error("bad frame");
+    cJSON_Delete(root);
+    return;
+  }
+  cJSON_Delete(root);
+
+  root = cJSON_Parse(s_inner_line);
+  if (!root) {
+    send_error("bad json");
+    return;
+  }
+  cmd = get_string(root, "cmd");
+  if (!cmd) {
+    send_error("missing cmd");
+    cJSON_Delete(root);
+    return;
+  }
+  dispatch_command(root, cmd);
   cJSON_Delete(root);
 }
 
@@ -765,6 +839,7 @@ static int gap_event(struct ble_gap_event *event, void *arg) {
       s_connected = true;
       s_subscribed = false;
       s_mtu = ble_att_mtu(s_conn_handle);
+      ble_auth_reset_session();
       xSemaphoreTake(s_lock, portMAX_DELAY);
       s_rx_len = 0;
       s_rx_overflow = false;
@@ -780,6 +855,7 @@ static int gap_event(struct ble_gap_event *event, void *arg) {
       s_subscribed = false;
       s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
       s_hello_pending = false;
+      ble_auth_reset_session();
       xSemaphoreTake(s_lock, portMAX_DELAY);
       s_rx_len = 0;
       s_rx_overflow = false;
@@ -801,6 +877,8 @@ static int gap_event(struct ble_gap_event *event, void *arg) {
         s_subscribed = event->subscribe.cur_notify;
         ESP_LOGI(TAG, "notifications %s", s_subscribed ? "on" : "off");
         if (s_subscribed) {
+          /* Keep the nonce issued on connect: resetting it here could race
+           * with an early hello write and invalidate the client's proof. */
           s_hello_pending = true;
           xSemaphoreGive(s_wake);
         }
@@ -829,6 +907,7 @@ static void on_reset(int reason) {
   s_connected = false;
   s_subscribed = false;
   s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+  ble_auth_reset_session();
   fire_conn();
 }
 
@@ -864,6 +943,11 @@ esp_err_t ble_calendar_init(void) {
   s_stopped = xSemaphoreCreateBinary();
   if (!s_lock || !s_wake || !s_stopped) {
     return ESP_ERR_NO_MEM;
+  }
+
+  const esp_err_t auth_err = ble_auth_init();
+  if (auth_err != ESP_OK) {
+    ESP_LOGW(TAG, "auth init: %s", esp_err_to_name(auth_err));
   }
 
   esp_err_t err = nimble_port_init();
@@ -924,6 +1008,35 @@ bool ble_calendar_subscribed(void) { return s_subscribed; }
 
 uint16_t ble_calendar_mtu(void) { return s_mtu; }
 
+bool ble_calendar_start_pairing(bool clear_key) {
+  /* The pairing code is verified by the BLE task; keep the key/NVS writes out
+   * of a live authenticated session. */
+  if (s_connected) {
+    return false;
+  }
+  return ble_auth_start_pairing(clear_key) == ESP_OK;
+}
+
+void ble_calendar_cancel_pairing(void) {
+  ble_auth_cancel_pairing();
+}
+
+bool ble_calendar_pairing_active(void) {
+  return ble_auth_pairing_active();
+}
+
+bool ble_calendar_pairing_code(char *out, size_t out_len) {
+  return ble_auth_pairing_code(out, out_len);
+}
+
+bool ble_calendar_take_pairing_succeeded(void) {
+  return ble_auth_take_pairing_succeeded();
+}
+
+bool ble_calendar_has_key(void) {
+  return ble_auth_has_key();
+}
+
 void ble_calendar_shutdown(void) {
   if (!s_inited) {
     return;
@@ -931,6 +1044,7 @@ void ble_calendar_shutdown(void) {
   s_shutting_down = true;
   s_hello_pending = false;
   s_stop_requested = true;
+  ble_auth_reset_session();
   xSemaphoreGive(s_wake);
   if (xSemaphoreTake(s_stopped, pdMS_TO_TICKS(1500)) != pdTRUE) {
     ESP_LOGW(TAG, "RX task did not stop in time");

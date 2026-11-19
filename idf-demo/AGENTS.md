@@ -56,6 +56,10 @@
   实测会让按键/刷新/串口假死。
 - BLE 服务/特征 UUID 同时出现在 `components/ble_calendar/include/ble_calendar.h`
   和 `web/index.html`，改一处必须同步另一处。
+- BLE 协议 3 的认证/加密实现是固件 + 小程序 + 网页三端同一套约定：
+  `miniprogram/utils/ble-auth.js` 与 `web/ble-auth.js` 必须保持字节一致（有测试检查），
+  改握手/帧格式时同步改固件 `ble_auth.c`、`docs/ble-protocol.md` 和两端客户端；
+  旧客户端会被 `auth required` 拒绝。配对码/密钥不要写进日志。
 - 日历数据在 `storage` 分区（LittleFS）的 `/lfs/calendar.db`，NVS 只放时钟/时区/校准；
   改 `partitions.csv` 后必须 `idf.py flash -a`，否则找不到分区会启动失败。
 - `font_gb2312_24.bin` / `font_cjk_large.c` 是 `tools/gen_cjk_bitmaps.py` 生成的，

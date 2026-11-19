@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -37,6 +38,16 @@ void ble_calendar_set_callbacks(const ble_calendar_callbacks_t *callbacks);
 bool ble_calendar_connected(void);
 bool ble_calendar_subscribed(void);
 uint16_t ble_calendar_mtu(void);
+
+/* Pairing / auth state for the UI. Pairing is only allowed while no phone is
+ * connected; it prints a one-time code on screen and accepts a pairing
+ * handshake for three minutes. */
+bool ble_calendar_start_pairing(bool clear_key);
+void ble_calendar_cancel_pairing(void);
+bool ble_calendar_pairing_active(void);
+bool ble_calendar_pairing_code(char *out, size_t out_len);
+bool ble_calendar_take_pairing_succeeded(void);
+bool ble_calendar_has_key(void);
 
 /* Stops the host and controller. Call before deep sleep so the radio is not
  * left in an undefined state and the current draw drops immediately. */

@@ -17,27 +17,171 @@ the default MTU of 23 because the client writes 20-byte chunks.
 The advertised data contains the 128-bit service UUID; the scan response
 contains the ASCII alias `Mochen CalCal` (kept for central stacks and the mini
 program scan prefix). After connecting, `hello` and INFO report the canonical
-product name `墨程CalCal`. No pairing or bonding is required. This means any
-BLE central in radio range can modify the calendar; the protocol is intended
-for a personal device on a desk, not for an untrusted environment.
+product name `墨程CalCal`. Firmware 1.2.0 / protocol 3 requires authentication:
+a client has to prove knowledge of the device key and encrypt every command and
+event. The BLE link itself still has no SMP pairing/bonding.
 
-The INFO characteristic is a convenience for generic BLE apps:
+The INFO characteristic is a convenience for generic BLE apps and is not
+encrypted:
 
 ```json
-{"name":"墨程CalCal","fw":"1.2.0","proto":2,"events":12,"calendars":1,"time_valid":true}
+{"name":"墨程CalCal","fw":"1.2.0","proto":3,"events":12,"calendars":1,"time_valid":true}
 ```
 
 `fw` is the image version built from the project's `version.txt` (the firmware
 reads it back from the app description, so there is no second copy to keep in
 sync); `proto` is the protocol revision and moves independently of `fw`.
 
+
+## Authentication and encryption (proto 3)
+
+Firmware 1.2.0 and protocol 3 replace the old open protocol. The handshake and
+frame format below are the contract between the firmware, the mini program
+(`miniprogram/utils/ble-auth.js`) and the web page (`web/ble-auth.js`; the two
+files must stay identical).
+
+### Pairing
+
+A new device has no key. To pair it or to replace the current phone:
+
+- wake the device with POWER and make sure no phone is connected (the device
+  refuses to start pairing while a BLE link is up);
+- hold **CONFIRM for 3 s**: the screen shows a one-time 12-character code for
+  3 minutes. Holding **CONFIRM for 8 s** also erases the old key before showing
+  a new code;
+- connect from the client and enter the code shown on screen.
+
+The code alphabet is Crockford base32 (`0-9`, `A-Z` without `I`, `L`, `O`,
+`U`); the display groups it as `XXXX-XXXX-XXXX`. The canonical form is the
+12-character uppercase string with no separators. The code is never sent over
+BLE; it is only used as HKDF input:
+
+```
+K_pair = HKDF-SHA256(ikm=code, salt=did, info="mochen-calcal-pair-v1", 32)
+K_long = HKDF-SHA256(ikm=code, salt=did, info="mochen-calcal-key-v1", 32)
+```
+
+`did` is the uppercase 12-hex-digit Bluetooth MAC (for example
+`A1B2C3D4E5F6`). HKDF is RFC 5869 with SHA-256; `code` and `did` are ASCII.
+
+The device stores exactly one `K_long`. A successful pairing replaces the old
+key, so the previous phone stops working on its next connection. The pairing
+code is discarded as soon as pairing succeeds.
+
+### Handshake
+
+When notifications are enabled the device sends a minimal, unencrypted hello:
+
+```json
+{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","did":"A1B2C3D4E5F6",
+ "auth":true,"paired":false,"pairing":true,"nonce":"<32 hex>"}
+```
+
+`nonce` is a fresh 16-byte device nonce for this connection. `paired` reports
+whether a key exists; `pairing` reports whether the 3-minute pairing window is
+open. The client registers for this event and may also send
+`{"cmd":"hello"}` before auth to request the same minimal hello again.
+
+The client sends:
+
+```json
+{"cmd":"auth","did":"A1B2C3D4E5F6","nonce":"<32 hex>","proof":"<64 hex>","pair":true}
+```
+
+- `nonce` is a fresh 16-byte client nonce (hex).
+- `pair` is `true` only when using the code shown on screen; otherwise the
+  client uses its stored `K_long`.
+- `proof = HMAC-SHA256(K_auth, "mochen-calcal-client-v1|" + did + "|" +
+  nonce_d + "|" + nonce_a + "|" + mode)`, where `nonce_d` is the device nonce,
+  `nonce_a` the client nonce, `mode` is `pair` or `auth`, and `K_auth` is
+  `K_pair` for pairing or the stored `K_long` otherwise.
+
+On success the device replies in plaintext (this is the one response after the
+request that is not encrypted):
+
+```json
+{"ev":"auth","ok":true,"proto":3,"paired":true,"pairing":false,"proof":"<64 hex>"}
+```
+
+The device proof is `HMAC-SHA256(K_long, "mochen-calcal-device-v1|" + did +
+"|" + nonce_a + "|" + nonce_d + "|" + mode)`. Note the reversed nonce order;
+this prevents reflecting the client proof. On pairing success the client
+derives `K_long` with the same code and verifies this proof, then stores
+`K_long` locally.
+
+Failure responses are also plaintext:
+
+```json
+{"ev":"auth","ok":false,"proto":3,"error":"bad proof","paired":true,"pairing":false}
+```
+
+Possible errors: `bad auth request`, `bad proof`, `not paired`,
+`pairing not active`, `too many attempts`, `auth unavailable`. After five
+failed handshakes the device pauses attempts for 60 seconds.
+
+### Session keys and frames
+
+After a successful handshake both sides derive four keys with HKDF-SHA256
+(salt is the 32 bytes `nonce_d || nonce_a`, IKM is `K_long`):
+
+| Key | info string |
+|:---|:---|
+| `K_enc_c2d` | `mochen-calcal-enc-c2d-v1` |
+| `K_mac_c2d` | `mochen-calcal-mac-c2d-v1` |
+| `K_enc_d2c` | `mochen-calcal-enc-d2c-v1` |
+| `K_mac_d2c` | `mochen-calcal-mac-d2c-v1` |
+
+Every post-auth command and every post-auth response/event is one encrypted
+wrapper line:
+
+```json
+{"s":1,"iv":"<32 hex>","d":"<base64>","m":"<64 hex>"}
+```
+
+- `s` is a per-direction sequence number starting at 1. Receivers require a
+  strictly increasing sequence and ignore replays.
+- `iv` is 16 random bytes. `d` is `AES-256-CBC(K_enc_dir, iv, PKCS#7(inner
+  JSON))`, base64-encoded.
+- `m = HMAC-SHA256(K_mac_dir, "mochen-calcal-frame-v1|" + dir + "|" + s + "|"
+  + iv_hex + "|" + ciphertext_hex)`, `dir` is `c2d` (phone to device) or `d2c`.
+- The inner JSON is the same command/event object as before, for example
+  `{"cmd":"list","from":"2026-11-01","to":"2026-11-30"}` or
+  `{"ev":"ev","id":7,...}`. Plaintext commands after auth are rejected with
+  `encrypted frame required`; plaintext frames after auth are ignored by
+  clients.
+
+The `hello` command sent by an authenticated client returns the full hello
+(the old fields: `now`, `tz`, `time_valid`, `events`, `calendars`, `cals`)
+inside an encrypted frame. Old clients/browsers that only speak proto 2 will
+receive `auth required`; update them before using a proto 3 device.
+
+### Security notes
+
+- The pairing code has 60 bits of entropy and is valid for three minutes. It is
+  a personal-device tradeoff: an attacker who captures the pairing handshake
+  can attempt an offline brute force. A future QR-code/128-bit pairing flow can
+  remove that limitation without changing the frame format.
+- The device key lives in NVS in plaintext; enable NVS/flash encryption if
+  physical extraction is in scope. Phone-side keys live in the mini program
+  storage / `localStorage`, protected by the OS sandbox but not by a secure
+  element.
+- There is no SMP bonding, so the BLE metadata (device name, connection
+  timing, packet sizes) is still visible; calendar content and commands are
+  encrypted end to end.
+- Pairing is gated by a physical CONFIRM hold. A nearby device that imitates
+  the advertisement can still be selected by the user (phishing); check the
+  `did`/name shown by the client.
+- `INFO` stays unauthenticated and exposes the firmware version, event count
+  and clock validity only.
+
 ## Framing
 
 - Both directions are **UTF-8 JSON objects, one per line**, terminated by
   `\n`. `\r\n` is accepted from desktop test clients.
-- A JSON line must fit in 768 bytes on the device (the client should keep it
-  well below that). Multiple lines may arrive in one write; the device
-  processes them in order.
+- The inner JSON line must fit in 768 bytes on the device (the client should
+  keep it well below that). An encrypted wrapper is allowed to grow to 1024
+  bytes inbound and 1536 bytes outbound because of the base64/MAC overhead.
+  Multiple lines may arrive in one write; the device processes them in order.
 - A write may split a line at any byte. The device buffers until the newline.
   The reference page writes 20-byte chunks, so this works with MTU 23.
 - Notifications are split into chunks of `min(MTU - 3, 180)` bytes and each
@@ -58,11 +202,24 @@ instead of a single ack.
 {"cmd":"hello"}
 ```
 
-Response:
+Pre-auth response (also pushed automatically when notifications are enabled):
 
 ```json
-{"ev":"hello","proto":2,"fw":"1.2.0","name":"墨程CalCal","now":1762703820,"tz":480,"time_valid":true,"time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
+{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","did":"A1B2C3D4E5F6",
+ "auth":true,"paired":true,"pairing":false,"nonce":"<32 hex>"}
 ```
+
+Post-auth response (encrypted wrapper; this is what a client should use for the
+device name, clock and event count):
+
+```json
+{"ev":"hello","proto":3,"fw":"1.2.0","name":"墨程CalCal","did":"A1B2C3D4E5F6",
+ "auth":true,"authed":true,"now":1762703820,"tz":480,"time_valid":true,
+ "time_synced":true,"events":12,"calendars":1,"cals":["日历"]}
+```
+
+The full response is only sent after a successful handshake. A pre-auth hello
+deliberately omits the calendar data and clock.
 
 This build exposes a single calendar. `cals` still exists for protocol
 compatibility but has one entry, and `cal` in commands/events is ignored
@@ -71,9 +228,11 @@ the device epoch, `tz` is minutes east of UTC, and `time_synced` is false when
 the clock was restored from NVS after a power loss rather than from the RTC or
 a phone sync. The page sends `time` after every connect.
 
-`proto` 2 adds the `update` command. Firmware before that answers
-`{"ok":false,"error":"unknown cmd"}`, so a client that edits events on an older
-board can fall back to `del` + `add` (and remap the new id).
+`proto` 2 added the `update` command and proto 3 keeps it. Firmware older than
+the command answers `{"ok":false,"error":"unknown cmd"}`, so a client that
+edits events on such a board can fall back to `del` + `add` (and remap the new
+id). Clients must refuse proto < 3 rather than falling back to an unauthenticated
+protocol.
 
 ### `time`
 
@@ -198,9 +357,12 @@ Useful for checking that the link and the command task are alive.
 | `bad date`, `bad start`, `bad end` | malformed or out-of-range year/time |
 | `bad id` | `id` is missing or outside 1..65535 |
 | `empty title` | title is missing/empty |
+| `auth required` | a command other than `hello`/`auth` arrived before auth |
+| `encrypted frame required` | a plaintext command arrived after auth |
+| `bad frame` | encrypted wrapper failed MAC/decryption/sequence checks |
 | `calendar full` | 96 events and no past events left to prune |
 | `not found` | event id does not exist |
-| `line too long` | a single line exceeded the 768-byte receive buffer |
+| `line too long` | a single line exceeded the 1024-byte receive buffer |
 | `out of memory` | the device could not allocate the list buffer |
 | `time persist failed` | no longer emitted: a failed NVS write is reported as `"persist":false` |
 

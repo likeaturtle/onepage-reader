@@ -226,6 +226,8 @@
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script src="vendor/crypto-js.js"></script>
+<script src="ble-auth.js"></script>
 <script>
 (() => {
   "use strict";
@@ -251,7 +253,12 @@
     encoder: new TextEncoder(),
     loadingList: false,
     pendingLoad: false,
+    authed: false,
+    session: null,
+    did: "",
   };
+
+  const auth = window.CalCalAuth;
 
   // --- helpers ----------------------------------------------------------
   const pad = (n) => String(n).padStart(2, "0");
@@ -367,12 +374,30 @@
       const line = state.rxText.slice(0, index).trim();
       state.rxText = state.rxText.slice(index + 1);
       if (!line) continue;
-      log("←", line);
+      let message;
       try {
-        handleMessage(JSON.parse(line));
+        message = JSON.parse(line);
       } catch (err) {
+        log("←", line);
         log("!", `JSON 解析失败: ${err.message}`);
+        continue;
       }
+      if (state.authed && state.session) {
+        if (!(message.s !== undefined && message.iv && message.d && message.m)) {
+          log("!", "收到未加密的帧，已忽略");
+          continue;
+        }
+        const plain = state.session.decrypt(message);
+        if (!plain) {
+          log("!", "认证帧解密失败，已忽略");
+          continue;
+        }
+        message = plain;
+        log("←", JSON.stringify(message));
+      } else {
+        log("←", line);
+      }
+      handleMessage(message);
     }
   }
 
@@ -391,7 +416,7 @@
     return state.writeChain;
   }
 
-  function send(command) {
+  function sendPlain(command) {
     const line = JSON.stringify(command) + "\n";
     log("→", line.trim());
     return sendRaw(state.encoder.encode(line)).catch((err) => {
@@ -400,9 +425,26 @@
     });
   }
 
+  async function send(command) {
+    if (!state.connected) throw new Error("未连接");
+    if (!state.authed || !state.session) throw new Error("设备未认证");
+    const line = await state.session.encrypt(command);
+    log("→", JSON.stringify(command));
+    return sendRaw(state.encoder.encode(line + "\n")).catch((err) => {
+      log("!", `发送失败: ${err.message}`);
+      throw err;
+    });
+  }
+
   async function command(payload, predicate, timeout = 7000) {
     const waiter = waitFor(predicate, timeout);
     await send(payload);
+    return waiter;
+  }
+
+  async function commandPlain(payload, predicate, timeout = 7000) {
+    const waiter = waitFor(predicate, timeout);
+    await sendPlain(payload);
     return waiter;
   }
 
@@ -584,6 +626,138 @@
     log("i", `时间已同步，时区 ${tz >= 0 ? "+" : ""}${tz} 分钟`);
   }
 
+  // --- protocol v3 authentication --------------------------------------
+  function keyStorageName(did) {
+    return `calcal.auth.${did}`;
+  }
+
+  function storedKey(did) {
+    try {
+      const encoded = localStorage.getItem(keyStorageName(did));
+      if (!encoded) return null;
+      const bytes = auth.base64ToBytes(encoded);
+      return bytes.length === 32 ? bytes : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function rememberKey(did, key) {
+    try {
+      localStorage.setItem(keyStorageName(did), auth.bytesToBase64(key));
+    } catch (_) {
+      // A full or blocked storage only means the user re-pairs next time.
+    }
+  }
+
+  async function runAuth(did, nonceD, key, mode) {
+    const nonceA = auth.bytesToHex(await auth.randomBytes(16));
+    const proof = auth.clientProof(key, did, nonceD, nonceA, mode);
+    const response = await commandPlain(
+      { cmd: "auth", did, nonce: nonceA, proof, pair: mode === "pair" },
+      (m) => m && m.ev === "auth",
+      7000
+    );
+    if (!response.ok) {
+      const error = new Error(response.error || "设备认证失败");
+      error.code = response.error;
+      throw error;
+    }
+    return { nonceA, response };
+  }
+
+  async function authWithKey(longKey, did, nonceD) {
+    const { nonceA, response } = await runAuth(did, nonceD, longKey, "auth");
+    const expected = auth.deviceProof(longKey, did, nonceA, nonceD, "auth");
+    if (!auth.secureEqualHex(expected, response.proof)) {
+      throw new Error("设备身份校验失败");
+    }
+    state.session = auth.createSession(longKey, nonceD, nonceA, "app");
+    state.authed = true;
+  }
+
+  async function pairWithCode(code, did, nonceD) {
+    const pairKey = auth.derivePairKey(code, did);
+    const longKey = auth.deriveLongKey(code, did);
+    const { nonceA, response } = await runAuth(did, nonceD, pairKey, "pair");
+    const expected = auth.deviceProof(longKey, did, nonceA, nonceD, "pair");
+    if (!auth.secureEqualHex(expected, response.proof)) {
+      throw new Error("设备身份校验失败");
+    }
+    state.session = auth.createSession(longKey, nonceD, nonceA, "app");
+    state.authed = true;
+    rememberKey(did, longKey);
+  }
+
+  function pairingError(err) {
+    switch (err && err.code) {
+      case "bad proof":
+        return new Error("配对码错误");
+      case "pairing not active":
+        return new Error("配对已过期，请在设备上重新长按 CONFIRM 3 秒");
+      case "too many attempts":
+        return new Error("尝试次数过多，请稍后重试");
+      default:
+        return err;
+    }
+  }
+
+  async function authenticate(pre) {
+    if (!auth) throw new Error("认证模块未加载，请刷新页面");
+    const did = String(pre.did || "");
+    const nonceD = String(pre.nonce || "");
+    if (!did || !/^[0-9a-f]{32}$/.test(nonceD)) {
+      throw new Error("设备认证信息不完整，请升级固件后重试");
+    }
+    state.did = did;
+
+    const key = storedKey(did);
+    if (key) {
+      try {
+        await authWithKey(key, did, nonceD);
+        return;
+      } catch (err) {
+        if (err.code !== "bad proof" && err.code !== "not paired") throw err;
+        // Keep the old key: a fake device or a device re-paired by someone
+        // else must not be able to erase it. A successful re-pair overwrites it.
+        if (!pre.pairing) {
+          throw new Error(pre.paired
+            ? "设备认证失败（可能已被其他手机重新配对），请在设备上长按 CONFIRM 3 秒重新配对"
+            : "设备已重置，请在设备上长按 CONFIRM 3 秒重新配对");
+        }
+      }
+    }
+
+    if (!pre.pairing) {
+      throw new Error(pre.paired
+        ? "此浏览器尚未绑定该设备，请在设备上长按 CONFIRM 3 秒后重试"
+        : "设备未绑定，请在设备上长按 CONFIRM 3 秒后重试");
+    }
+
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const entered = window.prompt(
+        lastError
+          ? `${lastError.message}，请重新输入设备屏幕上的 12 位配对码`
+          : "请输入设备屏幕上的 12 位配对码（例如 K7Q4-M2X9-B3TF）",
+        ""
+      );
+      if (entered === null) throw new Error("已取消配对");
+      if (!auth.isValidCode(entered)) {
+        lastError = new Error("配对码格式不正确");
+        continue;
+      }
+      try {
+        await pairWithCode(entered, did, nonceD);
+        return;
+      } catch (err) {
+        lastError = pairingError(err);
+        if (/too many|尝试次数/.test(lastError.message)) break;
+      }
+    }
+    throw lastError || new Error("配对失败");
+  }
+
   async function connect() {
     if (!navigator.bluetooth) {
       showCompat();
@@ -606,15 +780,23 @@
       state.tx = await service.getCharacteristic(TX_UUID);
       state.tx.addEventListener("characteristicvaluechanged", onNotify);
 
-      const helloPromise = waitFor((m) => m.ev === "hello", 7000);
+      const helloPromise = waitFor((m) => m && m.ev === "hello", 7000);
       await state.tx.startNotifications();
       state.connected = true;
+      state.authed = false;
+      state.session = null;
+      state.did = "";
       state.writeChain = Promise.resolve();
       updateControls();
       setStatus("on", "已连接");
       toast("已连接设备");
-      await send({ cmd: "hello" });
-      const hello = await helloPromise;
+      await sendPlain({ cmd: "hello" });
+      const pre = await helloPromise;
+      if (!pre || Number(pre.proto) < 3) {
+        throw new Error("设备固件过旧，请先升级固件");
+      }
+      await authenticate(pre);
+      const hello = await command({ cmd: "hello" }, (m) => m && m.ev === "hello", 7000);
       applyHello(hello);
       updateControls();
       await syncTime().catch((err) => {
@@ -628,6 +810,11 @@
       setStatus("err", "连接失败");
       toast(`连接失败：${err.message}`);
       state.connected = false;
+      state.authed = false;
+      state.session = null;
+      if (state.device && state.device.gatt && state.device.gatt.connected) {
+        try { state.device.gatt.disconnect(); } catch (_) { /* ignore */ }
+      }
       updateControls();
     } finally {
       $("connectBtn").disabled = false;
@@ -636,6 +823,8 @@
 
   function onDisconnected() {
     state.connected = false;
+    state.authed = false;
+    state.session = null;
     state.rx = null;
     state.tx = null;
     state.device = null;

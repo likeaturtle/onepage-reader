@@ -1242,3 +1242,79 @@ PCM，但没有 WAV 头；更关键的是 **API Key 不能放进小程序源码*
   - 信息不足用默认值、不反问；内容不像完整日程也生成一条，避免空标题。
 - 服务端新增 `cleanTitle()` 兜底：即使模型忽略规则，也会去掉标题末尾的 `。！？!?；;，,、`。
 - 测试补充提示词锚点/ASR/单事件断言和标题末尾标点清理；服务端共 31 个用例通过。
+
+## 22. 2026-11-19：BLE 协议 3，应用层认证与加密
+
+### 22.1 为什么不用 BLE SMP
+
+小程序没有主动发起配对/绑定的 API，配对框和密码输入由系统接管；Android/微信版本之间的
+表现不一致，iOS 也完全由系统决定。把认证交给 SMP 会让主客户端不可控。协议 3 因此在
+现有 JSON 行协议上做应用层认证：不依赖系统配对，iOS/Android/网页行为一致，也能写 Node
+单测。
+
+### 22.2 配对
+
+- 设备在**未连接手机**时长按 CONFIRM 3 秒进入 3 分钟配对窗口，墨水屏显示一次性 12 位
+  Crockford base32 码（`XXXX-XXXX-XXXX`，60 bit）。长按 8 秒先清除旧密钥再进入配对。
+- 配对码只用于 HKDF：
+  `K_pair = HKDF(code, salt=did, "mochen-calcal-pair-v1")`，
+  `K_long = HKDF(code, salt=did, "mochen-calcal-key-v1")`；`did` 是 BLE MAC 的 12 位大写
+  hex。配对成功后设备只保存 `K_long`，配对码作废。
+- 设备只保存一个密钥槽：重新配对会替换旧手机；长按 CONFIRM 8 秒或擦除 NVS 才能清掉。
+- 配对码**不经过 BLE**；手机把它输入小程序/网页，用 HMAC 证明持有它。
+
+### 22.3 握手和帧
+
+- 订阅通知后设备先发 minimal hello（`did`、`paired`、`pairing`、`nonce`、`auth:true`），
+  不含日程数量和时钟；认证成功后客户端再发 `hello` 取完整信息。
+- 客户端 `auth`：`nonce_a` + `proof = HMAC(K_auth, "mochen-calcal-client-v1|did|nonce_d|nonce_a|mode")`；
+  设备用 `"mochen-calcal-device-v1|did|nonce_a|nonce_d|mode"` 回证。`mode` 为 `pair`/`auth`。
+- 会话四把钥匙用 HKDF（salt=`nonce_d||nonce_a`，IKM=`K_long`，info 分别
+  `enc-c2d`/`mac-c2d`/`enc-d2c`/`mac-d2c`）。
+- 认证后的每行都是 `{"s","iv","d","m"}`：AES-256-CBC + PKCS#7，`m` 覆盖
+  `"mochen-calcal-frame-v1|dir|seq|iv_hex|ct_hex"`；`seq` 每方向从 1 递增，接收端拒绝
+  重复/回退。明文命令在认证后返回 `encrypted frame required`。
+
+### 22.4 固件实现上的坑
+
+- **ESP-IDF 6.1 的 mbedTLS 是 4.x**：`mbedtls/aes.h`、`mbedtls/md.h`、`mbedtls/base64.h`
+  已经不存在，必须用 PSA Crypto（`psa_crypto_init`、`psa_mac_compute`、
+  `psa_key_derivation_*` HKDF、`psa_cipher_*` CBC-PKCS7），base64 自己实现。
+- PSA HMAC 需要 `PSA_KEY_TYPE_HMAC` + `PSA_KEY_USAGE_SIGN_MESSAGE`；HKDF 的 secret 是
+  `PSA_KEY_TYPE_DERIVE` + `PSA_KEY_USAGE_DERIVE`，输入顺序 salt → secret → info。
+- 认证后的通知/响应统一在 `notify_json()` 里加密；`auth` 响应和 pre-auth hello 走
+  `notify_json_plain()`。`send_event()` 的内层 JSON 仍是 768 B，外层缓冲区扩到 1536 B；
+  入站行缓冲 1024 B、BLE 任务栈 6 KB，因此密文/明文缓冲都做成静态区，避免栈峰值。
+- `ble_auth.c` 的配对状态（code/pairing/deadline/success latch）由 UI 任务和 BLE 任务
+  共享，用 FreeRTOS mutex 保护；密钥写入只在未连接时发生（`ble_calendar_start_pairing`
+  拒绝已连接状态），避免和认证并发。
+- 配对成功用 `pairing_ok` latch 给 UI 轮询，避免“BLE 任务清掉 pairing 后、UI 先看到
+  超时”的竞态。
+
+### 22.5 三端同步
+
+- `miniprogram/utils/ble-auth.js` 和 `web/ble-auth.js` 是同一份字节（`test/ble-auth.test.js`
+  检查）；加密库用 crypto-js（SHA-256/HMAC/AES-CBC，MIT，随附 LICENSE）。
+- 小程序没有 WebCrypto，随机数用 `wx.getRandomValues`；网页用 `crypto.getRandomValues`。
+- 小程序在 `connect()` 里 pre-hello → auth → 加密 `hello` → `time`；配对码用
+  `wx.showModal({editable:true})` 输入。网页用 `window.prompt`，密钥存
+  `localStorage['calcal.auth.<did>']`；小程序存 `calcal.bleAuthKeys`。
+- 网页从单文件变成 `index.html` + `ble-auth.js` + `vendor/`，托管时要整套 `web/` 一起上传。
+
+### 22.6 已知取舍
+
+- 60 bit 配对码 + 3 分钟窗口：抓到配对握手可以离线爆破；个人桌面设备可接受，后续可换
+  二维码/128 bit 而不改帧格式。
+- 设备密钥明文存 NVS；手机端在系统沙箱/localStorage。需要防拆机时再开 NVS/flash 加密。
+- 没有多手机密钥槽；重新配对替换旧手机。云端“设备归属”仍未实现，BLE 认证只保护链路。
+- `INFO` 特征保持公开（固件版本/日程条数/时钟有效性）；它不提供日程内容。
+
+### 22.7 验证
+
+- `idf.py build` 通过；`PROTO_VERSION` 2 → 3，`version.txt` 1.1.1 → 1.2.0。
+- `node --test test/*.test.js`：新增 HKDF/HMAC 对 Node 的向量、AES 帧往返/篡改/重放、
+  双端握手、两份 auth 文件一致性，以及 fake BLE 设备上的完整“配对→加密命令→断线重连”。
+- `tools/preview_calendar.py` 新增 `preview_pairing.png`（`tools/` 下，gitignore）：按 C
+  的布局渲染配对码三行/提示/页脚，检查过 480x800 不重叠。
+- 真机仍需验证：首次配对码显示、错误码重试、断线重连、换手机/8 秒清绑定、深睡后重新
+  配对、iOS/Android 微信的键盘弹窗。**没有上板验证前不要把“已验证”写死。**

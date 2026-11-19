@@ -62,10 +62,18 @@ typedef struct {
   const cal_event_t *events;
 } ui_sleep_t;
 
+typedef struct {
+  ui_status_t status;
+  /* Canonical 12-character pairing code, or NULL/empty when none is active. */
+  const char *code;
+  bool has_key;
+} ui_pairing_t;
+
 void ui_draw_month(uint8_t *fb, const ui_month_t *view);
 void ui_draw_day(uint8_t *fb, const ui_day_t *view);
 void ui_draw_detail(uint8_t *fb, const ui_detail_t *view);
 void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view);
+void ui_draw_pairing(uint8_t *fb, const ui_pairing_t *view);
 /* Cold-boot splash: brand mark, product name and tagline. */
 void ui_draw_boot(uint8_t *fb);
 

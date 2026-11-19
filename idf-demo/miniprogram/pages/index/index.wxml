@@ -43,7 +43,7 @@
     </view>
 
     <block wx:if="{{!connected}}">
-      <view class="muted">先按设备 POWER 键唤醒再扫描并连接</view>
+      <view class="muted">先按设备 POWER 键唤醒再扫描并连接；首次连接或换手机请长按设备 CONFIRM 3 秒，按屏幕上的 12 位配对码完成绑定</view>
       <view class="row actions">
         <button class="btn primary grow" bindtap="startScan" loading="{{scanning}}" disabled="{{connecting || scanning}}">
           {{scanning ? '正在扫描…' : (hasScanned ? '重新扫描' : '扫描设备')}}

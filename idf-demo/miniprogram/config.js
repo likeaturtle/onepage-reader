@@ -18,5 +18,5 @@ module.exports = {
   // ASCII alias advertised by the device; the connected device reports
   // the Chinese product name. Keep the prefix in sync with brand.h.
   deviceNamePrefix: 'Mochen',
-  protocol: 2,
+  protocol: 3,
 };

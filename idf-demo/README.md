@@ -7,7 +7,9 @@ shows a month grid, a day agenda, event details and a branded lock screen with
 the next appointments. When idle the device parks the panel and enters deep
 sleep, so it can run for a long time on a battery.
 
-> **Status: build-verified (2026-11-16), hardware smoke-tested (2026-11-09).**
+> **Status: build-verified (2026-11-19), hardware smoke-tested (2026-11-09).**
+> The protocol 3 pairing/auth/encryption path is build- and unit-tested but
+> still needs the on-device pairing pass listed in the checklist below.
 > The firmware compiles/links with ESP-IDF 6.1; on the real board the portrait
 > panel, keys, single-calendar migration, BLE add from the web page and
 > automatic redraw were verified. The automatic-light-sleep regression is fixed
@@ -48,6 +50,8 @@ eFuse wrapper) are preserved in [`docs/bringup-demo.md`](docs/bringup-demo.md).
 | **CONFIRM** | open the day agenda | open the selected event | arm deletion | delete the event |
 | **BACK** | jump to today | back to month | back to the day agenda | cancel |
 | **POWER** | lock / deep sleep | lock / deep sleep | lock / deep sleep | lock / deep sleep |
+| **CONFIRM 3 s** | pairing mode (no phone connected) | same | same | same |
+| **CONFIRM 8 s** | erase key + pairing mode | same | same | same |
 
 Event detail uses a two-step delete: the first CONFIRM only shows the
 confirmation box, so a single accidental click cannot remove an event.
@@ -155,8 +159,9 @@ fail to find the `storage` partition.
 
 ### Open the phone page
 
-`web/index.html` is a single static file with no build step and no CDN
-dependencies. Web Bluetooth requires a **secure context**:
+The web client is a few static files (`index.html`, `ble-auth.js`,
+`vendor/crypto-js.js`, `CalCal_logo.png`) with no build step and no CDN. Host
+the whole `web/` directory. Web Bluetooth requires a **secure context**:
 
 ```bash
 cd idf-demo/web
@@ -164,18 +169,30 @@ python3 -m http.server 8000
 # open http://localhost:8000 on this computer
 ```
 
-For a phone, host the file on any HTTPS static site (GitHub Pages, Netlify,
-your own server) and open that URL in **Android Chrome/Edge**. iOS Safari does
-not implement Web Bluetooth; use a browser that does (for example Bluefy).
-Then:
+For a phone, host the whole `web/` directory on any HTTPS static site (GitHub
+Pages, Netlify, your own server) and open that URL in **Android Chrome/Edge**.
+iOS Safari does not implement Web Bluetooth; use a browser that does (for
+example Bluefy). Then:
 
 1. Wake the device with POWER.
-2. Tap **连接蓝牙设备** and pick **Mochen CalCal** (the ASCII advertisement;
-the page shows `墨程CalCal` after connecting).
-3. Pick a date, start/end time and title, then **发送到设备**.
-4. The page syncs the clock automatically and lists the selected month.
-5. **让设备锁屏** draws the lock screen and puts the board into deep sleep;
+2. For a new device or a new phone, hold **CONFIRM for 3 s**: the device shows a
+   12-character pairing code for three minutes. Hold **CONFIRM for 8 s** to
+   erase the old key first (re-pair from scratch).
+3. Tap **连接蓝牙设备** and pick **Mochen CalCal** (the ASCII advertisement;
+the page shows `墨程CalCal` after connecting), then enter the code shown on the
+device. The page stores the device key in `localStorage`; clearing site data
+means pairing again.
+4. Pick a date, start/end time and title, then **发送到设备**.
+5. The page syncs the clock automatically and lists the selected month.
+6. **让设备锁屏** draws the lock screen and puts the board into deep sleep;
    press POWER on the device to wake it.
+
+Protocol 3 authenticates and encrypts the BLE session; see
+[`docs/ble-protocol.md`](docs/ble-protocol.md#authentication-and-encryption-proto-3).
+The device stores one phone key: pairing a new phone replaces the previous one.
+Older firmware/clients are rejected with `auth required`; update both sides.
+Erasing NVS (`idf.py erase-flash` / a full `flash -a` after a partition reset) or
+clearing the mini program/site storage also removes the key; pair again.
 
 See [`web/README.md`](web/README.md) for the page details and
 [`docs/ble-protocol.md`](docs/ble-protocol.md) for the wire protocol.
@@ -192,6 +209,11 @@ See [`web/README.md`](web/README.md) for the page details and
 「设备」和「添加日程」之间还有一个**语音日程**卡片：按住说话、松开识别，文字确认后
 由 DeepSeek 解析并填入下方添加日程表单；用户核对/修改后点「保存日程」才真正保存
 （服务端配置 `DEEPSEEK_API_KEY` 后可用）。
+
+BLE 连接需要认证：首次连接或换手机时，长按设备 **CONFIRM 3 秒**，在弹窗里输入墨水屏
+上的 12 位配对码；设备只保存一台手机的密钥，重新配对会替换旧手机，长按 **CONFIRM
+8 秒** 会清除绑定。之后每次连接都会自动做 HMAC 挑战并用 AES-256-CBC 加密所有指令
+和日程数据（详见协议文档）。
 
 ```bash
 cd idf-demo/server
@@ -409,9 +431,12 @@ idf-demo/
 
 The following is what to verify on a real board. Compilation cannot cover these:
 
-1. **BLE discovery and pairing-free connect** — the phone scan list shows
-   `Mochen CalCal` (ASCII advertisement) and the connected `hello` reports
-   `墨程CalCal`; Web Bluetooth can subscribe to TX and send `hello`/`add`.
+1. **BLE discovery and pairing** — the phone scan list shows `Mochen CalCal`
+   (ASCII advertisement); on a new device hold CONFIRM 3 s, enter the 12-character
+   code shown on the panel, and the connected `hello` reports `墨程CalCal` and
+   `proto:3`. A reconnect must not ask for the code again; a wrong code must be
+   rejected and a 3-minute expiry must close the pairing window. Hold CONFIRM
+   8 s to clear the key and pair a different phone.
 2. **Chunking** — a title near the 15-character limit and a 30-character note
    arrive intact; `list` with ~30 events reassembles without missing lines.
 3. **Time sync** — the header time matches the phone after connect; after a
@@ -446,6 +471,12 @@ The following is what to verify on a real board. Compilation cannot cover these:
     id (`update` ack). With a proto 1 board the mini program falls back to
     delete + add and remaps the cloud copy; a following `list` must not contain
     a duplicate.
+11. **Auth/encryption** — with no pairing, commands must return `auth required`;
+    after pairing, a BLE sniffer or a generic GATT tool must see only the
+    `hello`/`auth` plaintext and encrypted `{s,iv,d,m}` wrappers, never calendar
+    text. A replayed frame or a modified `d`/`m` must be rejected (the client
+    reports a timeout/`bad frame`). Power-cycle the device: the key must persist
+    and the phone must reconnect without a code.
 
 The validation status in this repository is **build + offline UI preview**.
 Please treat the BLE and power numbers as unverified until the checklist is

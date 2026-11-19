@@ -361,7 +361,9 @@ Page({
     this.scanSession = (this.scanSession || 0) + 1;
     this.clearScanTimer();
     this.setData({ connecting: true, error: '' });
-    ble.connect(deviceId)
+    ble.connect(deviceId, {
+      requestPairingCode: (info) => this.requestPairingCode(info),
+    })
       .then((hello) => {
         this.setData({ hello, deviceTime: fmt.deviceTime(hello) });
         wx.showToast({ title: '已连接，正在同步', icon: 'none' });
@@ -369,6 +371,24 @@ Page({
       })
       .catch((err) => this.setData({ error: err.message }))
       .then(() => this.setData({ connecting: false }));
+  },
+
+  // Called by utils/ble.js when the device is in pairing mode and this phone
+  // has no key for it. The code is shown on the e-ink screen.
+  requestPairingCode(info) {
+    const detail = info && info.error ? `${info.error}，请重新输入。` : '';
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: '设备配对',
+        content: `${detail}请输入设备屏幕上的 12 位配对码`,
+        editable: true,
+        placeholderText: '例如 K7Q4-M2X9-B3TF',
+        confirmText: '配对',
+        cancelText: '取消',
+        success: (res) => resolve(res.confirm ? String(res.content || '').trim() : ''),
+        fail: () => resolve(''),
+      });
+    });
   },
 
   disconnect() {

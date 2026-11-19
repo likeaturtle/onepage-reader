@@ -7,13 +7,16 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+
+const auth = require('../utils/ble-auth');
 
 const SERVICE = '6f6e6570-6167-6531-6361-6c656e646172';
 const RX = '6f6e6570-6167-6531-6361-000000000001';
 const TX = '6f6e6570-6167-6531-6361-000000000002';
 
 class FakeWx {
-  constructor() {
+  constructor(options = {}) {
     this.connectionHandler = null;
     this.valueHandler = null;
     this.adapterHandler = null;
@@ -23,11 +26,25 @@ class FakeWx {
     this.writeSizes = [];
     this.commands = [];
     this.notifyQueue = [];
+    this.txChain = Promise.resolve();
     this.notifyBusy = false;
     this.events = [
       { ev: 'ev', id: 7, cal: 0, date: '2026-11-10', start: '09:00', end: '10:00', title: '项目评审', note: '会议室 A' },
     ];
+    this.storage = new Map();
+    this.did = 'A1B2C3D4E5F6';
+    this.pairing = Boolean(options.pairing);
+    this.pairingCode = options.code || 'K7Q4M2X9B3TF';
+    this.key = this.pairing ? null : Buffer.alloc(32, 0x42);
+    this.nonceD = '';
+    this.authed = false;
+    this.deviceSession = null;
   }
+
+  getStorageSync(key) { return this.storage.get(key); }
+  setStorageSync(key, value) { this.storage.set(key, value); }
+  removeStorageSync(key) { this.storage.delete(key); }
+  clearStorageSync() { this.storage.clear(); }
 
   onBLEConnectionStateChange(handler) { this.connectionHandler = handler; }
   onBLECharacteristicValueChange(handler) { this.valueHandler = handler; }
@@ -80,9 +97,27 @@ class FakeWx {
   notifyBLECharacteristicValueChange(options) {
     setTimeout(() => {
       options.success({});
-      // The firmware sends hello as soon as TX notifications are enabled.
-      this.notify({ ev: 'hello', proto: 2, fw: '1.2.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
+      // The firmware issues a nonce and pushes a minimal hello as soon as TX
+      // notifications are enabled.
+      this.nonceD = crypto.randomBytes(16).toString('hex');
+      this.authed = false;
+      this.deviceSession = null;
+      this.sendHello();
     }, 0);
+  }
+
+  sendHello() {
+    this.notifyPlain({
+      ev: 'hello',
+      proto: 3,
+      fw: '1.2.0',
+      name: '墨程CalCal',
+      did: this.did,
+      auth: true,
+      paired: Boolean(this.key),
+      pairing: this.pairing,
+      nonce: this.nonceD,
+    });
   }
 
   writeBLECharacteristicValue(options) {
@@ -101,9 +136,37 @@ class FakeWx {
   }
 
   handleCommand(command) {
+    if (this.authed) {
+      if (!command.s || !command.iv || !command.d || !command.m) {
+        this.notify({ ok: false, error: 'encrypted frame required' });
+        return;
+      }
+      const plain = this.deviceSession.decrypt(command);
+      if (!plain) {
+        this.notify({ ok: false, error: 'bad frame' });
+        return;
+      }
+      this.dispatchCommand(plain);
+      return;
+    }
     this.commands.push(command);
     if (command.cmd === 'hello') {
-      this.notify({ ev: 'hello', proto: 2, fw: '1.2.0', name: '墨程CalCal', now: 1762703820, tz: 480, time_valid: true, events: 1, calendars: 1 });
+      this.sendHello();
+    } else if (command.cmd === 'auth') {
+      this.handleAuth(command);
+    } else {
+      this.notify({ ok: false, error: 'auth required' });
+    }
+  }
+
+  dispatchCommand(command) {
+    this.commands.push(command);
+    if (command.cmd === 'hello') {
+      this.notify({
+        ev: 'hello', proto: 3, fw: '1.2.0', name: '墨程CalCal', did: this.did,
+        auth: true, authed: true, now: 1762703820, tz: 480, time_valid: true,
+        time_synced: true, events: this.events.length, calendars: 1, cals: ['日历'],
+      });
     } else if (command.cmd === 'time') {
       this.notify({ ok: true, cmd: 'time', local: '2026-11-10 10:00', persist: true });
     } else if (command.cmd === 'add') {
@@ -137,8 +200,67 @@ class FakeWx {
     }
   }
 
+  handleAuth(command) {
+    const pair = Boolean(command.pair);
+    const nonceA = String(command.nonce || '');
+    const did = String(command.did || '');
+    const fail = (error) => this.notifyPlain({
+      ev: 'auth', ok: false, proto: 3, error,
+      paired: Boolean(this.key), pairing: this.pairing,
+    });
+    if (did !== this.did || !/^[0-9a-f]{32}$/i.test(nonceA)) {
+      fail('bad auth request');
+      return;
+    }
+    let keyAuth;
+    if (pair) {
+      if (!this.pairing) {
+        fail('pairing not active');
+        return;
+      }
+      keyAuth = auth.derivePairKey(this.pairingCode, this.did);
+    } else {
+      if (!this.key) {
+        fail('not paired');
+        return;
+      }
+      keyAuth = this.key;
+    }
+    const expected = auth.clientProof(keyAuth, this.did, this.nonceD, nonceA,
+      pair ? 'pair' : 'auth');
+    if (!auth.secureEqualHex(expected, command.proof)) {
+      fail('bad proof');
+      return;
+    }
+    let longKey = this.key;
+    if (pair) {
+      longKey = auth.deriveLongKey(this.pairingCode, this.did);
+      this.key = longKey;
+      this.pairing = false;
+    }
+    this.deviceSession = auth.createSession(longKey, this.nonceD, nonceA, 'device');
+    this.authed = true;
+    const proof = auth.deviceProof(longKey, this.did, nonceA, this.nonceD,
+      pair ? 'pair' : 'auth');
+    this.notifyPlain({ ev: 'auth', ok: true, proto: 3, paired: true, pairing: false, proof });
+  }
+
+  notifyPlain(message) {
+    this.notifyLine(JSON.stringify(message));
+  }
+
   notify(message) {
-    const bytes = Buffer.from(`${JSON.stringify(message)}\n`, 'utf8');
+    if (this.authed && this.deviceSession) {
+      this.txChain = this.txChain
+        .then(() => this.deviceSession.encrypt(message))
+        .then((line) => this.notifyLine(line), () => {});
+      return;
+    }
+    this.notifyLine(JSON.stringify(message));
+  }
+
+  notifyLine(line) {
+    const bytes = Buffer.from(`${line}\n`, 'utf8');
     // Deliberately split inside multi-byte characters.
     const chunks = [];
     for (let offset = 0; offset < bytes.length; offset += 5) {
@@ -176,6 +298,9 @@ class FakeWx {
 test('BLE client connects, parses streamed events and chunks writes at 20 bytes', async () => {
   const fake = new FakeWx();
   global.wx = fake;
+  fake.setStorageSync('calcal.bleAuthKeys', {
+    [fake.did]: auth.bytesToBase64(fake.key),
+  });
 
   delete require.cache[require.resolve('../utils/ble')];
   const ble = require('../utils/ble');
@@ -211,4 +336,50 @@ test('BLE client connects, parses streamed events and chunks writes at 20 bytes'
   await new Promise((resolve) => setTimeout(resolve, 30));
   assert.equal(ble.isConnected(), false);
   assert.equal(states[states.length - 1], false);
+});
+
+
+test('a new phone pairs with the one-time code shown on the device', async () => {
+  const fake = new FakeWx({ pairing: true, code: 'K7Q4M2X9B3TF' });
+  global.wx = fake;
+
+  delete require.cache[require.resolve('../utils/ble')];
+  const ble = require('../utils/ble');
+
+  let asked = 0;
+  const hello = await ble.connect('device-1', {
+    requestPairingCode: async (info) => {
+      asked += 1;
+      assert.equal(info.did, fake.did);
+      return asked === 1 ? 'K7Q4-M2X9-B3TF' : '';
+    },
+  });
+
+  assert.equal(hello.name, '墨程CalCal');
+  assert.equal(asked, 1);
+  assert.equal(fake.authed, true);
+  assert.equal(fake.pairing, false);
+  const stored = fake.getStorageSync('calcal.bleAuthKeys');
+  assert.ok(stored[fake.did]);
+  assert.deepEqual(Buffer.from(auth.base64ToBytes(stored[fake.did])), Buffer.from(fake.key));
+
+  const events = await ble.list('2026-11-01', '2026-11-30');
+  assert.equal(events.length, 1);
+  await ble.disconnect();
+});
+
+test('a failed authentication keeps the stored key for a later real device', async () => {
+  const fake = new FakeWx();
+  global.wx = fake;
+  const previous = Buffer.alloc(32, 0x11);
+  fake.setStorageSync('calcal.bleAuthKeys', {
+    [fake.did]: auth.bytesToBase64(previous),
+  });
+
+  delete require.cache[require.resolve('../utils/ble')];
+  const ble = require('../utils/ble');
+
+  await assert.rejects(() => ble.connect('device-1'), /认证失败|重置/);
+  const stored = fake.getStorageSync('calcal.bleAuthKeys');
+  assert.deepEqual(Buffer.from(auth.base64ToBytes(stored[fake.did])), previous);
 });

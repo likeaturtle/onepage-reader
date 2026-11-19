@@ -659,6 +659,39 @@ void ui_draw_boot(uint8_t *fb) {
   draw_centered(fb, name_y + 108, "ESP32-C61 / BLE", true);
 }
 
+/* Pairing screen: the 12-character one-time code is the only secret, so it is
+ * drawn as three large 4-character lines instead of body text. */
+void ui_draw_pairing(uint8_t *fb, const ui_pairing_t *view) {
+  gfx_clear(fb, true);
+
+  gfx_text_utf8(fb, MARGIN, 28, BRAND_NAME, true);
+  draw_right(fb, 28, "BLE 配对", true);
+  gfx_hline(fb, MARGIN, 64, CONTENT_W, true);
+
+  gfx_text_utf8(fb, MARGIN, 100, "设备配对", true);
+  gfx_text_utf8(fb, MARGIN, 140, "在小程序中输入以下配对码", true);
+
+  const char *code = view->code && view->code[0] ? view->code : "------------";
+  char line[5] = {0};
+  for (int row = 0; row < 3; row++) {
+    for (int col = 0; col < 4; col++) {
+      line[col] = code[row * 4 + col];
+    }
+    const int width = gfx_text_width(line, 6);
+    gfx_text(fb, (UI_W - width) / 2, 200 + row * 80, line, 6, true);
+  }
+
+  draw_centered(fb, 500, "配对码 3 分钟内有效", true);
+  draw_centered(fb, 540, "配对后所有日程指令都会加密", true);
+  if (view->has_key) {
+    draw_centered(fb, 580, "重新配对会替换当前手机", true);
+  }
+  draw_centered(fb, 620, "长按 CONFIRM 8 秒可清除绑定", true);
+
+  gfx_hline(fb, MARGIN, FOOTER_RULE_Y, CONTENT_W, true);
+  gfx_text_utf8(fb, MARGIN, FOOTER_TEXT_Y, "BACK 取消", true);
+}
+
 void ui_draw_toast(uint8_t *fb, const char *text) {
   if (!text || !text[0]) {
     return;

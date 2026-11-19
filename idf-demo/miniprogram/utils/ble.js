@@ -16,12 +16,14 @@
 
 const config = require('../config');
 const utf8 = require('./utf8');
+const auth = require('./ble-auth');
 const { LineDecoder } = require('./frame');
 
 const SERVICE = '6f6e6570-6167-6531-6361-6c656e646172';
 const RX_UUID = '6f6e6570-6167-6531-6361-000000000001';
 const TX_UUID = '6f6e6570-6167-6531-6361-000000000002';
 const CHUNK = 20;
+const AUTH_STORAGE = 'calcal.bleAuthKeys';
 
 const state = {
   adapterOpen: false,
@@ -39,6 +41,8 @@ const state = {
   decoder: new LineDecoder(),
   writeQueue: Promise.resolve(),
   commandQueue: Promise.resolve(),
+  authed: false,
+  session: null,
   waiters: [],
   stateListeners: new Set(),
   messageListeners: new Set(),
@@ -70,13 +74,50 @@ function snapshot() {
   return {
     adapterOpen: state.adapterOpen,
     adapterAvailable: state.adapterAvailable,
-    connected: state.connected,
+    connected: state.connected && state.authed,
     connecting: state.connecting,
+    authed: state.authed,
     scanning: state.scanning,
     deviceId: state.deviceId,
     deviceName: state.deviceName,
     error: state.lastError,
   };
+}
+
+/* Long-term keys are stored per device MAC. They are sandbox-local; a new
+ * phone (or a cleared mini program) has to re-pair with the code on screen. */
+function readKeys() {
+  try {
+    const value = wx.getStorageSync(AUTH_STORAGE);
+    return value && typeof value === 'object' ? value : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeKeys(keys) {
+  try {
+    wx.setStorageSync(AUTH_STORAGE, keys);
+  } catch (_) {
+    // A full or unavailable storage only means the user re-pairs next time.
+  }
+}
+
+function storedKey(did) {
+  const encoded = readKeys()[did];
+  if (!encoded) return null;
+  try {
+    const bytes = auth.base64ToBytes(encoded);
+    return bytes.length === 32 ? bytes : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function rememberKey(did, keyBytes) {
+  const keys = readKeys();
+  keys[did] = auth.bytesToBase64(keyBytes);
+  writeKeys(keys);
 }
 
 function emitState() {
@@ -141,6 +182,15 @@ function handleLine(bytes) {
   } catch (_) {
     return;
   }
+  if (state.authed && state.session) {
+    // After the handshake the device only sends encrypted wrapper frames.
+    if (!(message && message.s !== undefined && message.iv && message.d && message.m)) {
+      return;
+    }
+    const plain = state.session.decrypt(message);
+    if (!plain) return;
+    message = plain;
+  }
   state.messageListeners.forEach((listener) => {
     try {
       listener(message);
@@ -162,6 +212,8 @@ function bindHandlers() {
     const expected = state.expectedDisconnect;
     state.connected = false;
     state.connecting = false;
+    state.authed = false;
+    state.session = null;
     state.serviceId = '';
     state.rxId = '';
     state.txId = '';
@@ -311,13 +363,20 @@ async function writeChunks(bytes) {
   }
 }
 
-function send(payload) {
+async function send(payload) {
+  if (!state.connected) throw new Error('设备未连接');
+  if (!state.authed || !state.session) throw new Error('设备未认证');
+  const line = await state.session.encrypt(payload);
+  return enqueueWrite(utf8.encode(`${line}\n`));
+}
+
+function sendPlain(payload) {
   if (!state.connected) return Promise.reject(new Error('设备未连接'));
   const line = `${JSON.stringify(payload)}\n`;
   return enqueueWrite(utf8.encode(line));
 }
 
-function command(payload, predicate, timeout) {
+function enqueueCommand(payload, predicate, timeout, plain) {
   const run = () => new Promise((resolve, reject) => {
     if (!state.connected) {
       reject(new Error('设备未连接'));
@@ -334,7 +393,8 @@ function command(payload, predicate, timeout) {
     };
     state.waiters.push(waiter);
 
-    send(payload).catch((err) => {
+    const promise = plain ? sendPlain(payload) : send(payload);
+    promise.catch((err) => {
       clearTimeout(waiter.timer);
       state.waiters = state.waiters.filter((item) => item !== waiter);
       reject(err);
@@ -344,6 +404,35 @@ function command(payload, predicate, timeout) {
   const promise = state.commandQueue.then(run, run);
   state.commandQueue = promise.catch(() => {});
   return promise;
+}
+
+function command(payload, predicate, timeout) {
+  return enqueueCommand(payload, predicate, timeout, false);
+}
+
+/* Like command(), but only waits: used for the hello that the firmware pushes
+ * when notifications are enabled. */
+function waitFor(predicate, timeout) {
+  return new Promise((resolve, reject) => {
+    if (!state.connected) {
+      reject(new Error('设备未连接'));
+      return;
+    }
+    const waiter = {
+      predicate,
+      resolve,
+      reject,
+      timer: setTimeout(() => {
+        state.waiters = state.waiters.filter((item) => item !== waiter);
+        reject(new Error('设备响应超时'));
+      }, timeout || 7000),
+    };
+    state.waiters.push(waiter);
+  });
+}
+
+function commandPlain(payload, predicate, timeout) {
+  return enqueueCommand(payload, predicate, timeout, true);
 }
 
 function isOk(message) {
@@ -357,7 +446,116 @@ function throwIfError(message, fallback) {
   return message;
 }
 
-async function connect(deviceId) {
+/* --- protocol v3 authentication --------------------------------------- */
+
+async function runAuth(did, nonceD, key, mode) {
+  const nonceA = auth.bytesToHex(await auth.randomBytes(16));
+  const proof = auth.clientProof(key, did, nonceD, nonceA, mode);
+  const response = await commandPlain(
+    { cmd: 'auth', did, nonce: nonceA, proof, pair: mode === 'pair' },
+    (message) => Boolean(message) && message.ev === 'auth',
+    7000
+  );
+  if (!response.ok) {
+    const error = new Error(response.error || '设备认证失败');
+    error.code = response.error;
+    throw error;
+  }
+  return { nonceA, response };
+}
+
+async function authenticateWithKey(longKey, did, nonceD) {
+  const { nonceA, response } = await runAuth(did, nonceD, longKey, 'auth');
+  const expected = auth.deviceProof(longKey, did, nonceA, nonceD, 'auth');
+  if (!auth.secureEqualHex(expected, response.proof)) {
+    throw new Error('设备身份校验失败');
+  }
+  state.session = auth.createSession(longKey, nonceD, nonceA, 'app');
+  state.authed = true;
+}
+
+async function pairWithCode(code, did, nonceD) {
+  const pairKey = auth.derivePairKey(code, did);
+  const longKey = auth.deriveLongKey(code, did);
+  const { nonceA, response } = await runAuth(did, nonceD, pairKey, 'pair');
+  const expected = auth.deviceProof(longKey, did, nonceA, nonceD, 'pair');
+  if (!auth.secureEqualHex(expected, response.proof)) {
+    throw new Error('设备身份校验失败');
+  }
+  state.session = auth.createSession(longKey, nonceD, nonceA, 'app');
+  state.authed = true;
+  rememberKey(did, longKey);
+}
+
+function pairingError(err) {
+  switch (err && err.code) {
+    case 'bad proof':
+      return new Error('配对码错误');
+    case 'pairing not active':
+      return new Error('配对已过期，请在设备上重新长按 CONFIRM 3 秒');
+    case 'too many attempts':
+      return new Error('尝试次数过多，请稍后重试');
+    default:
+      return err;
+  }
+}
+
+async function authenticate(hello, options) {
+  const did = String(hello.did || '');
+  const nonceD = String(hello.nonce || '');
+  if (!did || !/^[0-9a-f]{32}$/.test(nonceD)) {
+    throw new Error('设备认证信息不完整，请升级固件后重试');
+  }
+
+  const stored = storedKey(did);
+  if (stored) {
+    try {
+      await authenticateWithKey(stored, did, nonceD);
+      return;
+    } catch (err) {
+      if (err.code !== 'bad proof' && err.code !== 'not paired') throw err;
+      // Keep the old key: a fake device or a device re-paired by someone else
+      // must not be able to erase it. A successful re-pair below overwrites it.
+      if (!hello.pairing) {
+        throw new Error(hello.paired
+          ? '设备认证失败（可能已被其他手机重新配对），请在设备上长按 CONFIRM 3 秒重新配对'
+          : '设备已重置，请在设备上长按 CONFIRM 3 秒重新配对');
+      }
+    }
+  }
+
+  if (!hello.pairing) {
+    throw new Error(hello.paired
+      ? '此手机尚未绑定该设备，请在设备上长按 CONFIRM 3 秒后重试'
+      : '设备未绑定，请在设备上长按 CONFIRM 3 秒后重试');
+  }
+  if (!options || typeof options.requestPairingCode !== 'function') {
+    throw new Error('需要设备屏幕上显示的配对码');
+  }
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const entered = await options.requestPairingCode({
+      did,
+      error: lastError ? lastError.message : '',
+    });
+    if (!entered) throw new Error('已取消配对');
+    if (!auth.isValidCode(entered)) {
+      lastError = new Error('配对码格式不正确');
+      continue;
+    }
+    try {
+      await pairWithCode(entered, did, nonceD);
+      return;
+    } catch (err) {
+      lastError = pairingError(err);
+      if (/too many|尝试次数/.test(lastError.message)) break;
+    }
+  }
+  throw lastError || new Error('配对失败');
+}
+
+async function connect(deviceId, options) {
   await openAdapter();
   await stopScan();
 
@@ -397,6 +595,15 @@ async function connect(deviceId) {
     state.rxId = rx.uuid;
     state.txId = tx.uuid;
 
+    // Set connected before enabling notifications so the automatic hello is
+    // not dropped by the notification handler. The waiter is registered first
+    // too; the explicit hello below is only a fallback for a lost event.
+    state.connected = true;
+    state.connecting = true;
+    state.authed = false;
+    state.session = null;
+    const helloPromise = waitFor((m) => m && m.ev === 'hello', 2000);
+    helloPromise.catch(() => {});
     await call('notifyBLECharacteristicValueChange', {
       state: true,
       deviceId,
@@ -404,11 +611,20 @@ async function connect(deviceId) {
       characteristicId: tx.uuid,
     });
 
-    state.connected = true;
+    let pre;
+    try {
+      pre = await helloPromise;
+    } catch (_) {
+      pre = await commandPlain({ cmd: 'hello' }, (m) => m && m.ev === 'hello', 7000);
+    }
+    if (!pre || Number(pre.proto) < 3) {
+      throw new Error('设备固件过旧，请先升级固件');
+    }
+    await authenticate(pre, options || {});
     state.connecting = false;
     emitState();
 
-    const hello = await command({ cmd: 'hello' }, (m) => m.ev === 'hello', 7000);
+    const hello = await command({ cmd: 'hello' }, (m) => m && m.ev === 'hello', 7000);
     state.deviceName = hello.name || '墨程CalCal';
     emitState();
 
@@ -427,6 +643,8 @@ async function connect(deviceId) {
   } catch (err) {
     state.connected = false;
     state.connecting = false;
+    state.authed = false;
+    state.session = null;
     state.serviceId = '';
     state.rxId = '';
     state.txId = '';
@@ -456,6 +674,8 @@ async function disconnect() {
   }
   state.connected = false;
   state.connecting = false;
+  state.authed = false;
+  state.session = null;
   state.deviceId = '';
   state.deviceName = '';
   state.serviceId = '';
@@ -576,7 +796,9 @@ async function ping() {
 }
 
 function isConnected() {
-  return state.connected;
+  // The page treats "connected" as "ready for commands"; before the auth
+  // handshake is done the link exists but commands would be rejected.
+  return state.connected && state.authed;
 }
 
 function getState() {

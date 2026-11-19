@@ -32,6 +32,7 @@ tools/preview_miniprogram_tabs.png
 tools/preview_miniprogram_schedule_long.png
 
 tools/preview_ble_states.png
+tools/preview_pairing.png
 
 server/.env
 server/data/

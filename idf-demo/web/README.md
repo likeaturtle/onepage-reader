@@ -1,10 +1,11 @@
 # 墨程CalCal · 手机网页
 
-`index.html` is the whole phone client: one static page plus the
-`CalCal_logo.png` brand asset, no build step, no CDN, no external fonts. It
-uses the browser's Web Bluetooth API to connect to the device's GATT service
-and exchanges newline-delimited JSON. The page title and header use the
-canonical product name **墨程CalCal**.
+The phone client is a small set of static files: `index.html`, `ble-auth.js`,
+`vendor/crypto-js.js` and the `CalCal_logo.png` brand asset. There is no build
+step, no CDN and no external font. It uses Web Bluetooth to connect to the
+device's GATT service and exchanges newline-delimited JSON; after pairing every
+command and event is authenticated and encrypted with protocol 3. The page
+title and header use the canonical product name **墨程CalCal**.
 
 ## Requirements
 
@@ -27,14 +28,30 @@ Open <http://localhost:8000>. `localhost` counts as a secure context.
 
 ### For a phone
 
-Put `index.html` and `CalCal_logo.png` on any HTTPS static host. GitHub Pages,
-Netlify, Cloudflare Pages or a web server with a certificate all work. Then
-open the URL in Android Chrome.
+Put the whole `web/` directory (`index.html`, `ble-auth.js`,
+`vendor/crypto-js.js`, `CalCal_logo.png`) on any HTTPS static host. GitHub
+Pages, Netlify, Cloudflare Pages or a web server with a certificate all work.
+Then open the URL in Android Chrome.
 
 > If you need to use a LAN address for development, Chrome can temporarily
 > treat an origin as secure via
 > `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
 > (add `http://192.168.x.x:8000`). This is a development-only workaround.
+
+## Pairing
+
+The device is not connectable for data until the phone and the device share a
+key:
+
+1. Wake the device with POWER and make sure no phone is connected.
+2. Hold **CONFIRM for 3 s**. The screen shows a one-time 12-character code for
+   three minutes. Holding **CONFIRM for 8 s** erases the previous key first.
+3. Connect from this page and enter the code when prompted. The key is stored
+   in `localStorage`; clearing site data means pairing again.
+
+The device stores one phone key, so pairing another phone replaces the current
+one. Protocol 3 rejects clients that only speak the old unauthenticated
+protocol.
 
 ## Use
 
@@ -51,7 +68,8 @@ open the URL in Android Chrome.
    button with a confirmation.
 5. **让设备锁屏** asks the device to stop BLE, draw the next-appointment lock
    screen and enter deep sleep. Press POWER on the device to wake it.
-6. Open **蓝牙协议日志** to see every JSON line in both directions. This is the
+6. Open **蓝牙协议日志** to see every command/message in both directions; after
+   pairing the received frames are decrypted before being logged. This is the
    first place to look if a command times out.
 
 The form limits are chosen to match the firmware: a title is at most 31

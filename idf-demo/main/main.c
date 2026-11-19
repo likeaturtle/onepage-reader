@@ -39,6 +39,8 @@ static const char *TAG = "calendar-app";
 #define CLICK_MIN_US (25LL * 1000)
 #define POWER_CLICK_MIN_US (30LL * 1000)
 #define POWER_HOLD_US (2LL * 1000 * 1000)
+#define CONFIRM_HOLD_US (3LL * 1000 * 1000)
+#define CONFIRM_ERASE_US (8LL * 1000 * 1000)
 #define ARROW_REPEAT_DELAY_US (500LL * 1000)
 #define ARROW_REPEAT_PERIOD_US (180LL * 1000)
 #define UI_MIN_REDRAW_US (120LL * 1000)
@@ -61,12 +63,15 @@ typedef enum {
   VIEW_DAY,
   VIEW_DETAIL,
   VIEW_DELETE,
+  VIEW_PAIRING,
 } app_view_t;
 
 typedef enum {
   KEY_CLICK = 0,
   KEY_REPEAT,
   KEY_POWER_HOLD,
+  KEY_CONFIRM_HOLD,
+  KEY_CONFIRM_ERASE,
 } key_type_t;
 
 typedef struct {
@@ -263,6 +268,8 @@ static void key_task(void *arg) {
   int64_t pressed_us[BOARD_BTN_COUNT] = {0};
   int64_t last_repeat_us[BOARD_BTN_COUNT] = {0};
   bool power_hold_sent = false;
+  bool confirm_hold_sent = false;
+  bool confirm_erase_sent = false;
 
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(KEY_SCAN_MS));
@@ -276,6 +283,10 @@ static void key_task(void *arg) {
         ESP_LOGD(TAG, "key %s down", board_button_name(i));
         pressed_us[i] = now;
         last_repeat_us[i] = now;
+        if (i == BOARD_BTN_CONFIRM) {
+          confirm_hold_sent = false;
+          confirm_erase_sent = false;
+        }
         if (is_arrow((uint8_t)i)) {
           post_key((uint8_t)i, KEY_CLICK);
         }
@@ -284,6 +295,17 @@ static void key_task(void *arg) {
             now - pressed_us[i] >= POWER_HOLD_US) {
           power_hold_sent = true;
           post_key((uint8_t)i, KEY_POWER_HOLD);
+        } else if (i == BOARD_BTN_CONFIRM) {
+          /* A 3 s hold opens pairing; 8 s also erases the stored key. The
+           * shorter event fires first and the longer one restarts pairing. */
+          if (!confirm_hold_sent && now - pressed_us[i] >= CONFIRM_HOLD_US) {
+            confirm_hold_sent = true;
+            post_key((uint8_t)i, KEY_CONFIRM_HOLD);
+          }
+          if (!confirm_erase_sent && now - pressed_us[i] >= CONFIRM_ERASE_US) {
+            confirm_erase_sent = true;
+            post_key((uint8_t)i, KEY_CONFIRM_ERASE);
+          }
         } else if (is_arrow((uint8_t)i) && now - pressed_us[i] >= ARROW_REPEAT_DELAY_US &&
                    now - last_repeat_us[i] >= ARROW_REPEAT_PERIOD_US) {
           last_repeat_us[i] = now;
@@ -298,6 +320,12 @@ static void key_task(void *arg) {
             post_key((uint8_t)i, KEY_CLICK);
           }
           power_hold_sent = false;
+        } else if (i == BOARD_BTN_CONFIRM) {
+          if (!confirm_hold_sent && held >= CLICK_MIN_US) {
+            post_key((uint8_t)i, KEY_CLICK);
+          }
+          confirm_hold_sent = false;
+          confirm_erase_sent = false;
         } else if (!is_arrow((uint8_t)i) && held >= CLICK_MIN_US) {
           post_key((uint8_t)i, KEY_CLICK);
         }
@@ -373,6 +401,14 @@ static void draw_current(epd_refresh_mode_t mode, bool count_refresh) {
     ui_month_t view;
     build_month_view(&view);
     ui_draw_month(fb, &view);
+  } else if (s_app.view == VIEW_PAIRING) {
+    char code[13];
+    ui_pairing_t view = {
+        .code = ble_calendar_pairing_code(code, sizeof(code)) ? code : NULL,
+        .has_key = ble_calendar_has_key(),
+    };
+    fill_status(&view.status);
+    ui_draw_pairing(fb, &view);
   } else if (s_app.view == VIEW_DAY) {
     load_day_events();
     ui_day_t view = {
@@ -647,7 +683,41 @@ static void handle_key(const key_event_t *event) {
   if (event->button == BOARD_BTN_POWER) {
     /* A click or a 2 s hold both lock the device; the hold fires while the
      * finger is still down, so it also works if the UI task is busy. */
+    if (s_app.view == VIEW_PAIRING) {
+      ble_calendar_cancel_pairing();
+    }
     enter_sleep();
+    return;
+  }
+
+  if (event->button == BOARD_BTN_CONFIRM &&
+      (event->type == KEY_CONFIRM_HOLD || event->type == KEY_CONFIRM_ERASE)) {
+    const bool clear_key = event->type == KEY_CONFIRM_ERASE;
+    if (ble_calendar_connected()) {
+      set_toast("请先断开手机再配对");
+      mark_dirty();
+      return;
+    }
+    if (ble_calendar_start_pairing(clear_key)) {
+      s_app.view = VIEW_PAIRING;
+      if (clear_key) {
+        set_toast("已清除绑定");
+      }
+      mark_dirty();
+    } else {
+      set_toast("无法进入配对模式");
+      mark_dirty();
+    }
+    return;
+  }
+
+  if (s_app.view == VIEW_PAIRING) {
+    if (event->button == BOARD_BTN_BACK) {
+      ble_calendar_cancel_pairing();
+      s_app.view = VIEW_MONTH;
+      set_toast("已取消配对");
+      mark_dirty();
+    }
     return;
   }
 
@@ -865,6 +935,12 @@ void app_main(void) {
     if (update_follow_today()) {
       s_app.dirty = true;
     }
+    if (s_app.view == VIEW_PAIRING && !ble_calendar_pairing_active()) {
+      const bool paired = ble_calendar_take_pairing_succeeded();
+      s_app.view = VIEW_MONTH;
+      set_toast(paired ? "配对成功" : "配对已超时");
+      mark_dirty();
+    }
     refresh_battery(false);
     if (s_app.battery_retry_us && now_us() >= s_app.battery_retry_us) {
       s_app.battery_retry_us = 0;
@@ -917,7 +993,7 @@ void app_main(void) {
      * serial monitor and the desk-calendar use case alive. POWER and the web
      * page can still lock it explicitly. */
     const int64_t idle = now - s_app.last_input_us;
-    if (!s_app.usb) {
+    if (!s_app.usb && s_app.view != VIEW_PAIRING) {
       if (s_app.ble_connected) {
         if (idle > AUTO_SLEEP_CONNECTED_US) {
           ESP_LOGI(TAG, "auto-lock after %lld s connected", idle / 1000000);

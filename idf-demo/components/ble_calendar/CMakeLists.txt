@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/ble_calendar.c"
+    SRCS "src/ble_calendar.c" "src/ble_auth.c"
     INCLUDE_DIRS "include"
     REQUIRES
         bt
@@ -11,4 +11,6 @@ idf_component_register(
         esp_timer
         esp_hw_support
         esp_app_format
+        mbedtls
+        nvs_flash
 )
