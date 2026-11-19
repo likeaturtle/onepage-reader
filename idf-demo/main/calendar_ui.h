@@ -66,7 +66,6 @@ typedef struct {
   ui_status_t status;
   /* Canonical 12-character pairing code, or NULL/empty when none is active. */
   const char *code;
-  bool has_key;
 } ui_pairing_t;
 
 void ui_draw_month(uint8_t *fb, const ui_month_t *view);

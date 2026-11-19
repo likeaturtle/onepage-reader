@@ -405,7 +405,6 @@ static void draw_current(epd_refresh_mode_t mode, bool count_refresh) {
     char code[13];
     ui_pairing_t view = {
         .code = ble_calendar_pairing_code(code, sizeof(code)) ? code : NULL,
-        .has_key = ble_calendar_has_key(),
     };
     fill_status(&view.status);
     ui_draw_pairing(fb, &view);

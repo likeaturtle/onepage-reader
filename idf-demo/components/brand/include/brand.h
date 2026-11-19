@@ -15,7 +15,7 @@
  * prefix, so the radio keeps the Latin form while the connected device
  * reports BRAND_NAME. */
 #define BRAND_DEVICE_NAME "Mochen CalCal"
-#define BRAND_TAGLINE "蓝牙墨水屏日历"
+#define BRAND_TAGLINE "把日程写进墨水屏"
 /* Shorter, schedule-oriented line drawn next to BRAND_NAME on the lock
  * screen; the full tagline stays on the cold-boot splash. */
 #define BRAND_LOCK_SUBTITLE "墨水屏日程表"

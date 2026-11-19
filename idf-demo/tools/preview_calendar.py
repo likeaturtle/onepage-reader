@@ -58,7 +58,7 @@ MONTH_CELL_W = 60
 PEEK_CARD_Y = MONTH_GRID_Y + MONTH_GRID_H + GAP_M
 PEEK_CARD_ROWS = 3
 BRAND_NAME = "墨程CalCal"
-BRAND_TAGLINE = "蓝牙墨水屏日历"
+BRAND_TAGLINE = "把日程写进墨水屏"
 BRAND_LOCK_SUBTITLE = "墨水屏日程表"
 LOCK_LOGO_Y = 24
 LOCK_TITLE_Y = 148
@@ -527,7 +527,8 @@ def detail_preview(confirm=False, long_text=False):
     delete = "确认:删除"
     dw = s.text_width(delete) + 2 * GAP_L
     chip_x = W - MARGIN - dw
-    fill_round_rect(s, chip_x, FOOTER_TEXT_Y - 6, dw, 30)
+    # 36 rows leaves six above and six below the 24 px glyph ink.
+    fill_round_rect(s, chip_x, FOOTER_TEXT_Y - 6, dw, 36)
     s.text_utf8(chip_x + GAP_L, FOOTER_TEXT_Y, delete, False)
     if confirm:
         box_w, box_h = CONTENT_W, 196
@@ -583,6 +584,25 @@ def sleep_preview(empty=False):
     s.save("preview_sleep_empty.png" if empty else "preview_sleep.png")
 
 
+def copyright_mark(s, x, y):
+    # Mirror draw_copyright(): GB2312 has no copyright sign, so draw a two-pixel
+    # ring with a 5x7 C inside, in the same 24 px box as the body text.
+    cx, cy = x + 12, y + 12
+    for r in (10, 9):
+        px, py, err = r, 0, 1 - r
+        while px >= py:
+            for dx, dy in ((px, py), (py, px), (-py, px), (-px, py),
+                           (-px, -py), (-py, -px), (py, -px), (px, -py)):
+                s.pixel(cx + dx, cy + dy)
+            py += 1
+            if err < 0:
+                err += 2 * py + 1
+            else:
+                px -= 1
+                err += 2 * (py - px) + 1
+    s.text5x7(cx - 5, y + 5, "C", 2)
+
+
 def boot_preview():
     s = Screen()
     w, h, bits = BRAND["boot"]
@@ -591,28 +611,40 @@ def boot_preview():
     s.centered(name_y, BRAND_NAME)
     s.centered(name_y + 36, BRAND_TAGLINE)
     s.hline((W - 120) // 2, name_y + 92, 120)
-    s.centered(name_y + 108, "ESP32-C61 / BLE")
+    s.centered(name_y + 108, "求真・求极・求新・致远")
+
+    owner_left, owner_right = "极境启新", "向未知 见未来"
+    left_w, right_w = s.text_width(owner_left), s.text_width(owner_right)
+    sep_gap, sep_w = 12, 2
+    block_w = 24 + 8 + left_w + sep_gap + sep_w + sep_gap + right_w
+    block_x = (W - block_w) // 2
+    owner_y = H - 52
+    copyright_mark(s, block_x, owner_y)
+    text_x = block_x + 24 + 8
+    s.text_utf8(text_x, owner_y, owner_left)
+    s.fill_rect(text_x + left_w + sep_gap, owner_y + 3, sep_w, 18)
+    s.text_utf8(text_x + left_w + sep_gap + sep_w + sep_gap, owner_y, owner_right)
     s.save("preview_boot.png")
 
 
 def pairing_preview():
     code = "K7Q4M2X9B3TF"
     s = Screen()
-    s.text_utf8(MARGIN, 28, BRAND_NAME)
-    s.text_right(28, "BLE 配对")
-    s.hline(MARGIN, HEADER_RULE_Y, CONTENT_W)
-
-    s.text_utf8(MARGIN, 100, "设备配对")
-    s.text_utf8(MARGIN, 140, "在小程序中输入以下配对码")
-    for row in range(3):
-        line = code[row * 4:(row + 1) * 4]
+    # Pairing only runs with no phone connected, so the header shows the
+    # advertising (outline) BLE icon.
+    header(s, connected=False)
+    s.text_utf8(MARGIN, 80, "设备配对")
+    s.text_utf8(MARGIN, 112, "在小程序中输入以下配对码")
+    for row in range(2):
+        line = code[row * 6:(row + 1) * 6]
         width = s.text5x7_width(line, 6)
-        s.text5x7((W - width) // 2, 200 + row * 80, line, 6)
+        s.text5x7((W - width) // 2, 172 + row * 80, line, 6)
 
-    s.centered(500, "配对码 3 分钟内有效")
-    s.centered(540, "配对后所有日程指令都会加密")
-    s.centered(580, "重新配对会替换当前手机")
-    s.centered(620, "长按确认键 8 秒可清除绑定")
+    w, h, bits = BRAND["qrcode"]
+    s.bitmap((W - w) // 2, 350, w, h, bits)
+
+    s.centered(630, "配对码 3 分钟内有效")
+    s.centered(670, "长按确认键 8 秒清除现有绑定")
 
     s.hline(MARGIN, FOOTER_RULE_Y, CONTENT_W)
     s.text_utf8(MARGIN, FOOTER_TEXT_Y, "返回取消")

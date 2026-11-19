@@ -517,9 +517,11 @@ void ui_draw_detail(uint8_t *fb, const ui_detail_t *view) {
   gfx_hline(fb, MARGIN, FOOTER_RULE_Y, CONTENT_W, true);
   gfx_text_utf8(fb, MARGIN, FOOTER_TEXT_Y, "返回:列表", true);
 
+  /* 36 rows: the 24 px glyph ink sits at FOOTER_TEXT_Y, so the six rows above
+   * and below it keep the pill's bottom from touching the descenders. */
   const int delete_w = gfx_text_utf8_width("确认:删除") + 2 * GAP_L;
   const int chip_x = UI_W - MARGIN - delete_w;
-  fill_round_rect(fb, chip_x, FOOTER_TEXT_Y - 6, delete_w, 30, true);
+  fill_round_rect(fb, chip_x, FOOTER_TEXT_Y - 6, delete_w, 36, true);
   gfx_text_utf8(fb, chip_x + GAP_L, FOOTER_TEXT_Y, "确认:删除", false);
 
   if (!view->confirm_delete) {
@@ -633,6 +635,37 @@ void ui_draw_sleep(uint8_t *fb, const ui_sleep_t *view) {
 
 /* --- boot splash -------------------------------------------------------- */
 
+/* The GB2312 table has no copyright sign, so the boot footer draws the mark
+ * itself: a two pixel ring with a 5x7 "C" inside, in a 24 px box that matches
+ * the body text. */
+static void draw_copyright(uint8_t *fb, int x, int y, bool black) {
+  const int cx = x + 12;
+  const int cy = y + 12;
+  for (int r = 10; r >= 9; r--) {
+    int px = r;
+    int py = 0;
+    int err = 1 - r;
+    while (px >= py) {
+      gfx_pixel(fb, cx + px, cy + py, black);
+      gfx_pixel(fb, cx + py, cy + px, black);
+      gfx_pixel(fb, cx - py, cy + px, black);
+      gfx_pixel(fb, cx - px, cy + py, black);
+      gfx_pixel(fb, cx - px, cy - py, black);
+      gfx_pixel(fb, cx - py, cy - px, black);
+      gfx_pixel(fb, cx + py, cy - px, black);
+      gfx_pixel(fb, cx + px, cy - py, black);
+      py++;
+      if (err < 0) {
+        err += 2 * py + 1;
+      } else {
+        px--;
+        err += 2 * (py - px) + 1;
+      }
+    }
+  }
+  gfx_text(fb, cx - 5, y + 5, "C", 2, black);
+}
+
 /* Painted once on a cold boot before the first calendar frame; the e-ink
  * keeps it for the short hold in main.c, then swaps to the month view. */
 void ui_draw_boot(uint8_t *fb) {
@@ -646,7 +679,25 @@ void ui_draw_boot(uint8_t *fb) {
   draw_centered(fb, name_y, BRAND_NAME, true);
   draw_centered(fb, name_y + 36, BRAND_TAGLINE, true);
   gfx_hline(fb, (UI_W - 120) / 2, name_y + 92, 120, true);
-  draw_centered(fb, name_y + 108, "ESP32-C61 / BLE", true);
+  draw_centered(fb, name_y + 108, "求真・求极・求新・致远", true);
+
+  /* Ownership line: the copyright mark is drawn (the GB2312 table has no
+   * copyright sign) and the two phrases are split by a 2 px rule, because the
+   * ASCII '|' is outside the 5x7 table. The whole block is centered. */
+  const char *owner_left = "极境启新";
+  const char *owner_right = "向未知 见未来";
+  const int left_w = gfx_text_utf8_width(owner_left);
+  const int right_w = gfx_text_utf8_width(owner_right);
+  const int sep_gap = 12;
+  const int sep_w = 2;
+  const int block_w = 24 + 8 + left_w + sep_gap + sep_w + sep_gap + right_w;
+  const int block_x = (UI_W - block_w) / 2;
+  const int owner_y = UI_H - 52;
+  draw_copyright(fb, block_x, owner_y, true);
+  const int text_x = block_x + 24 + 8;
+  gfx_text_utf8(fb, text_x, owner_y, owner_left, true);
+  gfx_fill_rect(fb, text_x + left_w + sep_gap, owner_y + 3, sep_w, 18, true);
+  gfx_text_utf8(fb, text_x + left_w + sep_gap + sep_w + sep_gap, owner_y, owner_right, true);
 }
 
 /* Pairing screen: the 12-character one-time code is the only secret, so it is
@@ -654,29 +705,29 @@ void ui_draw_boot(uint8_t *fb) {
 void ui_draw_pairing(uint8_t *fb, const ui_pairing_t *view) {
   gfx_clear(fb, true);
 
-  gfx_text_utf8(fb, MARGIN, 28, BRAND_NAME, true);
-  draw_right(fb, 28, "BLE 配对", true);
-  gfx_hline(fb, MARGIN, 64, CONTENT_W, true);
+  draw_header(fb, &view->status);
 
-  gfx_text_utf8(fb, MARGIN, 100, "设备配对", true);
-  gfx_text_utf8(fb, MARGIN, 140, "在小程序中输入以下配对码", true);
+  gfx_text_utf8(fb, MARGIN, 80, "设备配对", true);
+  gfx_text_utf8(fb, MARGIN, 112, "在小程序中输入以下配对码", true);
 
+  /* Six characters per line: the code stays large but leaves room below for
+   * the mini program code. */
   const char *code = view->code && view->code[0] ? view->code : "------------";
-  char line[5] = {0};
-  for (int row = 0; row < 3; row++) {
-    for (int col = 0; col < 4; col++) {
-      line[col] = code[row * 4 + col];
+  char line[7] = {0};
+  for (int row = 0; row < 2; row++) {
+    for (int col = 0; col < 6; col++) {
+      line[col] = code[row * 6 + col];
     }
     const int width = gfx_text_width(line, 6);
-    gfx_text(fb, (UI_W - width) / 2, 200 + row * 80, line, 6, true);
+    gfx_text(fb, (UI_W - width) / 2, 172 + row * 80, line, 6, true);
   }
 
-  draw_centered(fb, 500, "配对码 3 分钟内有效", true);
-  draw_centered(fb, 540, "配对后所有日程指令都会加密", true);
-  if (view->has_key) {
-    draw_centered(fb, 580, "重新配对会替换当前手机", true);
-  }
-  draw_centered(fb, 620, "长按确认键 8 秒可清除绑定", true);
+  /* Static mini program code: scan it to open the app, then type the code. */
+  gfx_bitmap(fb, (UI_W - (int)brand_qrcode.width) / 2, 350, brand_qrcode.width,
+             brand_qrcode.height, brand_qrcode.bits, true);
+
+  draw_centered(fb, 630, "配对码 3 分钟内有效", true);
+  draw_centered(fb, 670, "长按确认键 8 秒清除现有绑定", true);
 
   gfx_hline(fb, MARGIN, FOOTER_RULE_Y, CONTENT_W, true);
   gfx_text_utf8(fb, MARGIN, FOOTER_TEXT_Y, "返回取消", true);

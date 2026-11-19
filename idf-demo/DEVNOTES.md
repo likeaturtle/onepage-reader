@@ -1453,3 +1453,49 @@ hello 里的 `pid`。如果直接用 `pid`（BLE MAC）做云端归属，任何�
 
 验证：`idf.py build` 通过（2026-11-19，镜像 0x167eb0，分区余 53%）；
 `tools/preview_calendar.py` 重新生成 `preview_pairing.png` / `preview_sleep.png` 并人工检查。
+
+## 26. 2026-11-19：冷启动页改版
+
+- 标语 `BRAND_TAGLINE` 从「蓝牙墨水屏日历」改为「把日程写进墨水屏」（`brand.h`；锁屏用的是
+  `BRAND_LOCK_SUBTITLE`，不受影响）。
+- 原来第三行的 `ESP32-C61 / BLE` 换成「求真・求极・求新・致远」。
+- 面板最下方新增所有权栏，居中显示「© 极境启新 | 向未知 见未来」。
+
+三个字形上的取舍，改文案时不要踩回去：
+
+- **版权符号不在 GB2312 表里**，`font_cjk_lookup()` 查不到会画成空心方块。所以
+  `draw_copyright()` 用中点圆算法画 2 px 圆环 + 5x7 scale 2 的 `C`，24 px 见方，与正文同高。
+- **中点用的是 `・`（U+30FB）而不是 `·`（U+00B7）**：Python 的 `gb2312` 编解码把 A1A4
+  映射成 U+30FB，字体表里也只有这一个；写 U+00B7 会在面板上变成方块。
+- **ASCII `|` 超出 5x7 表**（`FONT5X7_LAST_CHAR` 只到 `z`），`gfx_text()` 同样会画空心方块。
+  所以分隔线是 `gfx_fill_rect()` 画的 2x18 竖线，不走字符串。
+
+预览：`tools/preview_calendar.py` 的 `copyright_mark()` / `boot_preview()` 已同步；
+`preview_boot.png` 重新生成。`check_font_coverage.py` 只剩 littlefs 注释里既有的 `—` 误报。
+
+验证：`idf.py build` 通过（2026-11-19）；`preview_boot.png` 已人工检查。
+
+## 27. 2026-11-19：删除操作胶囊的上下留白
+
+- 详情页页脚的黑底胶囊「确认:删除」原来 30 px 高，文字画在 `FOOTER_TEXT_Y`（764），
+  24 px 汉字的墨迹正好占 764..787，胶囊底边也在 787——文字底部与黑底贴齐，上方却还有
+  6 px，所以整体看着底部发挤。
+- 胶囊高度改成 36 px（758..793），墨迹上下各留 6 px。代价是胶囊底边离面板下沿从 12 px
+  变成 6 px；如果以后觉得离边太近，应该把整条页脚基线上移（会影响所有页面），不要只把
+  胶囊文字挪上去，否则它会和左边的「返回:列表」错开。
+- `tools/preview_calendar.py` 的 `detail_preview()` 同步，`preview_detail.png` /
+  `preview_delete.png` 重新生成；`idf.py build` 通过。
+
+## 28. 2026-11-19：配对页改版
+
+- 顶栏换成和其它页面一致的品牌锁定（`draw_header()`：30 px logo + wordmark + 电量/时钟/
+  蓝牙图标），去掉右侧的「BLE 配对」文字。配对只在未连接时进行，所以蓝牙图标是广播态
+  （轮廓）。
+- 配对码从 3 行 × 4 位改成 **2 行 × 6 位**（scale 6 不变，6 字 216 px 居中）。
+- 底部说明只留两行：`配对码 3 分钟内有效`（y=630）、`长按确认键 8 秒清除现有绑定`
+  （y=670）。「配对后所有日程指令都会加密」「重新配对会替换当前手机」两条删除，
+  `ui_pairing_t.has_key` 随之删掉（`main.c` 不再填它）。
+- 中间空出来的位置放 `brand_qrcode`（248×248 小程序码，y=350）：扫码打开小程序，再输入
+  屏幕上的配对码。配对码两行在 y=172/252，整块比首版低 20 px，给底部留出呼吸空间。
+- 预览：`tools/preview_calendar.py` 的 `pairing_preview()` 同步（`header(s, connected=False)`）；
+  `preview_pairing.png` 重新生成；`idf.py build` 通过。
