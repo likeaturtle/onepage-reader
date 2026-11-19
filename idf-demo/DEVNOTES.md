@@ -4,7 +4,7 @@
 以及后面基于它继续开发时从哪里接。硬件相关的结论都来自厂商 BSP
 (`../firmware/open-onepage-sdk`) 和真机验证，不是推测。
 
-最后更新：2026-11-18
+最后更新：2026-11-19
 
 ------
 
@@ -1298,9 +1298,12 @@ PCM，但没有 WAV 头；更关键的是 **API Key 不能放进小程序源码*
 - `miniprogram/utils/ble-auth.js` 和 `web/ble-auth.js` 是同一份字节（`test/ble-auth.test.js`
   检查）；加密库用 crypto-js（SHA-256/HMAC/AES-CBC，MIT，随附 LICENSE）。
 - 小程序没有 WebCrypto，随机数用 `wx.getRandomValues`；网页用 `crypto.getRandomValues`。
-- 小程序在 `connect()` 里 pre-hello → auth → 加密 `hello` → `time`；配对码用
-  `wx.showModal({editable:true})` 输入。网页用 `window.prompt`，密钥存
-  `localStorage['calcal.auth.<pid>']`；小程序存 `calcal.bleAuthKeys`（按 `pid` 索引）。
+- 小程序在 `connect()` 里 pre-hello → auth → 加密 `hello` → `time`；配对码用页面内的
+  `pairingVisible` 浮层输入（`pages/index/index.wxml` 末尾）。不用
+  `wx.showModal({editable:true})`：`content` 在部分微信版本会变成输入框的初始值，提示
+  文字必须手动删掉；浮层把提示放进 `placeholder`、重试错误单独一行，输入框永远从空开始。
+  网页用 `window.prompt`，密钥存 `localStorage['calcal.auth.<pid>']`；小程序存
+  `calcal.bleAuthKeys`（按 `pid` 索引）。
 - 网页从单文件变成 `index.html` + `ble-auth.js` + `vendor/`，托管时要整套 `web/` 一起上传。
 
 ### 22.6 已知取舍
@@ -1367,3 +1370,54 @@ hello 里的 `pid`。如果直接用 `pid`（BLE MAC）做云端归属，任何�
 - 网页端不登录，不参与账号归属；它仍是一个带本地密钥的 Web Bluetooth 工具。
 - 服务端目前不在事件 API 上强制 `did`（事件仍按 user 存）；归属校验发生在小程序
   claim 这一步。要防改包客户端，需要把设备签名/设备身份引入事件同步，属于下一层。
+
+## 24. 2026-11-19：多设备（一个账号多台设备）—— 暂缓
+
+**决定：暂不做，先记录。** 账号层面已经能绑多台，但同步模型是按一台设备写的：两台
+交替连接会删错或丢日程。以后要支持，按 24.4 的方向改。
+
+### 24.1 现状：能绑，不能交替用
+
+- 服务端按 `did` 存设备、按 `userId` 查，`listDevices()` 不限数量；`claim` 只在设备
+  已属别的账号时返回 409（`server/src/store.js`）。
+- 小程序「我的设备」本来就是列表，每台可单独解绑；BLE 密钥按 `pid` 分开存在
+  `calcal.bleAuthKeys`，连 A 再连 B 不会互相覆盖。
+- 同时只能连一台：`ble.connect()` 会先断开上一台。
+- 设备侧“一台设备只能被一部手机配对”是单密钥槽决定的，与多设备无关。
+
+### 24.2 根因
+
+云端每条日程只有**一个** `deviceId`（`server/src/store.js` 的 `openEventPayload` /
+`createEvent`），而这个值是**设备本地编号**，固件从 1 开始递增
+（`components/calendar/src/calendar.c` 的 `s_next_id`）。两台设备的编号必然重叠，于是：
+
+1. 同步第 5 步只推 `deviceId == null` 的日程，映射指向 A 的日程永远不会下发到 B；
+2. 第 6 步把“不在这台设备上”一律当成“在这台设备上被删了”；
+3. 第 1 步直接拿墓碑里的编号去 `ble.del()`，不区分这个编号属于哪台设备。
+
+### 24.3 三个具体后果（A/B 两台、云端 3 条日程）
+
+1. **绑第二台（空设备）**：第 5 步不下发；第 6 步因 `deviceEvents` 为空判定“设备被
+   重置”，弹「设备上没有任何日程…要同时从云端删除吗？」，主按钮是「删除云端」。
+   误点一次云端日历就清空（点「恢复设备」才会把日程推到 B）。
+2. **改完标题再切设备**：新标题只写到了 A；B 上还是旧标题 → 内容匹配失败 → 第 4 步
+   把 B 的旧标题当新日程导入云端，第 6 步把云端改过的日程静默删除（缺失 < 3 条不弹
+   确认）。结果是改动丢失、旧版本以新 id 回来。
+3. **离线删一条再连另一台**：墓碑记的是 B 的编号 N，而 A 的编号 N 往往是另一条日程 →
+   `ble.del(N)` 删错，随后墓碑被 purge；第 6 步再把 A 上那条的云端记录静默删掉。原本
+   要删的那条还留在 B 上，下次连 B 会被当成新日程导回云端。
+
+编号碰巧对齐、内容又完全一致时，第 2 步会按内容认领/重映射，表现正常——所以随手试
+几下不容易发现，问题只在内容分歧（改标题、离线删除、设备重置、增删顺序不同）时出现。
+
+### 24.4 要做时
+
+- `deviceId` 改成按 `did` 的映射（事件里存 `deviceIds: { did: id }`，或单独一张映射
+  表），`mapDevice` 带上 `did`；
+- 墓碑也按 `did` 存，删除只作用于对应设备；
+- `syncDevice()` 的第 1/5/6 步按当前 `did` 读写自己的映射；
+- 旧数据迁移：现有 `deviceId` 归到该账号最近一次同步的设备；
+- 补 `miniprogram/test/sync.mock.test.js` 的双设备用例（上面三个场景各一条）；
+- 估计 3–5 人日 + 两台真机回归。
+
+改之前 `syncDevice()` 顶部有注释指向本节，不要误以为它已经支持多设备。

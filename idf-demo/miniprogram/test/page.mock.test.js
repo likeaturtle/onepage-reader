@@ -365,3 +365,45 @@ test('the note input stops at 191 bytes', () => {
   assert.equal(page.data.noteBytes, 189);
   assert.equal(page.data.noteLimit, 191);
 });
+
+test('the pairing dialog starts with an empty field and a placeholder hint', async () => {
+  const page = makePage('2026-11-16');
+
+  const pending = page.requestPairingCode({ error: '' });
+
+  assert.equal(page.data.pairingVisible, true);
+  assert.equal(page.data.pairingValue, '');
+  assert.equal(page.data.pairingError, '');
+
+  page.onPairingInput({ detail: { value: ' k7q4-m2x9-b3tf ' } });
+  page.confirmPairing();
+
+  assert.equal(await pending, 'k7q4-m2x9-b3tf');
+  assert.equal(page.data.pairingVisible, false);
+  assert.equal(page.data.pairingValue, '');
+});
+
+test('a failed pairing attempt shows its error outside the input', async () => {
+  const page = makePage('2026-11-16');
+
+  page.requestPairingCode({ error: '配对码错误' });
+
+  assert.equal(page.data.pairingError, '配对码错误');
+  assert.equal(page.data.pairingValue, '');
+  // Typing clears the old error instead of leaving it in the field.
+  page.onPairingInput({ detail: { value: 'K7Q4' } });
+  assert.equal(page.data.pairingError, '');
+});
+
+test('confirming an empty code keeps the dialog open', async () => {
+  const page = makePage('2026-11-16');
+
+  page.requestPairingCode({ error: '' });
+  page.confirmPairing();
+
+  assert.equal(page.data.pairingVisible, true);
+  assert.match(page.data.pairingError, /配对码/);
+
+  page.cancelPairing();
+  assert.equal(page.data.pairingVisible, false);
+});

@@ -252,4 +252,29 @@
       <view wx:if="{{!logs.length}}" class="log-line">（连接设备后显示）</view>
     </scroll-view>
   </view>
+
+  <!-- Pairing code: page-level so the hint stays in the placeholder and the
+       retry error gets its own line instead of the input box. -->
+  <view wx:if="{{pairingVisible}}" class="pairing-mask" catchtouchmove="noop">
+    <view class="pairing-card">
+      <view class="pairing-title">设备配对</view>
+      <input
+        class="input pairing-input"
+        placeholder="请输入设备屏幕上的 12 位配对码"
+        placeholder-class="pairing-placeholder"
+        value="{{pairingValue}}"
+        focus="{{pairingFocus}}"
+        maxlength="24"
+        confirm-type="done"
+        bindinput="onPairingInput"
+        bindconfirm="confirmPairing"
+      />
+      <view wx:if="{{pairingError}}" class="pairing-error">{{pairingError}}</view>
+      <view wx:else class="pairing-hint">不区分大小写，例如 K7Q4M2X9B3TF</view>
+      <view class="pairing-actions">
+        <button class="btn pairing-btn" bindtap="cancelPairing">取消</button>
+        <button class="btn primary pairing-btn" bindtap="confirmPairing">配对</button>
+      </view>
+    </view>
+  </view>
 </view>

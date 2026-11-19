@@ -737,8 +737,8 @@
     for (let attempt = 0; attempt < 3; attempt++) {
       const entered = window.prompt(
         lastError
-          ? `${lastError.message}，请重新输入设备屏幕上的 12 位配对码`
-          : "请输入设备屏幕上的 12 位配对码（例如 K7Q4-M2X9-B3TF）",
+          ? `${lastError.message}，请重新输入设备屏幕上的 12 位配对码（不区分大小写）`
+          : "请输入设备屏幕上的 12 位配对码（不区分大小写，例如 K7Q4-M2X9-B3TF）",
         ""
       );
       if (entered === null) throw new Error("已取消配对");

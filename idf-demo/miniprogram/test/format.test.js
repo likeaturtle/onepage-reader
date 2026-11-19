@@ -25,3 +25,11 @@ test('shiftClock leaves invalid input untouched', () => {
   assert.equal(fmt.shiftClock('24:00', 30), '24:00');
   assert.equal(fmt.shiftClock('09:75', 30), '09:75');
 });
+
+test('localDateTime renders a server timestamp in local time', () => {
+  const bound = new Date(2026, 10, 19, 21, 32, 45);
+  assert.equal(fmt.localDateTime(bound.toISOString()), '2026-11-19 21:32');
+  assert.equal(fmt.localDateTime(''), '');
+  assert.equal(fmt.localDateTime(null), '');
+  assert.equal(fmt.localDateTime('not a date'), '');
+});

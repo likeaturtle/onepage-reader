@@ -553,3 +553,75 @@
   color: #d8d2c2;
   word-break: break-all;
 }
+
+/* --- pairing code dialog ------------------------------------------------ */
+
+.pairing-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* The keyboard covers the bottom of the screen and fixed elements are not
+   * pushed up by adjust-position, so bias the card into the upper half. */
+  padding: 48rpx 48rpx 360rpx;
+  background: rgba(20, 19, 15, 0.42);
+}
+
+.pairing-card {
+  width: 100%;
+  max-width: 620rpx;
+  padding: 36rpx 32rpx 28rpx;
+  box-sizing: border-box;
+  background: #fffdf8;
+  border-radius: 28rpx;
+  box-shadow: 0 16rpx 48rpx rgba(20, 19, 15, 0.2);
+}
+
+.pairing-title {
+  color: #22345a;
+  font-size: 33rpx;
+  font-weight: 600;
+}
+
+.pairing-input {
+  margin-top: 24rpx;
+  font-family: Menlo, Consolas, monospace;
+  font-size: 30rpx;
+  letter-spacing: 2rpx;
+}
+
+.pairing-placeholder {
+  color: #a9a293;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  letter-spacing: 0;
+}
+
+.pairing-error {
+  margin-top: 14rpx;
+  color: #9c3427;
+  font-size: 25rpx;
+}
+
+.pairing-hint {
+  margin-top: 14rpx;
+  color: #8d876f;
+  font-size: 25rpx;
+}
+
+.pairing-actions {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 30rpx;
+}
+
+.pairing-actions .pairing-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  padding: 0 12rpx;
+}

@@ -87,6 +87,17 @@ function deviceTime(hello) {
     `${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
 }
 
+/**
+ * Server timestamp (ISO 8601, UTC) as local `YYYY-MM-DD HH:MM`. The server
+ * stores `boundAt`/`lastSeenAt` with `toISOString()`, so the phone's timezone
+ * decides what the user sees. Missing or unparsable values return ''.
+ */
+function localDateTime(iso) {
+  const date = new Date(String(iso == null ? '' : iso));
+  if (!Number.isFinite(date.getTime())) return '';
+  return `${ymd(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function initial(name) {
   const chars = Array.from(String(name || '').trim());
   return chars.length ? chars[0] : '页';
@@ -106,6 +117,7 @@ module.exports = {
   shiftClock,
   groupEvents,
   deviceTime,
+  localDateTime,
   initial,
   utf8Len,
 };

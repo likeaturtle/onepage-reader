@@ -151,12 +151,29 @@
 }
 
 .device-row-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4rpx 18rpx;
   margin-top: 6rpx;
   font-size: 22rpx;
   color: #9a9482;
   word-break: break-all;
 }
 
-.device-row .btn {
-  flex: none;
+/* Unbind is a text action, not a button: it sits after the bind time so the
+ * row keeps a single line of information and the destructive action does not
+ * compete with the device name. */
+.unbind-link {
+  color: #9c3427;
+  text-decoration: underline;
+  text-underline-offset: 3rpx;
+  /* A 22rpx label is a small tap target; the negative margin keeps the text
+   * where it was while the padding widens the hit area. */
+  padding: 10rpx 6rpx;
+  margin: -10rpx -6rpx;
+}
+
+.unbind-link.disabled {
+  opacity: 0.4;
 }

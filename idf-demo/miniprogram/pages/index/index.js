@@ -130,6 +130,13 @@ Page({
     syncError: '',
     logOpen: false,
     logs: [],
+    // The pairing code dialog is page-level rather than wx.showModal: a modal
+    // shows its `content` inside the input on some WeChat versions, so the
+    // hint had to be deleted by hand before typing.
+    pairingVisible: false,
+    pairingValue: '',
+    pairingError: '',
+    pairingFocus: false,
   },
 
   onLoad() {
@@ -406,21 +413,53 @@ Page({
   },
 
   // Called by utils/ble.js when the device is in pairing mode and this phone
-  // has no key for it. The code is shown on the e-ink screen.
+  // has no key for it. The code is shown on the e-ink screen; the hint lives in
+  // the input's placeholder and the retry error on its own line, so the field
+  // always starts empty.
   requestPairingCode(info) {
-    const detail = info && info.error ? `${info.error}，请重新输入。` : '';
+    const error = info && info.error ? info.error : '';
+    // A new attempt supersedes a pending one instead of leaving it unresolved.
+    if (this._pairingResolve) {
+      this._pairingResolve('');
+    }
     return new Promise((resolve) => {
-      wx.showModal({
-        title: '设备配对',
-        content: `${detail}请输入设备屏幕上的 12 位配对码`,
-        editable: true,
-        placeholderText: '例如 K7Q4-M2X9-B3TF',
-        confirmText: '配对',
-        cancelText: '取消',
-        success: (res) => resolve(res.confirm ? String(res.content || '').trim() : ''),
-        fail: () => resolve(''),
+      this._pairingResolve = resolve;
+      this.setData({
+        pairingVisible: true,
+        pairingValue: '',
+        pairingError: error,
+        pairingFocus: true,
       });
     });
+  },
+
+  onPairingInput(event) {
+    this.setData({ pairingValue: event.detail.value, pairingError: '' });
+  },
+
+  confirmPairing() {
+    const value = String(this.data.pairingValue || '').trim();
+    if (!value) {
+      this.setData({ pairingError: '先输入设备屏幕上的配对码' });
+      return;
+    }
+    this.closePairing(value);
+  },
+
+  cancelPairing() {
+    this.closePairing('');
+  },
+
+  closePairing(value) {
+    const resolve = this._pairingResolve;
+    this._pairingResolve = null;
+    this.setData({
+      pairingVisible: false,
+      pairingValue: '',
+      pairingError: '',
+      pairingFocus: false,
+    });
+    if (resolve) resolve(value);
   },
 
   disconnect() {
@@ -448,6 +487,10 @@ Page({
   },
 
   // --- cloud <-> device sync -------------------------------------------
+  // Single-device assumption: the cloud stores one `deviceId` per event, and
+  // that id is the device-local number (both devices count from 1). Alternating
+  // between two devices under one account mis-deletes events; see DEVNOTES
+  // section 24 before changing this function.
   syncDevice() {
     if (!ble.isConnected() || this.syncing) return Promise.resolve();
     this.syncing = true;

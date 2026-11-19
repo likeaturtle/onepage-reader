@@ -73,8 +73,7 @@ Page({
       .then((res) => {
         const devices = (res.devices || []).map((device) => ({
           ...device,
-          shortDid: String(device.did || '').slice(-8),
-          boundLabel: String(device.boundAt || '').slice(0, 10),
+          boundLabel: fmt.localDateTime(device.boundAt),
         }));
         this.setData({ devices });
       })
