@@ -142,7 +142,7 @@
         <view
           wx:if="{{voiceRecording}}"
           class="voice-fill"
-          style="clip-path: inset(0 {{100 - voiceProgress}}% 0 0); -webkit-clip-path: inset(0 {{100 - voiceProgress}}% 0 0)"
+          style="{{voiceClipStyle}}"
           aria-hidden="true"
         >
           <view class="voice-hold-content">

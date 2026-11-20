@@ -46,15 +46,24 @@ function defaultForm() {
   };
 }
 
+/* The progress layer is clipped from the right by the elapsed share of the
+ * 60 s limit. The whole declaration is built here and bound as one value:
+ * an expression inside inset() makes the WXML/CSS checker report a syntax
+ * error, because `{{` is not valid inside a CSS function. */
+function voiceClipStyle(progress) {
+  const rest = 100 - Math.min(100, Math.max(0, progress));
+  return `clip-path: inset(0 ${rest}% 0 0); -webkit-clip-path: inset(0 ${rest}% 0 0)`;
+}
+
 /* The mini program cannot flip the phone's Bluetooth switch itself; the best
  * it can do is name the reason and offer the matching settings page. The copy
  * lives here so the banner text and its button never disagree. */
 const BLUETOOTH_BANNERS = {
   off: { hint: '手机蓝牙已关闭，开启后可搜索设备' },
   permission: { hint: '微信无蓝牙权限，请在设置中允许微信使用蓝牙' },
-  privacy: { hint: '小程序未声明蓝牙用途，请联系开发者需补充用户隐私保护指引' },
+  privacy: { hint: '小程序未声明蓝牙用途，请联系开发者补充用户隐私保护指引' },
   unsupported: { hint: '本设备系统版本不支持低功耗蓝牙' },
-  unknown: { hint: '系统蓝牙不可用，请检查蓝牙开关即微信权限' },
+  unknown: { hint: '系统蓝牙不可用，请检查蓝牙开关及微信权限' },
 };
 
 function bluetoothBanner(reason) {
@@ -89,7 +98,7 @@ function confirmDeviceDeletion(count, looksReset) {
       title: looksReset ? '设备日程为空' : '设备上的日程被删除',
       content: looksReset
         ? `设备无任何日程，可能是设备重置。检测到云端有 ${count} 条日程，要同时从云端删除吗？取消会将云端日程重新推回设备。`
-        : `检测到设备上有 ${count} 条日程已不存在。要从云端同步删除吗？取消会讲云端日程重新推回设备。`,
+        : `检测到设备上有 ${count} 条日程已不存在。要从云端同步删除吗？取消会将云端日程重新推回设备。`,
       confirmText: '删除云端',
       cancelText: '恢复设备',
       confirmColor: '#9c3427',
@@ -159,6 +168,7 @@ Page({
     // The 70%-wide hold button is also the recording progress bar, so the
     // duration stays visible under the finger that covers the row below.
     voiceProgress: 0,
+    voiceClipStyle: voiceClipStyle(0),
     voiceElapsed: '0:00',
     voicePhase: '',
     voiceButtonLabel: '按住 说话',
@@ -257,6 +267,7 @@ Page({
           voiceRecording: true,
           voiceSeconds: 0,
           voiceProgress: 0,
+          voiceClipStyle: voiceClipStyle(0),
           voiceElapsed: '0:00',
           voiceError: '',
           voiceButtonLabel: '松开 发送',
@@ -920,7 +931,12 @@ Page({
         label === this.data.voiceElapsed) {
       return;
     }
-    this.setData({ voiceSeconds: seconds, voiceProgress: progress, voiceElapsed: label });
+    this.setData({
+      voiceSeconds: seconds,
+      voiceProgress: progress,
+      voiceClipStyle: voiceClipStyle(progress),
+      voiceElapsed: label,
+    });
   },
 
   stopVoiceTimer() {
@@ -929,7 +945,12 @@ Page({
       this.voiceTimer = null;
     }
     if (this.data.voiceProgress || this.data.voiceSeconds || this.data.voiceElapsed !== '0:00') {
-      this.setData({ voiceProgress: 0, voiceSeconds: 0, voiceElapsed: '0:00' });
+      this.setData({
+        voiceProgress: 0,
+        voiceClipStyle: voiceClipStyle(0),
+        voiceSeconds: 0,
+        voiceElapsed: '0:00',
+      });
     }
   },
 

@@ -222,10 +222,20 @@ test('the hold button doubles as the recording progress bar', () => {
   assert.equal(page.data.voiceSeconds, 60);
   assert.equal(page.data.voiceElapsed, '1:00');
   assert.equal(page.data.voiceProgress, 100);
+  // Built in JS: the style attribute binds one string, because an expression
+  // inside inset() trips the WXML/CSS checker.
+  assert.equal(
+    page.data.voiceClipStyle,
+    'clip-path: inset(0 0% 0 0); -webkit-clip-path: inset(0 0% 0 0)'
+  );
 
   page.stopVoiceTimer();
   assert.equal(page.data.voiceProgress, 0);
   assert.equal(page.data.voiceElapsed, '0:00');
+  assert.equal(
+    page.data.voiceClipStyle,
+    'clip-path: inset(0 100% 0 0); -webkit-clip-path: inset(0 100% 0 0)'
+  );
 });
 
 test('a failed transcription keeps the phase idle and shows the message', async () => {
