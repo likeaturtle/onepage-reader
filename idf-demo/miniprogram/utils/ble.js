@@ -28,6 +28,9 @@ const AUTH_STORAGE = 'calcal.bleAuthKeys';
 const state = {
   adapterOpen: false,
   adapterAvailable: true,
+  // Why the adapter is unavailable: off | permission | privacy | unsupported |
+  // unknown. The page uses it to offer the right settings page.
+  adapterReason: '',
   connected: false,
   connecting: false,
   scanning: false,
@@ -63,6 +66,7 @@ function call(api, options) {
           .replace(/^fail\s*/, '');
         const error = new Error(message || `${api} 失败`);
         error.code = err && err.errCode;
+        error.errno = err && err.errno;
         error.api = api;
         reject(error);
       },
@@ -74,6 +78,7 @@ function snapshot() {
   return {
     adapterOpen: state.adapterOpen,
     adapterAvailable: state.adapterAvailable,
+    adapterReason: state.adapterReason,
     connected: state.connected && state.authed,
     connecting: state.connecting,
     authed: state.authed,
@@ -82,6 +87,107 @@ function snapshot() {
     deviceName: state.deviceName,
     error: state.lastError,
   };
+}
+
+/* --- the system Bluetooth switch ---------------------------------------
+ * WeChat has no API that turns the phone's radio on: only the user can flip
+ * it, and both iOS and Android forbid apps from doing it silently. What a
+ * mini program can do is read the switch, deep-link into the system Bluetooth
+ * page (Android only) or WeChat's permission page, and probe again when the
+ * user comes back. These helpers keep that platform mess out of the pages. */
+
+function bluetoothSwitchOn() {
+  try {
+    if (typeof wx.getSystemSetting !== 'function') return null;
+    const setting = wx.getSystemSetting();
+    if (!setting || typeof setting.bluetoothEnabled !== 'boolean') return null;
+    return setting.bluetoothEnabled;
+  } catch (_) {
+    return null;
+  }
+}
+
+/* iOS reports the WeChat Bluetooth permission as authorized/denied; Android
+ * leaves it to the system permission dialog, so this is usually null there. */
+function bluetoothAuthorized() {
+  try {
+    if (typeof wx.getAppAuthorizeSetting !== 'function') return null;
+    const setting = wx.getAppAuthorizeSetting();
+    const value = setting && setting.bluetoothAuthorized;
+    if (value === true || value === 'authorized') return true;
+    if (value === false || value === 'denied') return false;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function platformName() {
+  try {
+    if (typeof wx.getDeviceInfo === 'function') return String(wx.getDeviceInfo().platform || '');
+    if (typeof wx.getSystemInfoSync === 'function') return String(wx.getSystemInfoSync().platform || '');
+  } catch (_) {
+    // Fall through: an unknown platform only loses the deep link.
+  }
+  return '';
+}
+
+/* Deep-linking to the system Bluetooth page is Android-only (base library
+ * 2.20.1+). iOS has no public entry point, so the page explains the path. */
+function canOpenBluetoothSettings() {
+  return typeof wx.openSystemBluetoothSetting === 'function' && platformName() !== 'ios';
+}
+
+function openBluetoothSettings() {
+  if (!canOpenBluetoothSettings()) {
+    const error = new Error('当前系统不能直接打开蓝牙设置');
+    error.code = 'unsupported';
+    return Promise.reject(error);
+  }
+  return call('openSystemBluetoothSetting');
+}
+
+/* WeChat's own authorization page, where a denied Bluetooth permission can be
+ * granted again (iOS; on Android the permission belongs to the WeChat app). */
+function openWechatSettings() {
+  if (typeof wx.openAppAuthorizeSetting === 'function') return call('openAppAuthorizeSetting');
+  return call('openSetting');
+}
+
+function adapterFailure(err) {
+  const raw = String((err && err.message) || '');
+  // errno 112 is the privacy-agreement failure: the mini program must declare
+  // Bluetooth in 「用户隐私保护指引」 before WeChat hands over the adapter.
+  if ((err && err.errno === 112) || /privacy agreement|scope is not declared/i.test(raw)) {
+    return { reason: 'privacy', message: '小程序未声明蓝牙用途，无法使用蓝牙' };
+  }
+  if (err && err.code === 10009) {
+    return { reason: 'unsupported', message: '当前安卓系统版本过低，不支持低功耗蓝牙' };
+  }
+  if (bluetoothSwitchOn() === false) {
+    return { reason: 'off', message: '手机蓝牙已关闭' };
+  }
+  if (bluetoothAuthorized() === false || bluetoothSwitchOn() === true) {
+    return { reason: 'permission', message: '微信没有蓝牙权限' };
+  }
+  return { reason: 'unknown', message: '蓝牙不可用，请检查蓝牙开关和微信权限' };
+}
+
+function markAdapterOpen() {
+  state.adapterOpen = true;
+  state.adapterAvailable = true;
+  state.adapterReason = '';
+  state.lastError = '';
+}
+
+async function retryAdapter() {
+  if (state.connected || state.connecting || state.adapterOpen) return state.adapterOpen;
+  try {
+    await openAdapter();
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 /* Long-term keys are stored per device MAC. They are sandbox-local; a new
@@ -241,14 +347,29 @@ function bindHandlers() {
   wx.onBluetoothAdapterStateChange((res) => {
     state.adapterAvailable = Boolean(res.available);
     if (!res.available) {
+      const off = bluetoothSwitchOn() === false;
       state.adapterOpen = false;
-      state.lastError = '系统蓝牙已关闭';
+      state.adapterReason = off ? 'off' : 'unknown';
+      state.lastError = off ? '手机蓝牙已关闭' : '系统蓝牙不可用';
       if (state.connected) {
         rejectWaiters(new Error('系统蓝牙已关闭'));
       }
+    } else {
+      // The radio is back; the next scan or connect re-opens the adapter.
+      state.adapterReason = '';
     }
     emitState();
   });
+
+  /* Returning from the system Bluetooth page (or WeChat's permission page) is
+   * the moment the switch may have flipped, so probe once more instead of
+   * making the user tap 扫描设备 to find out. */
+  if (typeof wx.onAppShow === 'function') {
+    wx.onAppShow(() => {
+      if (state.adapterAvailable) return;
+      retryAdapter();
+    });
+  }
 }
 
 async function openAdapter() {
@@ -256,19 +377,16 @@ async function openAdapter() {
   if (state.adapterOpen) return;
   try {
     await call('openBluetoothAdapter', { mode: 'central' });
-    state.adapterOpen = true;
-    state.adapterAvailable = true;
-    state.lastError = '';
+    markAdapterOpen();
   } catch (err) {
     if (/already/i.test(err.message)) {
-      state.adapterOpen = true;
-      state.adapterAvailable = true;
+      markAdapterOpen();
       return;
     }
+    const failure = adapterFailure(err);
     state.adapterAvailable = false;
-    state.lastError = err.code === 10001
-      ? '蓝牙未开启或未授权，请打开系统蓝牙并允许微信使用蓝牙'
-      : err.message;
+    state.adapterReason = failure.reason;
+    state.lastError = failure.message;
     throw new Error(state.lastError);
   } finally {
     emitState();
@@ -817,6 +935,10 @@ module.exports = {
   RX_UUID,
   TX_UUID,
   openAdapter,
+  retryAdapter,
+  canOpenBluetoothSettings,
+  openBluetoothSettings,
+  openWechatSettings,
   startScan,
   stopScan,
   connect,

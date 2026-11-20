@@ -21,14 +21,15 @@ const fmt = require('../utils/format');
 function makePage(formDate, options = {}) {
   let definition = null;
   const scrollCalls = [];
+  const calls = { bluetoothSettings: 0, wechatSettings: 0, retries: 0, toasts: [], modals: [] };
   const rect = options.rect || null;
   const pageScrollTop = Number(options.scrollTop) || 0;
   const windowHeight = Number(options.windowHeight) || 700;
 
   global.Page = (value) => { definition = value; };
   global.wx = {
-    showToast() {},
-    showModal() {},
+    showToast: (opts) => calls.toasts.push(opts),
+    showModal: (opts) => calls.modals.push(opts),
     reLaunch() {},
     switchTab() {},
     getWindowInfo: () => ({ windowHeight }),
@@ -59,6 +60,19 @@ function makePage(formDate, options = {}) {
         return () => { stateCallback = null; };
       },
       onMessage() { return () => {}; },
+      canOpenBluetoothSettings: () => options.android !== false,
+      openBluetoothSettings() {
+        calls.bluetoothSettings += 1;
+        return Promise.resolve({});
+      },
+      openWechatSettings() {
+        calls.wechatSettings += 1;
+        return Promise.resolve({});
+      },
+      retryAdapter() {
+        calls.retries += 1;
+        return Promise.resolve(options.retryReady !== false);
+      },
     },
   };
   require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {} };
@@ -88,6 +102,7 @@ function makePage(formDate, options = {}) {
   });
   page.data.form = Object.assign({}, page.data.form, { date: formDate });
   page.scrollCalls = scrollCalls;
+  page.calls = calls;
   page.emitState = (state) => { if (stateCallback) stateCallback(state); };
   return page;
 }
@@ -406,4 +421,119 @@ test('confirming an empty code keeps the dialog open', async () => {
 
   page.cancelPairing();
   assert.equal(page.data.pairingVisible, false);
+});
+
+test('the Bluetooth banner names the reason and offers the system page', () => {
+  const page = makePage('2026-11-16');
+  page.onLoad();
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: false, adapterReason: 'off',
+  });
+
+  assert.equal(page.data.adapterHint, '手机蓝牙已关闭，开启后才能搜索设备');
+  assert.equal(page.data.adapterActionLabel, '去开启');
+  // The banner is the only place the adapter failure is explained.
+  assert.equal(page.data.error, '');
+
+  page.enableBluetooth();
+  assert.equal(page.calls.bluetoothSettings, 1);
+  assert.equal(page.calls.wechatSettings, 0);
+});
+
+test('a blocked permission on Android points at the app permission page', () => {
+  const page = makePage('2026-11-16');
+  page.onLoad();
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: false, adapterReason: 'permission',
+  });
+
+  assert.match(page.data.adapterHint, /权限/);
+  assert.equal(page.data.adapterActionLabel, '去设置');
+
+  // Android's permission belongs to the WeChat app, so no mini-program page
+  // can grant it; the modal has to name the system screen.
+  page.enableBluetooth();
+  assert.equal(page.calls.modals.length, 1);
+  assert.match(page.calls.modals[0].content, /附近的设备/);
+  assert.equal(page.calls.wechatSettings, 0);
+});
+
+test('a blocked permission on iOS reopens WeChat authorization', () => {
+  const page = makePage('2026-11-16', { android: false });
+  page.onLoad();
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: false, adapterReason: 'permission',
+  });
+
+  page.enableBluetooth();
+  assert.equal(page.calls.wechatSettings, 1);
+  assert.equal(page.calls.modals.length, 0);
+});
+
+test('a privacy or unsupported failure has no button to press', () => {
+  const page = makePage('2026-11-16');
+  page.onLoad();
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: false, adapterReason: 'privacy',
+  });
+
+  assert.match(page.data.adapterHint, /隐私保护指引/);
+  assert.equal(page.data.adapterActionLabel, '');
+});
+
+test('an iOS phone without a deep link shows the Control Center steps', () => {
+  const page = makePage('2026-11-16', { android: false });
+  page.onLoad();
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: false, adapterReason: 'off',
+  });
+
+  assert.equal(page.data.adapterActionLabel, '如何开启');
+
+  page.enableBluetooth();
+  assert.equal(page.calls.modals.length, 1);
+  assert.match(page.calls.modals[0].content, /控制中心/);
+});
+
+test('the iOS help dialog can retry once Bluetooth is back on', async () => {
+  const page = makePage('2026-11-16', { android: false, retryReady: false });
+  page.onLoad();
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: false, adapterReason: 'off',
+  });
+
+  page.enableBluetooth();
+  const modal = page.calls.modals[0];
+  assert.equal(modal.confirmText, '已开启，重试');
+
+  modal.success({ confirm: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(page.calls.retries, 1);
+  assert.match(page.calls.toasts[0].title, /还没有检测到蓝牙/);
+});
+
+test('flipping the switch while in settings confirms the recovery', () => {
+  const page = makePage('2026-11-16');
+  page.onLoad();
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: false, adapterReason: 'off',
+  });
+
+  // The app-show probe in utils/ble.js reports the adapter as usable again.
+  page.emitState({
+    connected: false, connecting: false, scanning: false,
+    adapterAvailable: true, adapterReason: '',
+  });
+
+  assert.equal(page.calls.toasts.length, 1);
+  assert.equal(page.calls.toasts[0].title, '蓝牙已开启');
+  assert.equal(page.data.adapterAvailable, true);
 });

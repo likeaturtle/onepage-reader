@@ -14,8 +14,16 @@
     </view>
   </view>
 
-  <view wx:if="{{!adapterAvailable}}" class="banner error">
-    系统蓝牙不可用，请打开并允许微信使用蓝牙后重试
+  <view wx:if="{{!adapterAvailable}}" class="banner error banner-switch">
+    <text class="banner-copy">{{adapterHint}}</text>
+    <view
+      wx:if="{{adapterActionLabel}}"
+      class="banner-link"
+      hover-class="banner-link-hover"
+      bindtap="enableBluetooth"
+    >
+      <text class="banner-link-text">{{adapterActionLabel}}</text>
+    </view>
   </view>
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
   <view wx:if="{{syncError}}" class="banner warn">{{syncError}}</view>

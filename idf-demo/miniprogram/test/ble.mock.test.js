@@ -20,6 +20,12 @@ class FakeWx {
     this.connectionHandler = null;
     this.valueHandler = null;
     this.adapterHandler = null;
+    this.appShowHandler = null;
+    this.platform = options.platform || 'android';
+    this.bluetoothEnabled = options.bluetoothEnabled !== false;
+    this.adapterError = options.adapterError || null;
+    this.settingsOpened = 0;
+    this.authorizeOpened = 0;
     this.connected = false;
     this.deviceId = '';
     this.rxBuffer = Buffer.alloc(0);
@@ -52,8 +58,26 @@ class FakeWx {
   onBluetoothAdapterStateChange(handler) { this.adapterHandler = handler; }
   onBluetoothDeviceFound() {}
   offBluetoothDeviceFound() {}
+  onAppShow(handler) { this.appShowHandler = handler; }
+
+  getDeviceInfo() { return { platform: this.platform }; }
+  getSystemSetting() { return { bluetoothEnabled: this.bluetoothEnabled }; }
+
+  openSystemBluetoothSetting(options) {
+    this.settingsOpened += 1;
+    setTimeout(() => options.success({}), 0);
+  }
+
+  openAppAuthorizeSetting(options) {
+    this.authorizeOpened += 1;
+    setTimeout(() => options.success({}), 0);
+  }
 
   openBluetoothAdapter(options) {
+    if (this.adapterError) {
+      setTimeout(() => options.fail(this.adapterError), 0);
+      return;
+    }
     setTimeout(() => options.success({}), 0);
   }
 
@@ -384,4 +408,98 @@ test('a failed authentication keeps the stored key for a later real device', asy
   await assert.rejects(() => ble.connect('device-1'), /认证失败|重置/);
   const stored = fake.getStorageSync('calcal.bleAuthKeys');
   assert.deepEqual(Buffer.from(auth.base64ToBytes(stored[fake.pid])), previous);
+});
+
+
+test('a phone with Bluetooth off reports the switch as the reason', async () => {
+  const fake = new FakeWx({
+    bluetoothEnabled: false,
+    adapterError: { errCode: 10001, errMsg: 'openBluetoothAdapter:fail not available' },
+  });
+  global.wx = fake;
+
+  delete require.cache[require.resolve('../utils/ble')];
+  const ble = require('../utils/ble');
+
+  await assert.rejects(() => ble.openAdapter(), /蓝牙已关闭/);
+  assert.equal(ble.getState().adapterAvailable, false);
+  assert.equal(ble.getState().adapterReason, 'off');
+});
+
+test('a blocked permission is reported separately from the switch', async () => {
+  const fake = new FakeWx({
+    bluetoothEnabled: true,
+    adapterError: { errCode: 10001, errMsg: 'openBluetoothAdapter:fail not available' },
+  });
+  global.wx = fake;
+
+  delete require.cache[require.resolve('../utils/ble')];
+  const ble = require('../utils/ble');
+
+  await assert.rejects(() => ble.openAdapter(), /权限/);
+  assert.equal(ble.getState().adapterReason, 'permission');
+});
+
+test('an undeclared privacy scope is not blamed on the phone switch', async () => {
+  const fake = new FakeWx({
+    bluetoothEnabled: true,
+    adapterError: {
+      errCode: 10001,
+      errno: 112,
+      errMsg: 'openBluetoothAdapter:fail api scope is not declared in the privacy agreement',
+    },
+  });
+  global.wx = fake;
+
+  delete require.cache[require.resolve('../utils/ble')];
+  const ble = require('../utils/ble');
+
+  await assert.rejects(() => ble.openAdapter(), /声明蓝牙/);
+  assert.equal(ble.getState().adapterReason, 'privacy');
+});
+
+test('Android can jump to the system Bluetooth page, iOS cannot', async () => {
+  const android = new FakeWx();
+  global.wx = android;
+  delete require.cache[require.resolve('../utils/ble')];
+  let ble = require('../utils/ble');
+
+  assert.equal(ble.canOpenBluetoothSettings(), true);
+  await ble.openBluetoothSettings();
+  assert.equal(android.settingsOpened, 1);
+
+  // iOS has no public deep link, so the page must fall back to instructions
+  // instead of pretending it opened something.
+  const ios = new FakeWx({ platform: 'ios' });
+  global.wx = ios;
+  delete require.cache[require.resolve('../utils/ble')];
+  ble = require('../utils/ble');
+
+  assert.equal(ble.canOpenBluetoothSettings(), false);
+  await assert.rejects(() => ble.openBluetoothSettings(), (err) => err.code === 'unsupported');
+  assert.equal(ios.settingsOpened, 0);
+});
+
+test('coming back to the foreground re-probes a closed adapter', async () => {
+  const fake = new FakeWx({
+    bluetoothEnabled: false,
+    adapterError: { errCode: 10001, errMsg: 'openBluetoothAdapter:fail not available' },
+  });
+  global.wx = fake;
+
+  delete require.cache[require.resolve('../utils/ble')];
+  const ble = require('../utils/ble');
+
+  await assert.rejects(() => ble.openAdapter());
+  assert.equal(ble.getState().adapterAvailable, false);
+  assert.ok(fake.appShowHandler, 'the app-show hook must be bound after a failure');
+
+  // The user turned Bluetooth on in the system settings and came back.
+  fake.bluetoothEnabled = true;
+  fake.adapterError = null;
+  fake.appShowHandler();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(ble.getState().adapterAvailable, true);
+  assert.equal(ble.getState().adapterReason, '');
 });

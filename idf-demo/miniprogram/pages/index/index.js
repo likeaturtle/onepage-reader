@@ -46,6 +46,42 @@ function defaultForm() {
   };
 }
 
+/* The mini program cannot flip the phone's Bluetooth switch itself; the best
+ * it can do is name the reason and offer the matching settings page. The copy
+ * lives here so the banner text and its button never disagree. */
+const BLUETOOTH_BANNERS = {
+  off: { hint: '手机蓝牙已关闭，开启后才能搜索设备' },
+  permission: { hint: '微信没有蓝牙权限，请在系统设置中允许微信使用蓝牙' },
+  privacy: { hint: '小程序未在微信后台声明蓝牙用途，开发者需补充用户隐私保护指引' },
+  unsupported: { hint: '这台手机的系统版本不支持低功耗蓝牙' },
+  unknown: { hint: '系统蓝牙不可用，请检查蓝牙开关和微信权限' },
+};
+
+function bluetoothBanner(reason) {
+  const text = BLUETOOTH_BANNERS[reason] || BLUETOOTH_BANNERS.unknown;
+  // The system-Bluetooth deep link is Android-only, so it doubles as the
+  // platform check for the permission copy below.
+  const android = typeof ble.canOpenBluetoothSettings === 'function' && ble.canOpenBluetoothSettings();
+  if (reason === 'permission') {
+    // iOS keeps the Bluetooth switch in WeChat's own authorization page;
+    // Android's permission belongs to the WeChat app, so no mini-program page
+    // can grant it and the instructions have to name the system screen.
+    return Object.assign({}, text, {
+      label: '去设置',
+      action: android ? 'help' : 'wechat',
+    });
+  }
+  if (reason === 'privacy' || reason === 'unsupported') {
+    return Object.assign({}, text, { label: '', action: '' });
+  }
+  // Only Android has a deep link into the system Bluetooth page; everywhere
+  // else the button explains where the switch is instead of pretending.
+  return Object.assign({}, text, {
+    label: android ? '去开启' : '如何开启',
+    action: android ? 'system' : 'help',
+  });
+}
+
 
 function confirmDeviceDeletion(count, looksReset) {
   return new Promise((resolve) => {
@@ -98,6 +134,10 @@ Page({
     syncing: false,
     scanning: false,
     adapterAvailable: true,
+    adapterReason: '',
+    adapterHint: '',
+    adapterAction: '',
+    adapterActionLabel: '',
     devices: [],
     showAllDevices: false,
     hasScanned: false,
@@ -145,16 +185,30 @@ Page({
     this.syncUser();
 
     this.offState = ble.onState((state) => {
+      const banner = bluetoothBanner(state.adapterReason);
       const patch = {
         connected: state.connected,
         connecting: state.connecting,
         scanning: state.scanning,
         adapterAvailable: state.adapterAvailable,
+        adapterReason: state.adapterReason || '',
+        adapterHint: banner.hint,
+        adapterAction: banner.action,
+        adapterActionLabel: banner.label,
       };
       if (state.connected) {
         patch.error = '';
+      } else if (!state.adapterAvailable) {
+        // The banner above already explains the adapter and offers the switch;
+        // a second red line with the same sentence only pushes the scan button
+        // further down.
+        patch.error = '';
       } else if (state.error) {
         patch.error = state.error;
+      }
+      if (!state.connected && this.data.adapterReason === 'off' && state.adapterAvailable) {
+        // The switch was flipped while the user was in the system settings.
+        wx.showToast({ title: '蓝牙已开启', icon: 'none' });
       }
       if (!state.connected) {
         patch.hello = null;
@@ -340,7 +394,47 @@ Page({
       this.scanTimer = setTimeout(() => this.stopScan(), SCAN_DURATION_MS);
     }).catch((err) => {
       if (session !== this.scanSession) return;
-      this.setData({ error: err.message, scanning: false });
+      // An unavailable adapter is already explained (with a button) above.
+      this.setData({
+        error: this.data.adapterAvailable ? err.message : '',
+        scanning: false,
+      });
+    });
+  },
+
+  /* Jump to the page where the user can actually flip the switch. Android can
+   * open the system Bluetooth settings; iOS only gets WeChat's permission page
+   * (or the instructions), because the OS has no such deep link. */
+  enableBluetooth() {
+    if (this.data.adapterAction === 'help') {
+      this.showBluetoothHelp();
+      return;
+    }
+    const open = this.data.adapterAction === 'wechat'
+      ? ble.openWechatSettings
+      : ble.openBluetoothSettings;
+    Promise.resolve(open()).catch(() => this.showBluetoothHelp());
+  },
+
+  showBluetoothHelp() {
+    // iOS has no public deep link into Bluetooth settings (the App-Prefs
+    // scheme is private API), so the fastest route is named instead: Control
+    // Center. Android goes through the system app permission screen.
+    const android = typeof ble.canOpenBluetoothSettings === 'function' && ble.canOpenBluetoothSettings();
+    wx.showModal({
+      title: android ? '开启手机蓝牙' : '开启 iPhone 蓝牙',
+      content: android
+        ? '小程序不能直接打开手机蓝牙。请到系统设置里打开蓝牙，并在「应用 → 微信 → 权限」里允许「附近的设备」，然后回到小程序重新扫描。'
+        : '小程序不能直接打开 iPhone 的蓝牙。请打开控制中心（右上角下滑，带 Home 键的机型'
+          + '从底部上滑）点亮蓝牙图标，或到「设置 → 蓝牙」打开，再回到小程序重试。',
+      confirmText: '已开启，重试',
+      cancelText: '稍后',
+      success: (res) => {
+        if (!res.confirm) return;
+        ble.retryAdapter().then((ready) => {
+          if (!ready) wx.showToast({ title: '还没有检测到蓝牙，请确认已开启', icon: 'none' });
+        });
+      },
     });
   },
 
@@ -379,7 +473,9 @@ Page({
           return this.syncDevice();
         });
       })
-      .catch((err) => this.setData({ error: err.message }))
+      .catch((err) => this.setData({
+        error: this.data.adapterAvailable ? err.message : '',
+      }))
       .then(() => this.setData({ connecting: false }));
   },
 
