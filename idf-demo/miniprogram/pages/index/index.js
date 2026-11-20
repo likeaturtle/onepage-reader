@@ -50,11 +50,11 @@ function defaultForm() {
  * it can do is name the reason and offer the matching settings page. The copy
  * lives here so the banner text and its button never disagree. */
 const BLUETOOTH_BANNERS = {
-  off: { hint: '手机蓝牙已关闭，开启后才能搜索设备' },
-  permission: { hint: '微信没有蓝牙权限，请在系统设置中允许微信使用蓝牙' },
-  privacy: { hint: '小程序未在微信后台声明蓝牙用途，开发者需补充用户隐私保护指引' },
-  unsupported: { hint: '这台手机的系统版本不支持低功耗蓝牙' },
-  unknown: { hint: '系统蓝牙不可用，请检查蓝牙开关和微信权限' },
+  off: { hint: '手机蓝牙已关闭，开启后可搜索设备' },
+  permission: { hint: '微信无蓝牙权限，请在设置中允许微信使用蓝牙' },
+  privacy: { hint: '小程序未声明蓝牙用途，请联系开发者需补充用户隐私保护指引' },
+  unsupported: { hint: '本设备系统版本不支持低功耗蓝牙' },
+  unknown: { hint: '系统蓝牙不可用，请检查蓝牙开关即微信权限' },
 };
 
 function bluetoothBanner(reason) {
@@ -88,8 +88,8 @@ function confirmDeviceDeletion(count, looksReset) {
     wx.showModal({
       title: looksReset ? '设备日程为空' : '设备上的日程被删除',
       content: looksReset
-        ? `设备上没有任何日程，可能是设备重置。检测到云端有 ${count} 条日程，要同时从云端删除吗？取消会把它们重新推回设备。`
-        : `检测到设备上有 ${count} 条日程已不存在。要从云端也删除吗？取消会把它们重新推回设备。`,
+        ? `设备无任何日程，可能是设备重置。检测到云端有 ${count} 条日程，要同时从云端删除吗？取消会将云端日程重新推回设备。`
+        : `检测到设备上有 ${count} 条日程已不存在。要从云端同步删除吗？取消会讲云端日程重新推回设备。`,
       confirmText: '删除云端',
       cancelText: '恢复设备',
       confirmColor: '#9c3427',

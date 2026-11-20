@@ -431,7 +431,7 @@ test('the Bluetooth banner names the reason and offers the system page', () => {
     adapterAvailable: false, adapterReason: 'off',
   });
 
-  assert.equal(page.data.adapterHint, '手机蓝牙已关闭，开启后才能搜索设备');
+  assert.equal(page.data.adapterHint, '手机蓝牙已关闭，开启后可搜索设备');
   assert.equal(page.data.adapterActionLabel, '去开启');
   // The banner is the only place the adapter failure is explained.
   assert.equal(page.data.error, '');

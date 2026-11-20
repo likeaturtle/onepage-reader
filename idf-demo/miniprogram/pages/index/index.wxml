@@ -51,7 +51,7 @@
     </view>
 
     <block wx:if="{{!connected}}">
-      <view class="muted">先按设备电源键唤醒再扫描并连接；首次连接或换手机请长按设备确认键 3 秒，按屏幕上的 12 位配对码完成绑定</view>
+      <view class="muted">扫描前请先唤醒设备；首次使用请长按设备确认键 3 秒，输入 12 位配对码完成设备绑定</view>
       <view class="row actions">
         <button class="btn primary grow" bindtap="startScan" loading="{{scanning}}" disabled="{{connecting || scanning}}">
           {{scanning ? '正在扫描…' : (hasScanned ? '重新扫描' : '扫描设备')}}
@@ -64,7 +64,7 @@
       <view class="switch-row">
         <view>
           <view class="switch-title">显示全部蓝牙设备</view>
-          <view class="switch-desc">找不到设备时打开右侧开关，手动选择名为 Mochen CalCal 的设备</view>
+          <view class="switch-desc">无法找到设备时，可开启右侧开关手动选择</view>
         </view>
         <switch checked="{{showAllDevices}}" color="#22345a" bindchange="toggleAllDevices" />
       </view>
@@ -113,7 +113,7 @@
 
     <textarea
       class="input area voice-text"
-      placeholder="按住下方按钮说一句，例如：明天下午三点项目评审，会议室 A"
+      placeholder="按住下方按钮说出日程，例如：明天下午三点项目评审，会议室 A"
       value="{{voiceText}}"
       maxlength="500"
       bindinput="onVoiceText"
@@ -163,7 +163,7 @@
     </view>
 
     <view wx:if="{{voiceError}}" class="banner error voice-error">{{voiceError}}</view>
-    <view wx:else class="voice-note">录音会发送到 DeepSeek 识别，单次最长 60 秒，确认文字后填入下方表单</view>
+    <view wx:else class="voice-note">录音单次最长 60 秒，语音输入和日程解析使用云端服务</view>
   </view>
 
   <view id="add-card" class="card">
@@ -175,7 +175,7 @@
     </view>
 
     <view wx:if="{{voiceFilled}}" class="inline-tip voice-filled">
-      已按语音填入，请核对日期、时间和标题后点「保存日程」
+      已按语音内容解析日程，请核对后点「保存日程」
     </view>
 
     <view class="pick-row">
