@@ -5,18 +5,23 @@
       <view wx:else class="avatar big avatar-text">{{initial}}</view>
     </button>
     <view class="profile-copy">
-      <input
-        class="name-input"
-        type="nickname"
-        placeholder="设置昵称"
-        placeholder-class="name-placeholder"
-        value="{{nickname}}"
-        maxlength="20"
-        bindinput="onNickname"
-      />
-      <text class="avatar-tip">点击头像更换 · 用户 ID {{user.id || '—'}}</text>
+      <view class="name-row">
+        <input
+          class="name-input"
+          type="nickname"
+          placeholder="设置昵称"
+          placeholder-class="name-placeholder"
+          value="{{nickname}}"
+          maxlength="20"
+          bindinput="onNickname"
+        />
+        <text class="save-link" bindtap="save" hover-class="save-link-hover" aria-role="button" aria-label="保存昵称">{{saving ? '保存中' : '保存昵称'}}</text>
+      </view>
+      <view class="avatar-meta">
+        <text>点击左侧图标更换头像</text>
+        <text>用户 ID {{user.id || '—'}}</text>
+      </view>
     </view>
-    <text class="save-link" bindtap="save">{{saving ? '保存中' : '保存'}}</text>
   </view>
 
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
@@ -54,7 +59,7 @@
     <view class="kv"><text>登录方式</text><text>微信登录</text></view>
     <view class="kv"><text>接口地址</text><text class="mono">{{apiBase}}</text></view>
     <view class="kv"><text>客户端版本</text><text>{{version}}</text></view>
-    <view class="kv"><text>设备协议</text><text>proto {{protocol}}</text></view>
+    <view class="kv"><text>设备间协议版本</text><text>v{{protocol}}</text></view>
   </view>
 
   <view class="section">

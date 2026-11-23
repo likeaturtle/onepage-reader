@@ -130,3 +130,20 @@ playwright，`design_lint.py check` 会跳过；改用肉眼逐屏 + 下面这�
 - 月历面板底边同步降到 `#EFEAE0`；我的页昵称下划线保持 `#EFEAE0`。
 - 预览全量重截：`preview/mini-preview.png`（无方案角标）；方案对照图仍是 `preview/lines-b.png`。
 - `node --test` 114 pass；WXML 没动。
+
+### 我的页：昵称保存与头像提示拆行（2026-11-23）
+
+用户指出头像行右侧的「保存」含义不清。确认它只保存昵称（头像通过 `chooseAvatar` 立即上传），
+采用方案 2：
+
+- 「保存昵称」移到昵称输入框右侧，和输入框同一行；头像不再和保存按钮并排。
+- 昵称下方改成两行：`点击左侧图标更换头像` / `用户 ID ...`。
+- 头像本身仍是点一下立即上传，提示文案改为「左侧图标」，位置关系不再误导。
+- 预览局部：`preview/profile-save.png`；全量 `preview/mini-preview.png` 已重截。
+
+
+### 信息模块：协议行文案（2026-11-23）
+
+用户要求把「设备协议 / proto 3」改成「设备间协议版本 / v3」。`profile.wxml` 的值改用
+`v{{protocol}}`，仍来自 `config.js` 的 `protocol: 3`；技术文档里的 `proto 3` 写法不动。
+预览 `preview/mini-preview.png` 已重截。

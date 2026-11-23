@@ -56,8 +56,16 @@
   min-width: 0;
 }
 
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
 .name-input {
-  width: 100%;
+  flex: 1;
+  width: auto;
+  min-width: 0;
   height: 60rpx;
   padding: 0;
   font-size: 40rpx;
@@ -74,9 +82,11 @@
   font-weight: 400;
 }
 
-.avatar-tip {
-  display: block;
+.avatar-meta {
   margin-top: 8rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
   font-size: 20rpx;
   line-height: 1.5;
   color: #9a9487;
@@ -84,11 +94,16 @@
 
 .save-link {
   flex: none;
+  padding: 8rpx 0 8rpx 12rpx;
   font-size: 22rpx;
   color: #1e3050;
+  white-space: nowrap;
   text-decoration: underline;
   text-underline-offset: 4rpx;
-  padding: 16rpx 0 16rpx 16rpx;
+}
+
+.save-link-hover {
+  opacity: 0.55;
 }
 
 .device-item {
