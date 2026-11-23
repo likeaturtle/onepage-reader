@@ -1,16 +1,18 @@
 <view class="page">
-  <view class="topbar">
-    <view class="brand">
-      <image class="brand-logo" src="/CalCal_logo.png" mode="aspectFit" />
-      <view class="brand-copy">
-        <view class="brand-name">{{appName}}</view>
-        <view class="brand-sub">{{tagline}}</view>
+  <view class="masthead">
+    <view class="masthead-main">
+      <text class="kicker">今天 · {{today.weekday}}</text>
+      <view class="masthead-row">
+        <text class="masthead-day">{{today.day}}</text>
+        <view class="masthead-side">
+          <text>{{today.title}}</text>
+          <text>{{today.year}}</text>
+        </view>
       </view>
     </view>
-    <view class="user" bindtap="goProfile">
-      <image wx:if="{{userAvatar}}" class="avatar" src="{{userAvatar}}" mode="aspectFill" />
-      <view wx:else class="avatar avatar-text">{{userInitial}}</view>
-      <text class="user-name">{{user.nickname || '微信用户'}}</text>
+    <view class="avatar" bindtap="goProfile" hover-class="avatar-hover" aria-role="button" aria-label="我的">
+      <image wx:if="{{userAvatar}}" class="avatar-img" src="{{userAvatar}}" mode="aspectFill" />
+      <text wx:else>{{userInitial}}</text>
     </view>
   </view>
 
@@ -31,27 +33,35 @@
     未连接设备，日程保存在云端，连接设备后自动同步
   </view>
 
-  <view class="card">
+  <!-- Device: one status line; the scan panel expands when disconnected. -->
+  <view class="device-section">
     <view
-      class="card-head device-head {{connected && !deviceOpen ? 'collapsed' : ''}}"
+      class="device-line"
       bindtap="toggleDeviceCard"
-      hover-class="{{connected ? 'card-head-hover' : 'none'}}"
+      hover-class="{{connected ? 'device-line-hover' : 'none'}}"
       aria-role="{{connected ? 'button' : ''}}"
       aria-label="{{connected ? (deviceOpen ? '收起设备信息' : '展开设备信息') : ''}}"
     >
-      <view class="card-heading">
-        <text class="card-title">设备</text>
-        <view class="dot {{connected ? 'on' : ''}}"></view>
-        <text class="hint">{{connected ? '已连接' : (connecting ? '连接中…' : '未连接')}}</text>
+      <view class="dot {{connected ? 'on' : ''}}"></view>
+      <text class="device-name">{{connected ? (hello.name || appName) : '墨程CalCal'}}</text>
+      <text class="device-state">{{connected ? '已连接' : (connecting ? '连接中…' : '未连接')}}</text>
+      <view wx:if="{{connected}}" class="device-actions">
+        <text class="device-action" catchtap="refresh">{{syncing ? '同步中' : '同步'}}</text>
+        <text class="device-action" catchtap="sleepDevice">休眠</text>
+        <text class="device-action danger" catchtap="disconnect">断开</text>
       </view>
-      <view wx:if="{{connected}}" class="head-toggle">
-        <text>{{deviceOpen ? '收起' : '展开'}}</text>
-        <view class="head-caret {{deviceOpen ? 'up' : ''}}"></view>
-      </view>
+      <view wx:if="{{connected}}" class="device-caret {{deviceOpen ? 'up' : ''}}"></view>
+    </view>
+
+    <view wx:if="{{connected && deviceOpen}}" class="device-info">
+      <view class="kv"><text>名称</text><text>{{hello.name || appName}}</text></view>
+      <view class="kv"><text>固件</text><text>{{hello.fw || '—'}}</text></view>
+      <view class="kv"><text>设备日程</text><text>{{hello.events || 0}} 条</text></view>
+      <view class="kv"><text>设备时间</text><text>{{deviceTime || '未同步'}}</text></view>
     </view>
 
     <block wx:if="{{!connected}}">
-      <view class="muted">扫描前请先唤醒设备；首次使用请长按设备确认键 3 秒，输入 12 位配对码完成设备绑定</view>
+      <view class="muted device-copy">扫描前请先唤醒设备；首次使用请长按设备确认键 3 秒，输入 12 位配对码完成设备绑定</view>
       <view class="row actions">
         <button class="btn primary grow" bindtap="startScan" loading="{{scanning}}" disabled="{{connecting || scanning}}">
           {{scanning ? '正在扫描…' : (hasScanned ? '重新扫描' : '扫描设备')}}
@@ -62,24 +72,24 @@
       <view wx:elif="{{hasScanned}}" class="scan-tip">扫描完成 · {{devices.length}} 个设备</view>
 
       <view class="switch-row">
-        <view>
+        <view class="switch-copy">
           <view class="switch-title">显示全部蓝牙设备</view>
           <view class="switch-desc">无法找到设备时，可开启右侧开关手动选择</view>
         </view>
-        <switch checked="{{showAllDevices}}" color="#22345a" bindchange="toggleAllDevices" />
+        <switch checked="{{showAllDevices}}" color="#1e3050" bindchange="toggleAllDevices" />
       </view>
 
-      <view wx:if="{{devices.length}}" class="device-list">
+      <view wx:if="{{devices.length}}" class="scan-list">
         <view
           wx:for="{{devices}}"
           wx:key="deviceId"
-          class="device"
+          class="scan-item"
           bindtap="connect"
           data-id="{{item.deviceId}}"
         >
-          <view class="device-main">
-            <view class="device-name">{{item.name}}</view>
-            <view class="device-meta">信号 {{item.RSSI}} dBm</view>
+          <view class="scan-main">
+            <view class="scan-name">{{item.name}}</view>
+            <view class="scan-meta">信号 {{item.RSSI}} dBm</view>
           </view>
           <button class="btn small" catchtap="connect" data-id="{{item.deviceId}}">连接</button>
         </view>
@@ -87,33 +97,19 @@
       <view wx:elif="{{scanning}}" class="empty compact">正在搜索附近的蓝牙设备</view>
       <view wx:elif="{{hasScanned}}" class="empty compact">未发现设备，请确认设备已唤醒并重新扫描</view>
     </block>
-
-    <block wx:else>
-      <view wx:if="{{deviceOpen}}" class="device-info">
-        <view class="kv"><text>名称</text><text>{{hello.name || appName}}</text></view>
-        <view class="kv"><text>固件</text><text>{{hello.fw || '—'}}</text></view>
-        <view class="kv"><text>设备日程</text><text>{{hello.events || 0}} 条</text></view>
-        <view class="kv"><text>设备时间</text><text>{{deviceTime || '未同步'}}</text></view>
-      </view>
-      <view class="row actions">
-        <button class="btn grow" bindtap="refresh" loading="{{syncing}}">同步</button>
-        <button class="btn grow" bindtap="sleepDevice">锁屏休眠</button>
-        <button class="btn danger grow" bindtap="disconnect">断开</button>
-      </view>
-    </block>
   </view>
 
-  <view class="card">
-    <view class="card-head">
-      <view class="card-heading">
-        <text class="card-title">语音日程</text>
-        <text class="hint">{{voiceStatus}}</text>
-      </view>
+  <!-- Voice: one-sentence capture. -->
+  <view class="section">
+    <view class="section-head">
+      <text class="section-title">说一句</text>
+      <text class="hint">{{voiceStatus}}</text>
     </view>
 
     <textarea
-      class="input area voice-text"
+      class="voice-text"
       placeholder="按住下方按钮说出日程，例如：明天下午三点项目评审，会议室 A"
+      placeholder-class="voice-placeholder"
       value="{{voiceText}}"
       maxlength="500"
       bindinput="onVoiceText"
@@ -138,7 +134,7 @@
         </view>
         <!-- Red progress layer clipped to the elapsed share of the 60 s
          * limit. It repeats the button content in white so the label stays
-         * readable over both the beige rest and the red fill. -->
+         * readable over both the paper rest and the ink fill. -->
         <view
           wx:if="{{voiceRecording}}"
           class="voice-fill"
@@ -154,7 +150,7 @@
       </view>
       <view class="voice-parse-slot">
         <button
-          class="btn primary voice-confirm"
+          class="btn voice-confirm"
           bindtap="confirmVoice"
           loading="{{voicePhase === 'parsing'}}"
           disabled="{{voicePhase !== '' || voiceRecording || busy}}"
@@ -166,35 +162,35 @@
     <view wx:else class="voice-note">录音单次最长 60 秒，语音输入和日程解析使用云端服务</view>
   </view>
 
-  <view id="add-card" class="card">
-    <view class="card-head">
-      <view class="card-heading">
-        <text class="card-title">添加日程</text>
-        <text class="hint">{{voiceFilled ? '请确认后保存' : (connected ? '同时写入设备' : '先保存到云端')}}</text>
-      </view>
+  <!-- Event: a four-line paper form. -->
+  <view id="add-card" class="section form-section">
+    <view class="section-head">
+      <text class="section-title">日程</text>
+      <text class="hint">{{voiceFilled ? '已按语音填好' : (connected ? '同时写入设备' : '先保存到云端')}}</text>
     </view>
 
     <view wx:if="{{voiceFilled}}" class="inline-tip voice-filled">
       已按语音内容解析日程，请核对后点「保存日程」
     </view>
 
-    <view class="pick-row">
-      <view class="pick-item date">
-        <view
-          class="field pick {{calendarOpen ? 'open' : ''}}"
-          bindtap="toggleCalendar"
-          hover-class="pick-hover"
-          aria-role="button"
-          aria-label="选择日期"
-        >{{form.date}}</view>
+    <view class="line-row datetime-row">
+      <text class="line-label">日期</text>
+      <view
+        class="line-value pick datetime-date {{calendarOpen ? 'open' : ''}}"
+        bindtap="toggleCalendar"
+        hover-class="pick-hover"
+        aria-role="button"
+        aria-label="选择日期"
+      >{{form.date}}</view>
+      <view class="time-group">
+        <picker class="time-pick" mode="time" value="{{form.start}}" bindchange="onStart">
+          <view class="line-value">{{form.start}}</view>
+        </picker>
+        <text class="dash">—</text>
+        <picker class="time-pick" mode="time" value="{{form.end}}" bindchange="onEnd">
+          <view class="line-value">{{form.end}}</view>
+        </picker>
       </view>
-      <picker class="pick-item time" mode="time" value="{{form.start}}" bindchange="onStart">
-        <view class="field pick">{{form.start}}</view>
-      </picker>
-      <text class="dash">—</text>
-      <picker class="pick-item time" mode="time" value="{{form.end}}" bindchange="onEnd">
-        <view class="field pick">{{form.end}}</view>
-      </picker>
     </view>
 
     <view wx:if="{{calendarOpen}}" class="cal">
@@ -223,30 +219,38 @@
       </view>
     </view>
 
-    <input
-      class="input"
-      placeholder="日程标题，例如 项目评审"
-      value="{{form.title}}"
-      maxlength="-1"
-      bindinput="onTitle"
-      confirm-type="done"
-    />
-    <view class="counter">{{titleBytes}} / {{titleLimit}} 字节</view>
+    <view class="line-row title-row">
+      <text class="line-label">标题</text>
+      <input
+        class="line-input"
+        placeholder="日程标题，例如 项目评审"
+        placeholder-class="line-placeholder"
+        value="{{form.title}}"
+        maxlength="-1"
+        bindinput="onTitle"
+        confirm-type="done"
+      />
+      <text class="line-counter">{{titleBytes}}/{{titleLimit}}</text>
+    </view>
 
-    <textarea
-      class="input area"
-      placeholder="备注（可选）"
-      value="{{form.note}}"
-      maxlength="-1"
-      bindinput="onNote"
-    />
-    <view class="counter">{{noteBytes}} / {{noteLimit}} 字节</view>
+    <view class="line-row note-row">
+      <text class="line-label">备注</text>
+      <textarea
+        class="line-textarea"
+        placeholder="备注（可选）"
+        placeholder-class="line-placeholder"
+        value="{{form.note}}"
+        maxlength="-1"
+        bindinput="onNote"
+      />
+    </view>
+    <view class="line-counter note-counter">{{noteBytes}}/{{noteLimit}}</view>
 
     <view wx:if="{{!connected}}" class="inline-tip">
       未连接设备蓝牙，保存后云端储存，连接设备时自动同步
     </view>
 
-    <button class="btn primary block" bindtap="submit" loading="{{busy}}" disabled="{{busy || voicePhase !== ''}}">
+    <button class="btn primary block save-btn" bindtap="submit" loading="{{busy}}" disabled="{{busy || voicePhase !== ''}}">
       保存日程
     </button>
   </view>

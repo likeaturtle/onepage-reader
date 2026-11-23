@@ -1,62 +1,55 @@
-<view class="page">
-  <view class="card brand-card">
-    <image class="brand-logo" src="/CalCal_logo.png" mode="aspectFit" />
-    <view class="brand-copy">
-      <view class="brand-name">{{appName}}</view>
-      <view class="brand-sub">{{tagline}}</view>
-    </view>
-  </view>
-
-  <view class="card profile-card">
-    <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" loading="{{uploading}}">
+<view class="page profile-page">
+  <view class="profile-head">
+    <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" loading="{{uploading}}" aria-label="更换头像">
       <image wx:if="{{avatarUrl}}" class="avatar big" src="{{avatarUrl}}" mode="aspectFill" />
       <view wx:else class="avatar big avatar-text">{{initial}}</view>
-      <view class="avatar-tip">点击更换头像</view>
     </button>
-
-    <view class="name-row">
+    <view class="profile-copy">
       <input
-        class="input"
+        class="name-input"
         type="nickname"
         placeholder="设置昵称"
+        placeholder-class="name-placeholder"
         value="{{nickname}}"
         maxlength="20"
         bindinput="onNickname"
       />
-      <button class="btn primary" bindtap="save" loading="{{saving}}" disabled="{{saving}}">保存</button>
+      <text class="avatar-tip">点击头像更换 · 用户 ID {{user.id || '—'}}</text>
     </view>
-
-    <view wx:if="{{error}}" class="banner error">{{error}}</view>
-
-    <view class="muted small user-id">用户 ID：{{user.id || '—'}}</view>
+    <text class="save-link" bindtap="save">{{saving ? '保存中' : '保存'}}</text>
   </view>
 
-  <view class="card">
-    <view class="devices-title">我的设备</view>
+  <view wx:if="{{error}}" class="banner error">{{error}}</view>
+
+  <view class="section">
+    <view class="section-head">
+      <text class="section-title">我的设备</text>
+      <text class="hint">{{devices.length ? devices.length + ' 台' : ''}}</text>
+    </view>
     <view wx:if="{{devicesLoading}}" class="muted">正在读取…</view>
     <view wx:elif="{{deviceError}}" class="banner error">{{deviceError}}</view>
     <view wx:elif="{{!devices.length}}" class="muted">还没有绑定设备。连接设备并完成配对后会出现在这里。</view>
     <view wx:else>
-      <view wx:for="{{devices}}" wx:key="did" class="device-row">
-        <view class="device-row-main">
-          <view class="device-row-name">{{item.name || '未命名设备'}}</view>
-          <view class="device-row-meta">
-            <text wx:if="{{item.boundLabel}}">绑定于 {{item.boundLabel}}</text>
-            <text
-              class="unbind-link {{unbinding ? 'disabled' : ''}}"
-              data-did="{{item.did}}"
-              data-pid="{{item.pid}}"
-              bindtap="unbindDevice"
-              aria-role="button"
-              aria-label="解绑设备"
-            >解绑</text>
-          </view>
+      <view wx:for="{{devices}}" wx:key="did" class="device-item">
+        <view class="device-item-main">
+          <text class="device-item-name">{{item.name || '未命名设备'}}</text>
+          <text wx:if="{{item.boundLabel}}" class="device-item-meta">绑定于 {{item.boundLabel}}</text>
+          <text wx:else class="device-item-meta">未记录绑定时间</text>
         </view>
+        <text
+          class="unbind-link {{unbinding ? 'disabled' : ''}}"
+          data-did="{{item.did}}"
+          data-pid="{{item.pid}}"
+          bindtap="unbindDevice"
+          aria-role="button"
+          aria-label="解绑设备"
+        >解绑</text>
       </view>
     </view>
   </view>
 
-  <view class="card">
+  <view class="section">
+    <view class="section-head"><text class="section-title">信息</text></view>
     <view class="kv"><text>应用</text><text>{{appName}}</text></view>
     <view class="kv"><text>登录方式</text><text>微信登录</text></view>
     <view class="kv"><text>接口地址</text><text class="mono">{{apiBase}}</text></view>
@@ -64,16 +57,17 @@
     <view class="kv"><text>设备协议</text><text>proto {{protocol}}</text></view>
   </view>
 
-  <view class="card explain">
-    <view class="explain-title">关于设备归属</view>
-    <view class="explain-text">
+  <view class="section">
+    <view class="section-head"><text class="section-title">关于设备归属</text></view>
+    <view class="note-text">
       登录用于账号身份识别和云端日程归属。日程保存在云端，连接设备后自动双向同步；设备端删除也会同步删除云端对应日程。
     </view>
-    <view class="explain-text">
-      BLE 连接使用一次性配对码认证并加密指令和日程。设备首次配对后会归属当前微信账号；其他账号即使重新物理配对，也无法通过小程序同步云端日程。
-      解绑只会解除云端归属，不会清除设备上的 BLE 密钥；要阻止本机继续连接，请再到设备上长按确认键 8 秒。
+    <view class="note-text">
+      BLE 连接使用一次性配对码认证并加密指令和日程。设备首次配对后会归属当前微信账号；其他账号即使重新物理配对，也无法通过小程序同步云端日程。解绑只会解除云端归属，不会清除设备上的 BLE 密钥；要阻止本机继续连接，请再到设备上长按确认键 8 秒。
     </view>
   </view>
 
-  <button class="btn danger block" bindtap="logout">退出登录</button>
+  <view class="logout-row">
+    <text class="logout-link" bindtap="logout">退出登录</text>
+  </view>
 </view>

@@ -1,56 +1,101 @@
-/* Month list moved here from pages/index: the 日程 tab owns the list and
- * its delete action, so the 添加 tab stays a form. */
+/* 日程 · 一张纸：月份抬头、按天分节的细线表格 */
 
-.month-bar {
+.agenda-head {
   display: flex;
-  align-items: center;
-  gap: 10rpx;
-  width: 100%;
-  margin: 2rpx 0 20rpx;
-  padding: 8rpx;
-  background: #f7f2e7;
-  border-radius: 16rpx;
-  box-sizing: border-box;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding-top: 8rpx;
 }
 
-.month-btn {
-  flex: 0 0 64rpx;
-  width: 64rpx;
-  min-width: 64rpx;
-  height: 64rpx;
+.agenda-title-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.agenda-year {
+  font-size: 20rpx;
+  letter-spacing: 0.24em;
+  color: #8b8578;
+}
+
+.agenda-title {
+  margin-top: 2rpx;
+  font-size: 68rpx;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: #17181a;
+}
+
+.agenda-nav {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2rpx;
+}
+
+.agenda-nav-btn {
+  width: 80rpx;
+  height: 80rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #efe8d9;
-  border-radius: 12rpx;
-  color: #3f3b31;
   font-size: 38rpx;
   line-height: 1;
+  color: #4e4b45;
 }
 
-.month-btn-hover {
-  background: #e4d9c3;
+.agenda-nav-hover {
+  background: #f4f1e8;
 }
 
-.month-label {
-  flex: 1;
-  min-width: 0;
-  font-size: 28rpx;
-  color: #3f3b31;
-  text-align: center;
-  white-space: nowrap;
+.agenda-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-top: 10rpx;
+  padding-bottom: 12rpx;
+  border-bottom: 1rpx solid #17181a;
+  font-size: 20rpx;
+  letter-spacing: 0.04em;
+  color: #6f6b61;
 }
 
-.day-group {
-  margin-top: 26rpx;
+.day {
+  margin-top: 36rpx;
 }
 
 .day-head {
-  font-size: 23rpx;
-  color: #8b8778;
-  letter-spacing: 1rpx;
-  padding-bottom: 8rpx;
-  border-bottom: 1rpx solid #f0e9da;
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+  padding-bottom: 6rpx;
+}
+
+.day-num {
+  font-size: 56rpx;
+  font-weight: 300;
+  line-height: 1;
+  color: #17181a;
+  font-feature-settings: "tnum";
+}
+
+.day-num.on {
+  color: #1e3050;
+  font-weight: 400;
+}
+
+.day-weekday {
+  font-size: 22rpx;
+  letter-spacing: 0.04em;
+  color: #8b8578;
+}
+
+.day-count {
+  margin-left: auto;
+  font-size: 20rpx;
+  color: #a39c8d;
 }
 
 .event {
@@ -58,110 +103,97 @@
   align-items: flex-start;
   gap: 20rpx;
   padding: 20rpx 0;
-  border-bottom: 1rpx solid #f4eee1;
-}
-
-.event:last-child {
-  border-bottom: none;
+  border-top: 1rpx solid #f4f0e8;
 }
 
 .event-time {
   flex: none;
-  width: 108rpx;
-  font-size: 26rpx;
-  font-weight: 600;
-  color: #22345a;
-  font-variant-numeric: tabular-nums;
+  width: 84rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  font-size: 24rpx;
+  color: #6f6b61;
+  font-feature-settings: "tnum";
 }
 
 .event-end {
-  margin-top: 2rpx;
-  font-size: 22rpx;
-  font-weight: 400;
-  color: #a29b87;
+  font-size: 20rpx;
+  color: #a39c8d;
 }
 
 .event-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
 }
 
 .event-main-hover {
-  opacity: 0.65;
+  opacity: 0.6;
 }
 
 .event-title {
   font-size: 28rpx;
   line-height: 1.45;
+  color: #17181a;
   word-break: break-all;
 }
 
 .event-note {
-  margin-top: 6rpx;
-  font-size: 23rpx;
+  font-size: 22rpx;
   line-height: 1.5;
-  color: #8b8778;
+  color: #8b8578;
   word-break: break-all;
 }
 
-.event .btn {
-  align-self: center;
-  flex: 0 0 auto;
-  width: auto !important;
-}
-
 .event-actions {
-  display: flex;
-  flex-direction: column;
   flex: none;
-  align-self: center;
-  gap: 8rpx;
-}
-
-/* --- edit panel -------------------------------------------------------- */
-
-.edit-row {
   display: flex;
   align-items: center;
-  gap: 12rpx;
-  margin-bottom: 6rpx;
+  gap: 16rpx;
+  padding-top: 4rpx;
 }
 
-.edit-item {
-  flex: 1;
+.event-actions .btn {
+  width: auto !important;
+  height: auto;
   min-width: 0;
+  padding: 14rpx 6rpx;
+  border: 0;
+  background: transparent;
+  font-size: 22rpx;
+  letter-spacing: 0.04em;
+  color: #8b8578;
 }
 
-.edit-item.date {
-  flex: 1.35;
+.event-actions .btn.danger {
+  color: #9c3427;
 }
 
-.edit-field {
-  width: 100%;
-  height: 80rpx;
-  line-height: 80rpx;
-  padding: 0 8rpx;
-  background: #f7f2e7;
-  border: 1rpx solid #e4dccb;
-  border-radius: 16rpx;
-  box-sizing: border-box;
-  font-size: 27rpx;
-  text-align: center;
-  white-space: nowrap;
+/* --- editor --------------------------------------------------------- */
+.editor-section {
+  margin-bottom: 48rpx;
+  padding-top: 8rpx;
+  border-top: 4rpx solid #1e3050;
 }
 
-.edit-dash {
-  flex: none;
-  color: #a49d89;
-  font-size: 26rpx;
+.editor-section .section-head {
+  border-bottom: 1rpx solid #ddd7c9;
 }
 
-.editor .editor-error {
-  margin: 18rpx 0 0;
+.editor-section .line-row {
+  border-bottom: 0;
+}
+
+.editor-error {
+  margin-top: 20rpx;
 }
 
 .editor-actions {
-  margin-top: 24rpx;
+  margin-top: 32rpx;
+  gap: 20rpx;
 }
 
 .editor-actions .btn {

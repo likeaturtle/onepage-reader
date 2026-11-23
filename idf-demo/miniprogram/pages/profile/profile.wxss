@@ -1,50 +1,30 @@
-.brand-card {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
+/* 我的 · 一张纸：账号抬头、设备与信息两段细线表、页尾退出 */
 
-.brand-logo {
-  display: block;
-  flex: none;
-  width: 76rpx;
-  height: 76rpx;
-}
-
-.brand-copy {
-  min-width: 0;
-}
-
-.brand-name {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #1b2a44;
-  white-space: nowrap;
-}
-
-.brand-sub {
-  margin-top: 4rpx;
-  font-size: 22rpx;
-  color: #8b8778;
-  letter-spacing: 2rpx;
-}
-
-.profile-card {
+.profile-page {
   display: flex;
   flex-direction: column;
+}
+
+.profile-head {
+  display: flex;
   align-items: center;
-  padding-top: 32rpx;
+  gap: 24rpx;
+  padding-bottom: 24rpx;
+  border-bottom: 1rpx solid #17181a;
 }
 
 .avatar-btn {
-  width: 240rpx !important;
+  width: 112rpx !important;
+  height: 112rpx;
   margin: 0;
   padding: 0;
   background: transparent;
+  border: 0;
   line-height: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  flex: none;
 }
 
 .avatar-btn::after {
@@ -52,128 +32,126 @@
 }
 
 .avatar.big {
-  width: 120rpx;
-  height: 120rpx;
+  width: 112rpx;
+  height: 112rpx;
   border-radius: 50%;
-  background: #e8dfcb;
+  border: 1rpx solid #ddd7c9;
+  background: transparent;
   overflow: hidden;
+  flex: none;
 }
 
 .avatar-text {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6d6551;
+  color: #4e4b45;
   font-size: 40rpx;
-  font-weight: 600;
+  font-weight: 400;
   line-height: 1;
 }
 
-.avatar-tip {
-  margin-top: 10rpx;
-  font-size: 22rpx;
-  color: #9a9482;
-}
-
-.name-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-  margin-top: 22rpx;
-  box-sizing: border-box;
-}
-
-.name-row .input {
-  width: auto;
-  min-width: 0;
-  margin-top: 0;
+.profile-copy {
   flex: 1;
+  min-width: 0;
 }
 
-.name-row .btn {
-  flex: 0 0 140rpx;
-  width: 140rpx !important;
-  min-width: 140rpx;
-  height: 88rpx;
+.name-input {
+  width: 100%;
+  height: 60rpx;
   padding: 0;
+  font-size: 40rpx;
+  font-weight: 500;
+  line-height: 60rpx;
+  color: #17181a;
+  background: transparent;
+  border: 0;
+  border-bottom: 1rpx solid #efeae0;
 }
 
-.user-id {
-  width: 100%;
-  margin-top: 22rpx;
-  padding-top: 18rpx;
-  border-top: 1rpx solid #f0e9da;
-  word-break: break-all;
-  text-align: center;
+.name-placeholder {
+  color: #a39c8d;
+  font-weight: 400;
 }
 
-.explain-title {
-  font-size: 28rpx;
-  font-weight: 600;
-  margin-bottom: 12rpx;
+.avatar-tip {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  line-height: 1.5;
+  color: #9a9487;
 }
 
-.explain-text {
-  font-size: 24rpx;
-  line-height: 1.75;
-  color: #7c7664;
-  margin-top: 10rpx;
+.save-link {
+  flex: none;
+  font-size: 22rpx;
+  color: #1e3050;
+  text-decoration: underline;
+  text-underline-offset: 4rpx;
+  padding: 16rpx 0 16rpx 16rpx;
 }
 
-.devices-title {
-  font-size: 28rpx;
-  font-weight: 600;
-  margin-bottom: 16rpx;
-}
-
-.device-row {
+.device-item {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 20rpx;
   padding: 18rpx 0;
-  border-top: 1rpx solid #f0e9da;
+  border-bottom: 1rpx solid #f4f0e8;
 }
 
-.device-row:first-of-type {
-  border-top: none;
-}
-
-.device-row-main {
+.device-item-main {
   flex: 1;
   min-width: 0;
-}
-
-.device-row-name {
-  font-size: 27rpx;
-  color: #26251f;
-  font-weight: 500;
-}
-
-.device-row-meta {
   display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4rpx 18rpx;
-  margin-top: 6rpx;
-  font-size: 22rpx;
-  color: #9a9482;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.device-item-name {
+  font-size: 26rpx;
+  color: #17181a;
+}
+
+.device-item-meta {
+  font-size: 20rpx;
+  line-height: 1.5;
+  color: #9a9487;
   word-break: break-all;
 }
 
-/* Unbind is a text action, not a button: it sits after the bind time so the
- * row keeps a single line of information and the destructive action does not
- * compete with the device name. */
+/* Unbind is a text action, not a button; the padding widens the hit area
+ * without moving the word. */
 .unbind-link {
+  flex: none;
+  padding: 16rpx 0 16rpx 24rpx;
+  font-size: 22rpx;
   color: #9c3427;
   text-decoration: underline;
-  text-underline-offset: 3rpx;
-  /* A 22rpx label is a small tap target; the negative margin keeps the text
-   * where it was while the padding widens the hit area. */
-  padding: 10rpx 6rpx;
-  margin: -10rpx -6rpx;
+  text-underline-offset: 4rpx;
 }
 
 .unbind-link.disabled {
   opacity: 0.4;
+}
+
+.note-text {
+  margin-top: 14rpx;
+  font-size: 22rpx;
+  line-height: 1.95;
+  color: #8b8578;
+}
+
+.logout-row {
+  margin-top: 48rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid #ddd7c9;
+  text-align: center;
+}
+
+.logout-link {
+  display: inline-block;
+  padding: 12rpx 24rpx;
+  font-size: 22rpx;
+  letter-spacing: 0.1em;
+  color: #9c3427;
 }

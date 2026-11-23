@@ -1,32 +1,41 @@
+/* CalCal - one sheet of paper
+ *
+ * One paper page: hairline rules, one solid ink bar, no cards. Sizes are rpx
+ * (1 px = 2 rpx at the 375 px design width); 1 rpx borders render as the
+ * panel's 0.5 px hairlines.
+ */
 page {
-  background: #f4f0e6;
-  color: #26251f;
+  background: #fbfaf6;
+  color: #17181a;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
   font-size: 30rpx;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .page {
-  padding: 24rpx 28rpx calc(48rpx + env(safe-area-inset-bottom));
+  padding: 32rpx 56rpx calc(56rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
+/* Sections are separated by rules, never by filled cards. */
 .card {
-  background: #fffdf8;
-  border: 1rpx solid #e7dfce;
-  border-radius: 28rpx;
-  padding: 28rpx;
-  margin-bottom: 24rpx;
-  box-shadow: 0 2rpx 0 #e9e2d3;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 0 0 36rpx;
+  box-shadow: none;
 }
 
 .card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8rpx 20rpx;
-  margin-bottom: 20rpx;
+  margin-bottom: 0;
+  padding-bottom: 14rpx;
+  border-bottom: 1rpx solid #ddd7c9;
 }
 
 .card-heading {
@@ -39,41 +48,40 @@ page {
 }
 
 .card-title {
-  font-size: 32rpx;
-  font-weight: 600;
-  letter-spacing: 1rpx;
+  font-size: 24rpx;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: #6f6b61;
 }
 
 .hint {
-  margin-left: 14rpx;
-  color: #8b8778;
-  font-size: 24rpx;
+  color: #9a9487;
+  font-size: 22rpx;
 }
 
 .card-heading .hint {
-  margin-left: 0;
   white-space: nowrap;
 }
 
 .hint.status {
   margin-left: auto;
   white-space: nowrap;
-  padding-top: 6rpx;
 }
 
 .muted {
-  color: #77725f;
-  font-size: 26rpx;
+  color: #8b8578;
+  font-size: 24rpx;
+  line-height: 1.75;
 }
 
 .mono {
   font-family: Menlo, Consolas, monospace;
-  font-size: 24rpx;
+  font-size: 20rpx;
   word-break: break-all;
 }
 
 .small {
-  font-size: 24rpx;
+  font-size: 22rpx;
 }
 
 .center {
@@ -90,164 +98,32 @@ page {
   flex: 1;
 }
 
+/* A banner is a margin note, not a filled alert. */
 .banner {
-  padding: 20rpx 24rpx;
-  border-radius: 20rpx;
-  margin-bottom: 24rpx;
-  font-size: 26rpx;
-  line-height: 1.6;
+  padding: 14rpx 0 14rpx 20rpx;
+  border-left: 4rpx solid #c9c3b3;
+  margin-bottom: 28rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  background: transparent;
+  border-radius: 0;
 }
 
 .banner.error {
-  background: #f9e5df;
+  border-left-color: #9c3427;
   color: #9c3427;
-  border: 1rpx solid #edc8bd;
 }
 
 .banner.warn {
-  background: #f8efd9;
+  border-left-color: #b0812f;
   color: #7a5a1e;
-  border: 1rpx solid #ead7a8;
 }
 
 .banner.cloud {
-  background: #eef2e7;
+  border-left-color: #a9b5a0;
   color: #4f5d46;
-  border: 1rpx solid #d8e0cc;
 }
 
-.btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  height: 84rpx;
-  padding: 0 28rpx;
-  margin: 0;
-  border-radius: 20rpx;
-  background: #efe8d9;
-  color: #2b2a24;
-  font-size: 29rpx;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
-  box-sizing: border-box;
-}
-
-.btn::after {
-  border: none;
-}
-
-.btn.primary {
-  background: #22345a;
-  color: #ffffff;
-}
-
-.btn.danger {
-  background: #f6e2dc;
-  color: #9c3427;
-}
-
-.btn.block {
-  width: 100%;
-  margin-top: 22rpx;
-}
-
-.btn.small {
-  height: 64rpx;
-  padding: 0 22rpx;
-  font-size: 26rpx;
-}
-
-.btn.tiny {
-  height: 52rpx;
-  min-width: 52rpx;
-  padding: 0 16rpx;
-  border-radius: 14rpx;
-  font-size: 24rpx;
-}
-
-.btn[disabled] {
-  opacity: 0.5;
-}
-
-.input,
-.field {
-  background: #f7f2e7;
-  border: 1rpx solid #e4dccb;
-  border-radius: 16rpx;
-  font-size: 28rpx;
-  box-sizing: border-box;
-}
-
-.field {
-  padding: 18rpx 20rpx;
-  line-height: 1.4;
-}
-
-.input {
-  width: 100%;
-  height: 88rpx;
-  min-height: 88rpx;
-  margin-top: 18rpx;
-  padding: 0 24rpx;
-  line-height: 88rpx;
-}
-
-.input.area {
-  height: 180rpx;
-  min-height: 180rpx;
-  padding: 20rpx 24rpx;
-  line-height: 1.6;
-}
-
-.counter {
-  margin-top: 8rpx;
-  text-align: right;
-  color: #a09a86;
-  font-size: 22rpx;
-}
-
-.kv {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24rpx;
-  padding: 10rpx 0;
-  font-size: 27rpx;
-}
-
-.kv > text:first-child {
-  color: #8b8778;
-  flex: none;
-}
-
-.kv > text:last-child {
-  text-align: right;
-  word-break: break-all;
-}
-
-.empty {
-  padding: 56rpx 0;
-  text-align: center;
-  color: #9b9583;
-  font-size: 27rpx;
-}
-
-.dot {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 50%;
-  background: #c9c3b3;
-}
-
-.dot.on {
-  background: #2c8a6f;
-  box-shadow: 0 0 0 6rpx rgba(44, 138, 111, 0.16);
-}
-
-/* The Bluetooth banner is hint + a right-aligned text link instead of a
- * button, so the banner stays one quiet row. */
 .banner-switch {
   display: flex;
   align-items: center;
@@ -262,17 +138,354 @@ page {
 .banner-link {
   flex: 0 0 auto;
   margin-left: auto;
-  padding: 8rpx 4rpx;
+  padding: 8rpx 0 8rpx 12rpx;
   white-space: nowrap;
 }
 
 .banner-link-text {
-  font-size: 26rpx;
-  font-weight: 600;
+  font-size: 24rpx;
   color: #9c3427;
   text-decoration: underline;
+  text-underline-offset: 4rpx;
 }
 
 .banner-link-hover {
-  opacity: 0.55;
+  opacity: 0.5;
+}
+
+/* One solid ink bar is the only filled control. */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: 96rpx;
+  padding: 0 32rpx;
+  margin: 0;
+  border: 1rpx solid #17181a;
+  border-radius: 4rpx;
+  background: transparent;
+  color: #17181a;
+  font-size: 28rpx;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.btn::after {
+  border: none;
+}
+
+.btn.primary {
+  background: #1e3050;
+  border-color: #1e3050;
+  color: #ffffff;
+}
+
+.btn.danger {
+  border-color: #9c3427;
+  color: #9c3427;
+  background: transparent;
+}
+
+.btn.block {
+  width: 100%;
+  height: 104rpx;
+  margin-top: 0;
+  font-size: 30rpx;
+  letter-spacing: 0.14em;
+}
+
+.btn.small {
+  height: 72rpx;
+  padding: 0 24rpx;
+  font-size: 24rpx;
+}
+
+.btn.tiny {
+  height: 56rpx;
+  min-width: 56rpx;
+  padding: 0 20rpx;
+  border-radius: 2rpx;
+  font-size: 22rpx;
+}
+
+.btn[disabled] {
+  opacity: 0.4;
+}
+
+.input,
+.field {
+  background: transparent;
+  border: 0;
+  border-bottom: 1rpx solid #ddd7c9;
+  border-radius: 0;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.field {
+  padding: 18rpx 0;
+  line-height: 1.4;
+}
+
+.input {
+  width: 100%;
+  height: 88rpx;
+  min-height: 88rpx;
+  margin-top: 0;
+  padding: 0;
+  line-height: 88rpx;
+}
+
+.input.area {
+  height: 192rpx;
+  min-height: 192rpx;
+  padding: 16rpx 0;
+  line-height: 1.7;
+}
+
+.counter {
+  margin-top: 8rpx;
+  text-align: right;
+  color: #a39c8d;
+  font-size: 20rpx;
+  letter-spacing: 0.02em;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #f4f0e8;
+  font-size: 26rpx;
+}
+
+.kv > text:first-child {
+  color: #8b8578;
+  flex: none;
+  font-size: 24rpx;
+}
+
+.kv > text:last-child {
+  text-align: right;
+  word-break: break-all;
+}
+
+.empty {
+  padding: 72rpx 0;
+  text-align: center;
+  color: #9a9487;
+  font-size: 26rpx;
+  line-height: 1.8;
+}
+
+.empty.compact {
+  padding: 28rpx 0 8rpx;
+}
+
+.dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #c9c3b3;
+  flex: none;
+}
+
+.dot.on {
+  background: #2c8a6f;
+}
+
+.inline-tip {
+  margin-top: 20rpx;
+  padding: 10rpx 0 10rpx 18rpx;
+  border-left: 4rpx solid #cfd8c2;
+  background: transparent;
+  border-radius: 0;
+  color: #737c63;
+  font-size: 22rpx;
+  line-height: 1.7;
+}
+
+/* Protocol log: a small printed console at the very end of the page. */
+.log-wrap {
+  margin-top: 12rpx;
+}
+
+.log-toggle {
+  text-align: center;
+  font-size: 22rpx;
+  color: #9a9487;
+  letter-spacing: 0.06em;
+  padding: 20rpx 0;
+}
+
+.log {
+  height: 360rpx;
+  background: #17181a;
+  border-radius: 2rpx;
+  padding: 20rpx;
+  box-sizing: border-box;
+}
+
+.log-line {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 20rpx;
+  line-height: 1.7;
+  color: #d8d2c2;
+  word-break: break-all;
+}
+
+/* --- shared paper form & section (添加 / 日程 edit use these) --------- */
+.section {
+  margin-top: 28rpx;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding-bottom: 12rpx;
+  border-bottom: 1rpx solid #efeae0;
+}
+
+.section-title {
+  font-size: 24rpx;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: #6f6b61;
+}
+
+.line-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-height: 88rpx;
+  border-bottom: 0;
+}
+
+/* Scheme B: every field rule starts after the label column and fades into
+ * the paper, so the form keeps its rhythm without a stack of full rules. */
+.line-row::after {
+  content: "";
+  position: absolute;
+  left: 72rpx;
+  right: 0;
+  bottom: 0;
+  height: 1rpx;
+  background: #efeae0;
+}
+
+.line-label {
+  width: 72rpx;
+  flex: none;
+  font-size: 22rpx;
+  letter-spacing: 0.04em;
+  color: #9a9487;
+}
+
+.line-value {
+  flex: 1;
+  min-width: 0;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 28rpx;
+  color: #17181a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-feature-settings: "tnum";
+}
+
+.date-pick,
+.time-pick {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Each start/end value sits in the middle of its own picker slot, so the
+ * pair reads as two centered columns around the dash. */
+.time-pick .line-value {
+  text-align: center;
+}
+
+/* Date and time share one row: the date takes the free width, the time pair
+ * stays a fixed 264rpx group on the right so both times keep their centered
+ * slots. */
+.datetime-row {
+  gap: 12rpx;
+}
+
+.time-group {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.time-group .time-pick {
+  flex: 0 0 112rpx;
+  width: 112rpx;
+  min-width: 0;
+}
+
+.time-group .dash {
+  width: 24rpx;
+  text-align: center;
+}
+
+.dash {
+  flex: none;
+  font-size: 22rpx;
+  color: #a39c8d;
+}
+
+.line-input {
+  flex: 1;
+  min-width: 0;
+  height: 88rpx;
+  padding: 0;
+  font-size: 28rpx;
+  color: #17181a;
+  background: transparent;
+  border: 0;
+}
+
+.line-placeholder {
+  color: #a39c8d;
+}
+
+.line-counter {
+  flex: none;
+  font-size: 20rpx;
+  color: #a39c8d;
+  font-feature-settings: "tnum";
+}
+
+.note-row {
+  align-items: flex-start;
+  padding-top: 16rpx;
+}
+
+.note-counter {
+  text-align: right;
+}
+
+.line-textarea {
+  flex: 1;
+  width: 100%;
+  height: 96rpx;
+  margin-top: 2rpx;
+  padding: 0;
+  font-size: 26rpx;
+  line-height: 48rpx;
+  color: #17181a;
+  background-color: transparent;
+  border: 0;
 }

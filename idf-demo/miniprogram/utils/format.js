@@ -3,6 +3,8 @@
 const utf8 = require('./utf8');
 
 const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+const CN_MONTHS = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
+const SHORT_WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 function pad(value) {
   return String(value).padStart(2, '0');
@@ -27,6 +29,25 @@ function monthBounds(cursor) {
 
 function monthLabel(date) {
   return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
+}
+
+/** Big month masthead pieces: { year: '2026', title: '十一月', month: 11 }. */
+function monthMeta(date) {
+  return {
+    year: String(date.getFullYear()),
+    title: `${CN_MONTHS[date.getMonth()]}月`,
+    month: date.getMonth() + 1,
+  };
+}
+
+/** Today masthead: { year, title, day, weekday, ymd }. */
+function todayMeta(date) {
+  const day = date || new Date();
+  return Object.assign(monthMeta(day), {
+    day: String(day.getDate()),
+    weekday: SHORT_WEEKDAYS[day.getDay()],
+    ymd: ymd(day),
+  });
 }
 
 /**
@@ -56,6 +77,7 @@ function groupEvents(events) {
   });
 
   const groups = [];
+  const todayYmd = ymd(new Date());
   let current = null;
   for (const event of sorted) {
     if (!current || current.date !== event.date) {
@@ -63,6 +85,9 @@ function groupEvents(events) {
       current = {
         date: event.date,
         label: `${day.getMonth() + 1} 月 ${day.getDate()} 日 ${WEEKDAYS[day.getDay()]}`,
+        day: day.getDate(),
+        weekday: SHORT_WEEKDAYS[day.getDay()],
+        today: event.date === todayYmd,
         items: [],
       };
       groups.push(current);
@@ -114,6 +139,8 @@ module.exports = {
   parseYmd,
   monthBounds,
   monthLabel,
+  monthMeta,
+  todayMeta,
   shiftClock,
   groupEvents,
   deviceTime,

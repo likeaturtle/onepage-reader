@@ -135,6 +135,7 @@ Page({
   data: {
     appName: config.appName,
     tagline: config.tagline,
+    today: fmt.todayMeta(),
     user: {},
     userInitial: '页',
     userAvatar: '',
@@ -191,7 +192,7 @@ Page({
 
   onLoad() {
     this.syncedThisSession = false;
-    this.setData({ form: defaultForm() });
+    this.setData({ form: defaultForm(), today: fmt.todayMeta() });
     this.syncUser();
 
     this.offState = ble.onState((state) => {
@@ -307,6 +308,9 @@ Page({
       wx.reLaunch({ url: '/pages/login/login' });
       return;
     }
+    // The masthead is the paper's date; refresh it on every visit so a page
+    // left open past midnight does not keep yesterday's number.
+    this.setData({ today: fmt.todayMeta() });
     this.syncUser();
     api.me()
       .then((res) => {
@@ -570,8 +574,19 @@ Page({
   },
 
   disconnect() {
-    this.syncedThisSession = false;
-    ble.disconnect().catch(() => {});
+    if (!this.data.connected) return;
+    wx.showModal({
+      title: '断开设备',
+      content: '断开后设备会停止同步，日程仍保存在云端；需要时重新扫描连接即可。',
+      confirmText: '断开',
+      cancelText: '取消',
+      confirmColor: '#9c3427',
+      success: (res) => {
+        if (!res.confirm) return;
+        this.syncedThisSession = false;
+        ble.disconnect().catch(() => {});
+      },
+    });
   },
 
   sleepDevice() {
@@ -590,7 +605,21 @@ Page({
 
   refresh() {
     if (this.data.syncing) return;
-    this.syncDevice().then(() => wx.showToast({ title: '已同步', icon: 'none' }));
+    wx.showModal({
+      title: '同步日程',
+      content: '将把云端与设备上的日程双向补齐，过程中请让设备保持在附近。要现在同步吗？',
+      confirmText: '同步',
+      cancelText: '取消',
+      confirmColor: '#1e3050',
+      success: (res) => {
+        if (!res.confirm) return;
+        if (!ble.isConnected()) {
+          wx.showToast({ title: '设备已断开', icon: 'none' });
+          return;
+        }
+        this.syncDevice().then(() => wx.showToast({ title: '已同步', icon: 'none' }));
+      },
+    });
   },
 
   // --- cloud <-> device sync -------------------------------------------

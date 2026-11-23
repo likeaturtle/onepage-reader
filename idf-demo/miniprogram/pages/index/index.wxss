@@ -1,425 +1,296 @@
-.topbar {
+/* 添加 · 一张纸：日期抬头、设备一行、语音一句、四行表单 */
+
+.masthead {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 20rpx;
-  margin-bottom: 24rpx;
+  gap: 24rpx;
+  padding-bottom: 8rpx;
 }
 
-.brand {
+.kicker {
+  font-size: 22rpx;
+  letter-spacing: 0.16em;
+  color: #8b8578;
+}
+
+.masthead-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 16rpx;
+  margin-top: 6rpx;
 }
 
-.brand-logo {
-  display: block;
-  flex: none;
-  width: 68rpx;
-  height: 68rpx;
+.masthead-day {
+  font-size: 112rpx;
+  font-weight: 200;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  color: #17181a;
+  font-feature-settings: "tnum";
 }
 
-.brand-copy {
-  min-width: 0;
-}
-
-.brand-name {
-  font-size: 30rpx;
-  font-weight: 700;
-  letter-spacing: 0;
-  color: #1b2a44;
-  white-space: nowrap;
-}
-
-.brand-sub {
-  font-size: 21rpx;
-  color: #8b8778;
-  letter-spacing: 2rpx;
-}
-
-.user {
+.masthead-side {
   display: flex;
-  align-items: center;
-  gap: 12rpx;
-  max-width: 300rpx;
+  flex-direction: column;
+  gap: 2rpx;
+  padding-bottom: 10rpx;
+  font-size: 20rpx;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: #8b8578;
 }
 
 .avatar {
-  width: 58rpx;
-  height: 58rpx;
+  width: 64rpx;
+  height: 64rpx;
   border-radius: 50%;
-  background: #e8dfcb;
-  flex: none;
-}
-
-.avatar-text {
+  border: 1rpx solid #ddd7c9;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6d6551;
-  font-size: 26rpx;
-  font-weight: 600;
+  color: #4e4b45;
+  font-size: 24rpx;
+  flex: none;
+  margin-top: 8rpx;
+  overflow: hidden;
 }
 
-.user-name {
-  font-size: 25rpx;
-  color: #5f5a4b;
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.avatar-hover {
+  background: #f4f1e8;
+}
+
+/* --- device --------------------------------------------------------- */
+.device-section {
+  margin-top: 8rpx;
+  border-top: 0;
+}
+
+.device-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 88rpx;
+  border-bottom: 0;
+}
+
+.device-line-hover {
+  background: #f7f4ec;
+}
+
+.device-name {
+  font-size: 26rpx;
+  color: #17181a;
+  max-width: 220rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.device-state {
+  font-size: 22rpx;
+  letter-spacing: 0.04em;
+  color: #1e3050;
+  flex: none;
+}
+
+.device-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  flex: none;
+}
+
+.device-action {
+  font-size: 22rpx;
+  color: #6f6b61;
+  padding: 12rpx 0;
+}
+
+.device-action.danger {
+  color: #9c3427;
+}
+
+.device-caret {
+  width: 0;
+  height: 0;
+  border-left: 9rpx solid transparent;
+  border-right: 9rpx solid transparent;
+  border-top: 10rpx solid #9a9487;
+  flex: none;
+  transition: transform 0.15s ease;
+}
+
+.device-caret.up {
+  transform: rotate(180deg);
+}
+
+.device-info {
+  padding: 4rpx 0 0;
+}
+
+.device-info .kv {
+  border-bottom: 0;
+}
+
+.device-copy {
+  margin-top: 20rpx;
+}
+
 .actions {
-  margin-top: 24rpx;
+  margin-top: 28rpx;
 }
 
 .actions .btn {
   flex: 1 1 0;
   width: auto !important;
   min-width: 0;
-  padding: 0 12rpx;
-  font-size: 27rpx;
+  padding: 0 16rpx;
+  font-size: 26rpx;
+}
+
+.actions .btn + .btn {
+  flex: 0 0 auto;
+  padding: 0 28rpx;
 }
 
 .scan-tip {
-  margin-top: 12rpx;
+  margin-top: 14rpx;
   text-align: center;
   font-size: 22rpx;
-  color: #9a9482;
-}
-
-/* The device header doubles as the collapse control once the board is
- * connected: the body folds away and the header stays tappable. */
-.card-head.collapsed {
-  margin-bottom: 0;
-}
-
-/* The lamp sits left of the "已连接" label, so the title row centres its items
- * instead of aligning them on the text baseline. */
-.card-head.device-head {
-  align-items: center;
-}
-
-.device-head .card-heading {
-  align-items: center;
-}
-
-.device-head .dot {
-  flex: none;
-}
-
-/* The lamp used to close out the row; that slot now holds the expand/collapse
- * control. It stays plain text + caret (no chip, border or fill) so it reads as
- * part of the header; tapping anywhere on the row still folds the card. */
-.head-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  flex: none;
-  color: #8b8778;
-  font-size: 22rpx;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.head-caret {
-  width: 0;
-  height: 0;
-  border-left: 7rpx solid transparent;
-  border-right: 7rpx solid transparent;
-  border-top: 8rpx solid #8b8778;
-  transition: transform 0.15s ease;
-}
-
-/* "展开" points down (the panel opens below), "收起" flips it up. */
-.head-caret.up {
-  transform: rotate(180deg);
-}
-
-.card-head-hover {
-  background: #f7f2e7;
-}
-
-/* Scan status sits between the switch row and the card edge; the generic
- * 56 rpx empty-state padding reads as a hole there, so keep it one tight line.
- * The month card keeps the roomier .empty. */
-.empty.compact {
-  padding: 20rpx 0 6rpx;
+  color: #9a9487;
 }
 
 .switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20rpx;
-  margin-top: 28rpx;
-  padding: 20rpx 22rpx;
-  background: #f7f2e7;
-  border-radius: 18rpx;
+  gap: 24rpx;
+  margin-top: 32rpx;
+  padding: 20rpx 0;
+  border-top: 1rpx solid #efeae0;
+}
+
+.switch-copy {
+  flex: 1;
+  min-width: 0;
 }
 
 .switch-title {
-  font-size: 26rpx;
-}
-
-.switch-row > view:first-child {
-  flex: 1;
-  min-width: 0;
+  font-size: 24rpx;
+  color: #17181a;
 }
 
 .switch-desc {
   margin-top: 4rpx;
-  font-size: 21rpx;
+  font-size: 22rpx;
+  line-height: 1.6;
   color: #98917d;
 }
 
-.device-list {
-  margin-top: 22rpx;
-  border-top: 1rpx solid #efe8d8;
+.scan-list {
+  border-top: 1rpx solid #efeae0;
 }
 
-.device .btn {
-  flex: 0 0 auto;
-  width: auto !important;
-}
-
-.device {
+.scan-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 20rpx;
-  padding: 22rpx 0;
-  border-bottom: 1rpx solid #efe8d8;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #efeae0;
 }
 
-.device-main {
+.scan-main {
   flex: 1;
   min-width: 0;
 }
 
-.device-name {
-  font-size: 28rpx;
-  font-weight: 500;
+.scan-name {
+  font-size: 26rpx;
+  color: #17181a;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.device-meta {
+.scan-meta {
   margin-top: 4rpx;
   font-size: 22rpx;
-  color: #9a9482;
+  color: #9a9487;
 }
 
-.device-info {
-  background: #f7f2e7;
-  border-radius: 18rpx;
-  padding: 12rpx 22rpx;
+.scan-item .btn {
+  flex: 0 0 auto;
+  width: auto !important;
 }
 
-.pick-row {
+/* --- section -------------------------------------------------------- */
+.section {
+  margin-top: 28rpx;
+}
+
+.section-head {
   display: flex;
-  align-items: center;
-  gap: 12rpx;
-  margin-bottom: 6rpx;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding-bottom: 10rpx;
+  border-bottom: 1rpx solid #efeae0;
 }
 
-.pick-item {
-  flex: 1;
-  min-width: 0;
-}
-
-.pick-item.date {
-  flex: 1.35;
-}
-
-.pick {
-  width: 100%;
-  height: 80rpx;
-  line-height: 80rpx;
-  padding: 0 8rpx;
-  font-size: 27rpx;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.pick-hover {
-  background: #efe8d9;
-}
-
-.pick.open {
-  border-color: #22345a;
-  background: #eef1f7;
-}
-
-/* Inline month grid for the date field. Six fixed weeks keep the panel the
- * same height across months; the palette is the same paper tone as the form. */
-.cal {
-  margin: 14rpx 0 4rpx;
-  padding: 14rpx 14rpx 12rpx;
-  background: #f7f2e7;
-  border: 1rpx solid #e4dccb;
-  border-radius: 18rpx;
-}
-
-.cal-head {
-  display: flex;
-  align-items: center;
-  gap: 10rpx;
-  margin-bottom: 8rpx;
-}
-
-.cal-nav {
-  flex: 0 0 56rpx;
-  width: 56rpx;
-  height: 56rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #efe8d9;
-  border-radius: 12rpx;
-  color: #3f3b31;
-  font-size: 32rpx;
-  line-height: 1;
-}
-
-.cal-nav-hover {
-  background: #e4d9c3;
-}
-
-.cal-label {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  font-size: 27rpx;
-  color: #3f3b31;
-  white-space: nowrap;
-}
-
-.cal-today {
-  flex: none;
-  height: 56rpx;
-  padding: 0 16rpx;
-  line-height: 56rpx;
-  border-radius: 12rpx;
-  background: #eae3d3;
-  color: #4f5d46;
+.section-title {
   font-size: 24rpx;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: #6f6b61;
 }
 
-.cal-today-hover {
-  background: #ded4bf;
-}
-
-.cal-week,
-.cal-grid {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-.cal-weekday {
-  width: 14.2857%;
-  line-height: 40rpx;
-  text-align: center;
-  font-size: 21rpx;
-  color: #9a9482;
-}
-
-.cal-cell {
-  width: 14.2857%;
-  height: 72rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-}
-
-.cal-day {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 58rpx;
-  height: 58rpx;
-  border-radius: 50%;
-  box-sizing: border-box;
-  font-size: 27rpx;
-  line-height: 1;
-  color: #3f3b31;
-  font-variant-numeric: tabular-nums;
-}
-
-.cal-cell.out .cal-day {
-  color: #c3bca8;
-}
-
-.cal-cell.today .cal-day {
-  border: 1rpx solid #b9c3d6;
-  color: #22345a;
-  font-weight: 700;
-}
-
-.cal-cell.sel .cal-day {
-  background: #22345a;
-  border-color: #22345a;
-  color: #ffffff;
-  font-weight: 600;
-}
-
-.cal-cell-hover .cal-day {
-  background: #eae3d3;
-}
-
-.dash {
-  color: #a49d89;
-  flex: none;
-  font-size: 26rpx;
-}
-
-.inline-tip {
-  margin-top: 18rpx;
-  padding: 14rpx 18rpx;
-  border-left: 5rpx solid #cfd8c2;
-  background: #f4f6ef;
-  border-radius: 8rpx;
-  color: #737c63;
-  font-size: 23rpx;
+/* --- voice ---------------------------------------------------------- */
+.voice-text {
+  width: 100%;
+  height: 88rpx;
+  margin-top: 16rpx;
+  padding: 0;
+  font-size: 28rpx;
   line-height: 1.6;
+  color: #17181a;
+  background: transparent;
+  border: 0;
+  box-sizing: border-box;
 }
 
-/* --- voice schedule ---------------------------------------------------- */
-.input.area.voice-text {
-  height: 160rpx;
-  min-height: 160rpx;
+.voice-placeholder {
+  font-size: 28rpx;
+  color: #a39c8d;
 }
 
 .voice-actions {
   display: flex;
-  align-items: stretch;
-  gap: 16rpx;
-  margin-top: 18rpx;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 16rpx;
 }
 
-/* The row is split 70/30 between two views. The button lives inside the 30%
- * slot and fills it, so native <button> sizing never decides the ratio. */
-
-/* Hold-to-talk is a plain view: a <button> would swallow touchstart/end and
- * fire its own tap feedback. It is also the recording progress bar: while the
- * finger covers the row below, the fill and the elapsed time stay on the
- * button itself. */
 .voice-hold {
   position: relative;
-  flex: 7 1 0;
-  width: auto;
+  flex: 1;
   min-width: 0;
-  height: 84rpx;
+  height: 96rpx;
   overflow: hidden;
-  border-radius: 20rpx;
-  background: #efe8d9;
-  color: #2b2a24;
-  font-size: 29rpx;
-  font-weight: 500;
+  border: 1rpx solid #17181a;
+  border-radius: 4rpx;
+  background: transparent;
+  color: #17181a;
+  font-size: 28rpx;
+  letter-spacing: 0.1em;
   line-height: 1;
-  white-space: nowrap;
   box-sizing: border-box;
   -webkit-user-select: none;
   user-select: none;
@@ -436,10 +307,6 @@
   min-width: 0;
 }
 
-/* The red recording layer is clipped to the elapsed share of the 60 s limit,
- * so the button keeps its idle beige background and the fill grows over it.
- * It repeats the content in white; the base content stays dark, which keeps
- * the label readable on the beige part and on the red part. */
 .voice-fill {
   position: absolute;
   top: 0;
@@ -447,44 +314,37 @@
   bottom: 0;
   left: 0;
   z-index: 2;
-  background: #9c3427;
-  color: #fffdf8;
+  background: #1e3050;
+  color: #fbfaf6;
   transition: clip-path 0.15s linear;
   -webkit-transition: clip-path 0.15s linear;
   pointer-events: none;
 }
 
 .voice-elapsed {
-  font-size: 26rpx;
+  font-size: 24rpx;
   font-variant-numeric: tabular-nums;
   opacity: 0.85;
 }
 
 .voice-hold-hover {
-  background: #e4d9c3;
-}
-
-/* The button itself keeps the idle beige; only the red fill grows, and the
- * lamp turns green to mark an active recording. */
-.voice-hold.recording {
-  background: #efe8d9;
+  background: #f4f1e8;
 }
 
 .voice-hold.off {
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .voice-dot {
   flex: none;
-  width: 14rpx;
-  height: 14rpx;
+  width: 12rpx;
+  height: 12rpx;
   border-radius: 50%;
   background: #9c3427;
 }
 
-.voice-hold.recording .voice-dot,
 .voice-fill .voice-dot {
-  background: #2c8a6f;
+  background: #fbfaf6;
   animation: voice-pulse 1s infinite;
 }
 
@@ -494,68 +354,244 @@
 }
 
 .voice-parse-slot {
-  flex: 3 1 0;
-  min-width: 0;
+  flex: none;
   display: flex;
-  align-items: stretch;
+  align-items: center;
 }
 
 .btn.voice-confirm {
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-  padding: 0 8rpx;
+  width: auto;
+  height: 96rpx;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1e3050;
+  font-size: 24rpx;
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-underline-offset: 6rpx;
 }
 
 .voice-note {
-  margin-top: 12rpx;
+  margin-top: 8rpx;
   font-size: 22rpx;
-  line-height: 1.5;
-  color: #9a9482;
+  line-height: 1.6;
+  color: #a39c8d;
 }
 
 .voice-error {
-  margin: 14rpx 0 0;
+  margin-top: 16rpx;
 }
 
-/* The AI draft lands in the add-event card; this tip stays until 保存日程
- * succeeds, so the user can review or edit every field first. */
 .voice-filled {
-  margin: 0 0 18rpx;
+  margin: 20rpx 0 0;
   border-left-color: #b9c3d6;
-  background: #eef1f7;
   color: #4a5a78;
 }
 
-.log-wrap {
-  margin-top: 10rpx;
+/* --- form ----------------------------------------------------------- */
+.line-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-height: 88rpx;
+  border-bottom: 0;
 }
 
-.log-toggle {
+.line-label {
+  width: 72rpx;
+  flex: none;
+  font-size: 22rpx;
+  letter-spacing: 0.04em;
+  color: #9a9487;
+}
+
+.line-value {
+  flex: 1;
+  min-width: 0;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 28rpx;
+  color: #17181a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-feature-settings: "tnum";
+}
+
+.line-value.open {
+  color: #1e3050;
+}
+
+.pick-hover {
+  background: #f4f1e8;
+}
+
+.time-pick {
+  flex: 1;
+  min-width: 0;
+}
+
+.dash {
+  flex: none;
+  font-size: 22rpx;
+  color: #a39c8d;
+}
+
+.line-input {
+  flex: 1;
+  min-width: 0;
+  height: 88rpx;
+  padding: 0;
+  font-size: 28rpx;
+  color: #17181a;
+  background: transparent;
+  border: 0;
+}
+
+.line-placeholder {
+  color: #a39c8d;
+}
+
+.line-counter {
+  flex: none;
+  font-size: 20rpx;
+  color: #a39c8d;
+  font-feature-settings: "tnum";
+}
+
+.note-row {
+  align-items: flex-start;
+  padding-top: 16rpx;
+}
+
+.line-textarea {
+  flex: 1;
+  width: 100%;
+  height: 96rpx;
+  margin-top: 2rpx;
+  padding: 0;
+  font-size: 26rpx;
+  line-height: 48rpx;
+  color: #17181a;
+  background-color: transparent;
+  border: 0;
+}
+
+.note-counter {
+  margin-top: 4rpx;
+}
+
+.save-btn {
+  margin-top: 12rpx;
+}
+
+/* --- month grid ----------------------------------------------------- */
+.cal {
+  padding: 12rpx 0 8rpx;
+  border-bottom: 1rpx solid #efeae0;
+}
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.cal-nav {
+  width: 64rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34rpx;
+  color: #4e4b45;
+}
+
+.cal-nav-hover {
+  background: #f4f1e8;
+}
+
+.cal-label {
+  flex: 1;
+  min-width: 0;
   text-align: center;
-  font-size: 23rpx;
-  color: #9a9482;
-  padding: 18rpx 0;
+  font-size: 24rpx;
+  color: #17181a;
+  white-space: nowrap;
 }
 
-.log {
-  height: 320rpx;
-  background: #26251f;
-  border-radius: 18rpx;
-  padding: 18rpx 20rpx;
+.cal-today {
+  flex: none;
+  padding: 8rpx 0 8rpx 16rpx;
+  font-size: 22rpx;
+  color: #1e3050;
+  text-decoration: underline;
+  text-underline-offset: 4rpx;
+}
+
+.cal-today-hover {
+  opacity: 0.55;
+}
+
+.cal-week,
+.cal-grid {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.cal-weekday {
+  width: 14.2857%;
+  line-height: 48rpx;
+  text-align: center;
+  font-size: 20rpx;
+  color: #9a9487;
+}
+
+.cal-cell {
+  width: 14.2857%;
+  height: 68rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
 }
 
-.log-line {
-  font-family: Menlo, Consolas, monospace;
-  font-size: 20rpx;
-  line-height: 1.6;
-  color: #d8d2c2;
-  word-break: break-all;
+.cal-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  box-sizing: border-box;
+  font-size: 26rpx;
+  line-height: 1;
+  color: #3f3b31;
+  font-variant-numeric: tabular-nums;
 }
 
-/* --- pairing code dialog ------------------------------------------------ */
+.cal-cell.out .cal-day {
+  color: #cfc9bb;
+}
 
+.cal-cell.today .cal-day {
+  border: 1rpx solid #1e3050;
+  color: #1e3050;
+  font-weight: 500;
+}
+
+.cal-cell.sel .cal-day {
+  background: #1e3050;
+  border-color: #1e3050;
+  color: #ffffff;
+}
+
+.cal-cell-hover .cal-day {
+  background: #f0ece2;
+}
+
+/* --- pairing -------------------------------------------------------- */
 .pairing-mask {
   position: fixed;
   top: 0;
@@ -566,32 +602,32 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The keyboard covers the bottom of the screen and fixed elements are not
-   * pushed up by adjust-position, so bias the card into the upper half. */
   padding: 48rpx 48rpx 360rpx;
   background: rgba(20, 19, 15, 0.42);
 }
 
 .pairing-card {
   width: 100%;
-  max-width: 620rpx;
-  padding: 36rpx 32rpx 28rpx;
+  max-width: 640rpx;
+  padding: 40rpx 32rpx 32rpx;
   box-sizing: border-box;
-  background: #fffdf8;
-  border-radius: 28rpx;
-  box-shadow: 0 16rpx 48rpx rgba(20, 19, 15, 0.2);
+  background: #fbfaf6;
+  border: 1rpx solid #17181a;
+  border-radius: 4rpx;
+  box-shadow: 12rpx 14rpx 0 rgba(23, 24, 26, 0.08);
 }
 
 .pairing-title {
-  color: #22345a;
-  font-size: 33rpx;
-  font-weight: 600;
+  color: #17181a;
+  font-size: 32rpx;
+  font-weight: 500;
+  letter-spacing: 0.06em;
 }
 
 .pairing-input {
   margin-top: 24rpx;
   font-family: Menlo, Consolas, monospace;
-  font-size: 30rpx;
+  font-size: 28rpx;
   letter-spacing: 2rpx;
 }
 
@@ -599,24 +635,25 @@
   color: #a9a293;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
   letter-spacing: 0;
+  font-size: 24rpx;
 }
 
 .pairing-error {
-  margin-top: 14rpx;
+  margin-top: 16rpx;
   color: #9c3427;
-  font-size: 25rpx;
+  font-size: 24rpx;
 }
 
 .pairing-hint {
-  margin-top: 14rpx;
+  margin-top: 16rpx;
   color: #8d876f;
-  font-size: 25rpx;
+  font-size: 24rpx;
 }
 
 .pairing-actions {
   display: flex;
   gap: 20rpx;
-  margin-top: 30rpx;
+  margin-top: 32rpx;
 }
 
 .pairing-actions .pairing-btn {

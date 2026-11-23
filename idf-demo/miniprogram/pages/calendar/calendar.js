@@ -16,6 +16,8 @@ Page({
   data: {
     monthCursor: '',
     monthLabel: '',
+    monthTitle: '',
+    monthYear: '',
     groups: [],
     eventCount: 0,
     loading: false,
@@ -33,10 +35,13 @@ Page({
 
   onLoad() {
     const now = new Date();
+    const meta = fmt.monthMeta(now);
     this.events = [];
     this.setData({
       monthCursor: fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1)),
       monthLabel: fmt.monthLabel(now),
+      monthTitle: meta.title,
+      monthYear: meta.year,
     });
   },
 
@@ -74,9 +79,12 @@ Page({
   shiftMonth(delta) {
     const cursor = fmt.parseYmd(this.data.monthCursor);
     const next = new Date(cursor.getFullYear(), cursor.getMonth() + delta, 1);
+    const meta = fmt.monthMeta(next);
     this.setData({
       monthCursor: fmt.ymd(next),
       monthLabel: fmt.monthLabel(next),
+      monthTitle: meta.title,
+      monthYear: meta.year,
       groups: [],
     });
     return this.loadMonth();

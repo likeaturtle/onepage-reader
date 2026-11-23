@@ -7,28 +7,34 @@
   ],
   "window": {
     "navigationBarTitleText": "墨程CalCal",
-    "navigationBarBackgroundColor": "#f4f0e6",
+    "navigationBarBackgroundColor": "#fbfaf6",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#f4f0e6",
+    "backgroundColor": "#fbfaf6",
     "backgroundTextStyle": "dark"
   },
   "tabBar": {
-    "color": "#8b8778",
-    "selectedColor": "#22345a",
-    "backgroundColor": "#fbf9f3",
+    "color": "#9a9487",
+    "selectedColor": "#1e3050",
+    "backgroundColor": "#fbfaf6",
     "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/index/index",
-        "text": "添加"
+        "text": "添加",
+        "iconPath": "images/tab-add.png",
+        "selectedIconPath": "images/tab-add-on.png"
       },
       {
         "pagePath": "pages/calendar/calendar",
-        "text": "日程"
+        "text": "日程",
+        "iconPath": "images/tab-agenda.png",
+        "selectedIconPath": "images/tab-agenda-on.png"
       },
       {
         "pagePath": "pages/profile/profile",
-        "text": "我的"
+        "text": "我的",
+        "iconPath": "images/tab-me.png",
+        "selectedIconPath": "images/tab-me-on.png"
       }
     ]
   },

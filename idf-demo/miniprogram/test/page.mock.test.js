@@ -21,7 +21,7 @@ const fmt = require('../utils/format');
 function makePage(formDate, options = {}) {
   let definition = null;
   const scrollCalls = [];
-  const calls = { bluetoothSettings: 0, wechatSettings: 0, retries: 0, toasts: [], modals: [] };
+  const calls = { bluetoothSettings: 0, wechatSettings: 0, retries: 0, disconnects: 0, toasts: [], modals: [] };
   const rect = options.rect || null;
   const pageScrollTop = Number(options.scrollTop) || 0;
   const windowHeight = Number(options.windowHeight) || 700;
@@ -73,6 +73,11 @@ function makePage(formDate, options = {}) {
         calls.retries += 1;
         return Promise.resolve(options.retryReady !== false);
       },
+      disconnect() {
+        calls.disconnects += 1;
+        return Promise.resolve();
+      },
+      isConnected: () => options.connected === true,
     },
   };
   require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {} };
@@ -536,4 +541,33 @@ test('flipping the switch while in settings confirms the recovery', () => {
   assert.equal(page.calls.toasts.length, 1);
   assert.equal(page.calls.toasts[0].title, '蓝牙已开启');
   assert.equal(page.data.adapterAvailable, true);
+});
+
+test('sync asks for confirmation before it starts', () => {
+  const page = makePage('2026-11-16');
+  page.onLoad();
+
+  page.refresh();
+
+  assert.equal(page.calls.modals.length, 1);
+  assert.equal(page.calls.modals[0].title, '同步日程');
+  assert.equal(page.calls.modals[0].confirmText, '同步');
+  assert.equal(page.calls.toasts.length, 0);
+});
+
+test('disconnect asks for confirmation and only drops the link on confirm', () => {
+  const page = makePage('2026-11-16');
+  page.onLoad();
+  page.emitState({ connected: true, connecting: false, scanning: false, adapterAvailable: true });
+
+  page.disconnect();
+  assert.equal(page.calls.modals.length, 1);
+  assert.equal(page.calls.modals[0].title, '断开设备');
+  assert.equal(page.calls.disconnects, 0);
+
+  page.calls.modals[0].success({ confirm: false });
+  assert.equal(page.calls.disconnects, 0);
+
+  page.calls.modals[0].success({ confirm: true });
+  assert.equal(page.calls.disconnects, 1);
 });
