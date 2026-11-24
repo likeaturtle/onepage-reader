@@ -1,5 +1,16 @@
 <view class="page profile-page">
-  <view class="profile-head">
+  <view wx:if="{{guest}}" class="profile-head">
+    <view class="avatar big avatar-text">游</view>
+    <view class="profile-copy">
+      <view class="name-row"><text class="guest-name">游客</text></view>
+      <view class="avatar-meta">
+        <text>游客模式 · 仅查看样例数据</text>
+        <text>不连接服务器，也不读取设备</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:else class="profile-head">
     <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="chooseAvatar" loading="{{uploading}}" aria-label="更换头像">
       <image wx:if="{{avatarUrl}}" class="avatar big" src="{{avatarUrl}}" mode="aspectFill" />
       <view wx:else class="avatar big avatar-text">{{initial}}</view>
@@ -26,7 +37,13 @@
 
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
 
-  <view class="section">
+  <view wx:if="{{guest}}" class="section">
+    <view class="section-head"><text class="section-title">游客模式</text></view>
+    <view class="note-text">只展示默认样例日程；语音识别与日程解析返回样例；不连接服务器，无法保存、修改或删除日程。</view>
+    <view class="note-text">体验完整功能请退出游客模式，回到登录页用微信登录账号</view>
+  </view>
+
+  <view wx:if="{{!guest}}" class="section">
     <view class="section-head">
       <text class="section-title">我的设备</text>
       <text class="hint">{{devices.length ? devices.length + ' 台' : ''}}</text>
@@ -56,23 +73,26 @@
   <view class="section">
     <view class="section-head"><text class="section-title">信息</text></view>
     <view class="kv"><text>应用</text><text>{{appName}}</text></view>
-    <view class="kv"><text>登录方式</text><text>微信登录</text></view>
-    <view class="kv"><text>接口地址</text><text class="mono">{{apiBase}}</text></view>
+    <view class="kv"><text>登录方式</text><text>{{guest ? '游客模式（未登录）' : '微信登录'}}</text></view>
+    <view class="kv"><text>接口地址</text><text class="mono">{{guest ? '不连接（样例数据）' : apiBase}}</text></view>
     <view class="kv"><text>客户端版本</text><text>{{version}}</text></view>
     <view class="kv"><text>设备间协议版本</text><text>v{{protocol}}</text></view>
   </view>
 
-  <view class="section">
+  <view wx:if="{{!guest}}" class="section">
     <view class="section-head"><text class="section-title">关于设备归属</text></view>
     <view class="note-text">
-      登录用于账号身份识别和云端日程归属。日程保存在云端，连接设备后自动双向同步；设备端删除也会同步删除云端对应日程。
+      登录用于账号身份识别和云端日程归属。连接设备后日程自动双向同步，设备端删除也会同步删除云端对应日程。
     </view>
     <view class="note-text">
-      BLE 连接使用一次性配对码认证并加密指令和日程。设备首次配对后会归属当前微信账号；其他账号即使重新物理配对，也无法通过小程序同步云端日程。解绑只会解除云端归属，不会清除设备上的 BLE 密钥；要阻止本机继续连接，请再到设备上长按确认键 8 秒。
+      设备首次配对后会归属当前微信账号；其他微信账号重新配对设备后，无法通过小程序同步本微信账号云端日程。
+    </view>
+    <view class="note-text">
+      解绑只会解除云端账号归属，不会清除设备上蓝牙密钥；要清除设备已有绑定微信账号，请在设备端长按确认键 8 秒。
     </view>
   </view>
 
   <view class="logout-row">
-    <text class="logout-link" bindtap="logout">退出登录</text>
+    <text class="logout-link" bindtap="logout">{{guest ? '退出游客模式' : '退出登录'}}</text>
   </view>
 </view>

@@ -41,3 +41,17 @@
 三张都是同一份实现预览的 CSS 覆盖，不是新的方向。选定后再落到 `app.wxss` / 页面 WXSS。
 
 2026-11-23 用户选定 **B 短淡线**，已落到真实 WXSS 并重截 `preview/mini-preview.png`。
+
+## 登录页重设计（2026-11-24）
+
+用户要求登录页「不需要整段的文字显示」。登录页改成「品牌抬头 + 今天的日期 + 本月小月历 +
+微信/游客两个入口」：删掉登录说明、蓝牙提示和接口地址，日期数字成为唯一的锋利元素，说明
+文字只保留「游客模式」这类短标签。月历只做展示：仅有当月天数、今天用细环标记、无选择态和
+点击行为；16:9 短屏用 `@media (max-height: 760px)` 隐藏月历，避免把登录按钮挤出首屏。
+
+- 源码：`miniprogram/pages/login/login.{wxml,wxss,js}`
+- 375×812 浏览器预览：`preview/login-redesign.png`（`preview/login-redesign.html`，rpx 折半为 px）
+- 登录页同时放开了 `disableScroll`，避免小屏或错误文案变长时被裁切。
+- `preview/mini-preview.png` 是重设计前的四页合集，登录页以 `login-redesign.png` 为准。
+- 日期下方空白区的三版探索：`preview/login-blank-options.png`（`preview/login-blank-options.html`）。
+  候选项为月历网格 / 日刻度 / 只调留白；用户选定 **A 月历网格**，已落地。

@@ -1,30 +1,65 @@
 <view class="login-page">
-  <view class="login-top">
+  <view class="brand">
     <image class="logo" src="/CalCal_logo.png" mode="aspectFit" />
-    <view class="title">{{appName}}</view>
-    <view class="subtitle">{{tagline}}</view>
+    <view class="brand-copy">
+      <text class="title">{{appName}}</text>
+      <text class="subtitle">{{tagline}}</text>
+    </view>
   </view>
 
-  <view class="login-body">
-    <view class="hair"></view>
-    <view class="panel-desc">登录后开始连接设备。用微信身份识别你的账号，日程会同时保存在云端，没带设备也能看。</view>
+  <!-- A date, not a paragraph: the sheet shows what the device is for. -->
+  <view class="today" aria-hidden="true">
+    <text class="today-kicker">今天 · {{today.weekday}}</text>
+    <view class="today-row">
+      <text class="today-day">{{today.day}}</text>
+      <view class="today-side">
+        <text>{{today.title}}</text>
+        <text>{{today.year}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- A printed month under the big date: context, not a date picker. -->
+  <view class="month" aria-hidden="true">
+    <view class="month-week">
+      <text wx:for="{{weekdays}}" wx:key="*this" class="month-wd">{{item}}</text>
+    </view>
+    <view wx:for="{{monthWeeks}}" wx:key="key" class="month-week">
+      <view
+        wx:for="{{item.cells}}"
+        wx:for-item="cell"
+        wx:key="key"
+        class="month-cell"
+      >
+        <view wx:if="{{cell.day}}" class="month-day {{cell.today ? 'on' : ''}}">{{cell.day}}</view>
+      </view>
+    </view>
   </view>
 
   <view class="login-foot">
+    <view wx:if="{{error}}" class="login-error">{{error}}</view>
+
     <button class="btn primary block" bindtap="wechatLogin" loading="{{busy}}" disabled="{{busy}}">
       微信一键登录
     </button>
 
-    <button wx:if="{{devLogin}}" class="btn block dev" bindtap="devLogin" disabled="{{busy}}">
-      开发模式登录
-    </button>
-
-    <view wx:if="{{error}}" class="login-error">{{error}}</view>
-
-    <view class="note">
-      首次在真机上使用时，请允许微信访问蓝牙。登录状态保存在本机，可在「我的」中退出。
+    <view
+      class="guest-entry"
+      bindtap="guestMode"
+      hover-class="guest-entry-hover"
+      aria-role="button"
+      aria-label="游客模式"
+    >
+      <text class="guest-entry-label">游客模式</text>
     </view>
 
-    <view class="foot">接口 {{apiBase}}</view>
+    <view
+      wx:if="{{devLogin}}"
+      class="dev-entry"
+      bindtap="devLogin"
+      hover-class="dev-entry-hover"
+      aria-role="button"
+      aria-label="开发模式登录"
+    >开发模式登录</view>
   </view>
 </view>

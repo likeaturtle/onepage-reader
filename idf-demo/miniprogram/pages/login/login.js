@@ -3,13 +3,51 @@
 const config = require('../../config');
 const api = require('../../utils/api');
 const auth = require('../../utils/auth');
+const cal = require('../../utils/calendar');
+const fmt = require('../../utils/format');
+
+/**
+ * Five or six Sunday-first weeks for the month containing `now`, with the
+ * neighbouring-month cells blanked out. The login page prints this month as
+ * context under the big date; it is not a date picker, so there is no
+ * selected cell and out-of-month numbers are omitted.
+ */
+function monthWeeks(now) {
+  const cells = cal.monthGrid(now.getFullYear(), now.getMonth(), '', fmt.ymd(now));
+  const weeks = [];
+  for (let index = 0; index < cells.length; index += 7) {
+    const week = cells.slice(index, index + 7);
+    if (!week.some((cell) => cell.inMonth)) continue;
+    weeks.push({
+      key: week[0].key,
+      cells: week.map((cell) => ({
+        key: cell.key,
+        day: cell.inMonth ? cell.day : '',
+        today: cell.today,
+      })),
+    });
+  }
+  return weeks;
+}
+
+function dateView(now) {
+  const date = now || new Date();
+  return {
+    today: fmt.todayMeta(date),
+    monthWeeks: monthWeeks(date),
+  };
+}
+
+const initialView = dateView();
 
 Page({
   data: {
     appName: config.appName,
     tagline: config.tagline,
     devLogin: Boolean(config.devLogin),
-    apiBase: config.apiBase,
+    today: initialView.today,
+    monthWeeks: initialView.monthWeeks,
+    weekdays: cal.WEEKDAY_INITIALS,
     busy: false,
     error: '',
   },
@@ -31,6 +69,12 @@ Page({
     if (auth.getToken()) {
       wx.switchTab({ url: '/pages/index/index' });
     }
+  },
+
+  // The masthead date and the printed month belong to the day the page is on
+  // screen, not the day the process started.
+  onShow() {
+    this.setData(dateView());
   },
 
   wechatLogin() {
@@ -62,6 +106,17 @@ Page({
     api.devLogin()
       .then((session) => this.finish(session))
       .catch((err) => this.setData({ busy: false, error: err.message || '开发登录失败' }));
+  },
+
+  // A local-only session: the whole app keeps working, but utils/api.js answers
+  // from utils/sample.js and the write paths stay closed. Land on the 日程 tab
+  // so the guest sees the sample list immediately.
+  guestMode() {
+    if (this.data.busy) return;
+    const session = auth.startGuest();
+    const app = getApp();
+    if (app) app.globalData.user = session.user;
+    wx.switchTab({ url: '/pages/calendar/calendar' });
   },
 
   finish(session) {

@@ -124,6 +124,12 @@ page {
   color: #4f5d46;
 }
 
+/* Guest mode is a reading state: a quiet blue-grey margin note, not an error. */
+.banner.guest {
+  border-left-color: #b9c2cc;
+  color: #4a5664;
+}
+
 .banner-switch {
   display: flex;
   align-items: center;

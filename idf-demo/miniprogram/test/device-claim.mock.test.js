@@ -65,7 +65,13 @@ function makePage(options = {}) {
     id: authPath,
     filename: authPath,
     loaded: true,
-    exports: { getToken: () => 'token', getUser: () => ({}), setUser() {} },
+    exports: {
+      get: () => ({ token: 'token', user: {} }),
+      getToken: () => 'token',
+      getUser: () => ({}),
+      isGuest: () => false,
+      setUser() {},
+    },
   };
   delete require.cache[deviceSyncPath];
   delete require.cache[pagePath];

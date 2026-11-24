@@ -21,6 +21,10 @@
 
 - 微信登录（`wx.login` → 服务端 `code2session`），登录态本地持久化；
 - 开发模式下免 AppID 登录，方便先在模拟器/真机跑通蓝牙；
+- **游客模式**：登录页「微信一键登录」下方的「游客模式」不需要账号，也不访问服务器。
+  进入后落在「日程」页，只展示 `utils/sample.js` 里的内置样例日程；语音识别和日程解析
+  返回样例，不会上传录音或调用云端；设备扫描、日程保存/编辑/删除都关闭。游客态保存在
+  本机，可在「我的」页退出并回到登录页；
 - **云端日程**：登录后日程保存在服务端，没带设备也能在手机上查看、添加、编辑、删除；
 - 扫描并连接设备，自动同步时间；连接后云端与设备双向补齐；BLE 协议 3 使用设备配对码做
   双向认证，连接后所有指令和日程数据都用 AES-256-CBC + HMAC 加密；
@@ -61,7 +65,7 @@ miniprogram/
 ├── app.js / app.json / app.wxss   小程序入口与全局样式
 ├── config.js                      apiBase、devLogin、设备名前缀
 ├── pages/
-│   ├── login/                     微信登录 / 开发登录
+│   ├── login/                     微信登录 / 游客模式 / 开发登录
 │   ├── index/                     添加 tab：设备连接/同步、新建日程表单
 │   ├── calendar/                  日程 tab：本月列表、翻月、编辑、删除
 │   └── profile/                   头像、昵称、退出登录
@@ -71,8 +75,9 @@ miniprogram/
 │   ├── event.js                   标题/备注字节上限（95/191）
 │   ├── utf8.js                    不依赖 TextEncoder 的 UTF-8 编解码
 │   ├── frame.js                   按 \n 切行的增量解码器
-│   ├── api.js                     wx.request 封装、401 处理
-│   ├── auth.js                    登录态存储
+│   ├── api.js                     wx.request 封装、401 处理、游客样例分流
+│   ├── auth.js                    登录态 / 游客态存储
+│   ├── sample.js                  游客模式的只读样例日程与语音/解析结果
 │   ├── avatar.js                  带 token 下载头像，供 <image> 使用
 │   ├── calendar.js                添加日程的月历网格与展开滚动（6 周、周日起）
 │   ├── voice.js                   RecorderManager 封装（按住录音、权限、PCM 读取）
@@ -91,7 +96,9 @@ miniprogram/
 │   ├── voice-page.mock.test.js   语音卡片：识别回填、AI 填入表单、保存确认、错误路径
 │   ├── ble-auth.test.js          协议 3：HKDF/证明/AES 帧/重放与篡改、双端握手
 │   ├── device-claim.mock.test.js 配对后按 did 绑定账号、409 冲突时断开且不同步
-│   └── month.mock.test.js        日程 tab 的月列表/翻月/编辑/删除（模拟 Page）
+│   ├── month.mock.test.js        日程 tab 的月列表/翻月/编辑/删除（模拟 Page）
+│   ├── guest.test.js             游客态、样例数据分流、写操作拒绝
+│   └── guest-page.mock.test.js   四个页面的游客入口与只读/样例行为（模拟 Page）
 ```
 
 登录服务在 [`../server/`](../server/)，只依赖 Node 内置模块，不需要 `npm install`。

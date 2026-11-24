@@ -2,13 +2,30 @@
 
 const KEY = 'onepage.session.v1';
 
+/**
+ * A guest session is a local-only stand-in for a login: it carries no token,
+ * so nothing can be sent to the server, and the flag lets api.js answer from
+ * utils/sample.js instead. It is stored like a real session so the tab pages
+ * keep working after a restart.
+ */
 function get() {
   try {
     const session = wx.getStorageSync(KEY);
-    return session && session.token ? session : null;
+    return session && (session.token || session.guest) ? session : null;
   } catch (_) {
     return null;
   }
+}
+
+function startGuest() {
+  const value = {
+    guest: true,
+    token: '',
+    user: { id: 'guest', nickname: '游客', guest: true },
+    savedAt: Date.now(),
+  };
+  wx.setStorageSync(KEY, value);
+  return value;
 }
 
 function save(session) {
@@ -31,7 +48,12 @@ function setUser(user) {
 
 function getToken() {
   const session = get();
-  return session ? session.token : '';
+  return session ? session.token || '' : '';
+}
+
+function isGuest() {
+  const session = get();
+  return Boolean(session && session.guest);
 }
 
 function getUser() {
@@ -47,4 +69,4 @@ function clear() {
   }
 }
 
-module.exports = { get, save, setUser, getToken, getUser, clear };
+module.exports = { get, startGuest, save, setUser, getToken, isGuest, getUser, clear };

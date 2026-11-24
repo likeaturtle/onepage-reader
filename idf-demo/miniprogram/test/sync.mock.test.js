@@ -43,8 +43,10 @@ function makePage(ble, api, options = {}) {
     filename: authPath,
     loaded: true,
     exports: {
+      get: () => ({ token: 'token', user: { id: 'u1', nickname: '测试' } }),
       getToken: () => 'token',
       getUser: () => ({ id: 'u1', nickname: '测试' }),
+      isGuest: () => false,
       setUser() {},
     },
   };

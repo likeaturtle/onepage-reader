@@ -11,6 +11,7 @@ const eventRules = require('../../utils/event');
 const fmt = require('../../utils/format');
 const utf8 = require('../../utils/utf8');
 const voice = require('../../utils/voice');
+const sample = require('../../utils/sample');
 
 const SYNC_PAST_DAYS = 7;
 const SYNC_FUTURE_DAYS = 120;
@@ -135,6 +136,7 @@ Page({
   data: {
     appName: config.appName,
     tagline: config.tagline,
+    guest: false,
     today: fmt.todayMeta(),
     user: {},
     userInitial: '页',
@@ -192,7 +194,13 @@ Page({
 
   onLoad() {
     this.syncedThisSession = false;
-    this.setData({ form: defaultForm(), today: fmt.todayMeta() });
+    const guest = auth.isGuest();
+    this.setData({
+      form: defaultForm(),
+      today: fmt.todayMeta(),
+      guest,
+      voiceStatus: guest ? '游客模式：按住按钮填入样例文字' : '说一句，AI 帮你填好',
+    });
     this.syncUser();
 
     this.offState = ble.onState((state) => {
@@ -304,26 +312,30 @@ Page({
   },
 
   onShow() {
-    if (!auth.getToken()) {
+    if (!auth.get()) {
       wx.reLaunch({ url: '/pages/login/login' });
       return;
     }
+    const guest = auth.isGuest();
     // The masthead is the paper's date; refresh it on every visit so a page
     // left open past midnight does not keep yesterday's number.
-    this.setData({ today: fmt.todayMeta() });
+    this.setData({ today: fmt.todayMeta(), guest });
     this.syncUser();
-    api.me()
-      .then((res) => {
-        auth.setUser(res.user);
-        this.syncUser();
-      })
-      .catch(() => {
-        // 401 already redirects from utils/api; network errors keep the cache.
-      });
+    if (!guest) {
+      api.me()
+        .then((res) => {
+          auth.setUser(res.user);
+          this.syncUser();
+        })
+        .catch(() => {
+          // 401 already redirects from utils/api; network errors keep the cache.
+        });
+    }
 
     // The month list lives on the 日程 tab; this page only syncs when a board
-    // is connected, so switching there always reads a fresh list.
-    if (ble.isConnected() && !this.syncedThisSession && !this.syncing) {
+    // is connected, so switching there always reads a fresh list. Guest mode
+    // never talks to a real device.
+    if (!guest && ble.isConnected() && !this.syncedThisSession && !this.syncing) {
       this.syncDevice();
     }
   },
@@ -366,6 +378,12 @@ Page({
     wx.switchTab({ url: '/pages/profile/profile' });
   },
 
+  // One copy for every closed guest path (device, sync, save) so the message
+  // never drifts between buttons.
+  guestHint() {
+    wx.showToast({ title: '游客模式仅可查看样例数据', icon: 'none' });
+  },
+
   // --- device -----------------------------------------------------------
   toggleDeviceCard() {
     if (!this.data.connected) return; // the scan UI must stay on screen
@@ -387,6 +405,10 @@ Page({
   },
 
   startScan() {
+    if (this.data.guest) {
+      this.guestHint();
+      return;
+    }
     if (this.data.scanning || this.data.connecting) return;
     this.clearScanTimer();
     const session = (this.scanSession || 0) + 1;
@@ -473,6 +495,10 @@ Page({
 
   connect(event) {
     const deviceId = event.currentTarget.dataset.id;
+    if (this.data.guest) {
+      this.guestHint();
+      return;
+    }
     if (!deviceId || this.data.connecting) return;
     this.scanSession = (this.scanSession || 0) + 1;
     this.clearScanTimer();
@@ -498,6 +524,10 @@ Page({
   // WeChat account owns the physical device. The random `did` is only revealed
   // inside the authenticated hello, so it cannot be claimed from a distance.
   claimDevice(hello) {
+    if (this.data.guest) {
+      ble.disconnect().catch(() => {});
+      return Promise.resolve(null);
+    }
     const did = String(hello.did || '');
     if (!did) {
       this.setData({ error: '设备身份缺失，请升级固件后重试' });
@@ -574,6 +604,10 @@ Page({
   },
 
   disconnect() {
+    if (this.data.guest) {
+      this.guestHint();
+      return;
+    }
     if (!this.data.connected) return;
     wx.showModal({
       title: '断开设备',
@@ -590,6 +624,10 @@ Page({
   },
 
   sleepDevice() {
+    if (this.data.guest) {
+      this.guestHint();
+      return;
+    }
     wx.showModal({
       title: '锁屏并休眠',
       content: '设备会显示接下来的日程并进入深睡，之后按电源键唤醒。',
@@ -604,6 +642,10 @@ Page({
   },
 
   refresh() {
+    if (this.data.guest) {
+      this.guestHint();
+      return;
+    }
     if (this.data.syncing) return;
     wx.showModal({
       title: '同步日程',
@@ -628,6 +670,7 @@ Page({
   // between two devices under one account mis-deletes events; see DEVNOTES
   // section 24 before changing this function.
   syncDevice() {
+    if (this.data.guest) return Promise.resolve();
     if (!ble.isConnected() || this.syncing) return Promise.resolve();
     this.syncing = true;
     this.setData({ syncing: true, error: '', syncError: '' });
@@ -884,6 +927,18 @@ Page({
 
   // --- voice schedule ---------------------------------------------------
   startVoice() {
+    // Guest mode never opens the microphone: holding the button only stages
+    // the gesture, releasing it fills a canned sentence.
+    if (this.data.guest) {
+      if (this.data.voicePhase || this.data.busy || this.data.voiceRecording) return;
+      this.setData({
+        voiceRecording: true,
+        voiceButtonLabel: '松开 发送',
+        voiceStatus: '游客模式：松开后填入样例文字',
+        voiceError: '',
+      });
+      return;
+    }
     if (!this.voiceRecorder) return;
     if (this.data.voicePhase || this.data.busy || this.data.voiceRecording) return;
     this.voicePressed = true;
@@ -923,11 +978,36 @@ Page({
 
   stopVoice() {
     this.voicePressed = false;
+    if (this.data.guest) {
+      this.stopGuestVoice();
+      return;
+    }
     if (this.voiceRecorder) this.voiceRecorder.stop();
+  },
+
+  stopGuestVoice() {
+    if (!this.data.voiceRecording) return;
+    this.setData({
+      voiceRecording: false,
+      voiceButtonLabel: '按住 说话',
+      voiceText: sample.transcribe(),
+      voicePhase: '',
+      voiceStatus: '样例识别结果，可修改后解析',
+      voiceError: '',
+    });
   },
 
   onVoiceTouchCancel() {
     this.voicePressed = false;
+    if (this.data.guest) {
+      this.setData({
+        voiceRecording: false,
+        voiceButtonLabel: '按住 说话',
+        voicePhase: '',
+        voiceStatus: '已取消录音',
+      });
+      return;
+    }
     this.cancelVoiceRecording();
     this.setData({ voicePhase: '', voiceStatus: '已取消录音' });
   },
@@ -935,6 +1015,12 @@ Page({
   cancelVoiceRecording() {
     this.voicePressed = false;
     this.stopVoiceTimer();
+    if (this.data.guest) {
+      if (this.data.voiceRecording) {
+        this.setData({ voiceRecording: false, voiceButtonLabel: '按住 说话' });
+      }
+      return;
+    }
     if (this.voiceRecorder) this.voiceRecorder.cancel();
   },
 
@@ -1041,7 +1127,11 @@ Page({
       return Promise.resolve(false);
     }
 
-    this.setData({ voicePhase: 'parsing', voiceStatus: 'AI 正在解析…', voiceError: '' });
+    this.setData({
+      voicePhase: 'parsing',
+      voiceStatus: this.data.guest ? '正在读取样例解析…' : 'AI 正在解析…',
+      voiceError: '',
+    });
     return api.parseSchedule(text)
       .then((event) => {
         const draft = {
@@ -1062,7 +1152,9 @@ Page({
           voiceFilled: true,
           voicePhase: '',
           voiceButtonLabel: '按住 说话',
-          voiceStatus: '已填入下方表单，确认后保存',
+          voiceStatus: this.data.guest
+            ? '样例已填入表单（游客不可保存）'
+            : '已填入下方表单，确认后保存',
           voiceError: '',
         }, () => this.revealAddForm());
         return true;
@@ -1071,7 +1163,9 @@ Page({
         this.setData({
           voicePhase: '',
           voiceButtonLabel: '按住 说话',
-          voiceStatus: '说一句，AI 帮你填好',
+          voiceStatus: this.data.guest
+            ? '游客模式：按住按钮填入样例文字'
+            : '说一句，AI 帮你填好',
           voiceError: (err && err.message) || 'AI 解析失败，请重试',
         });
         return false;
@@ -1130,6 +1224,10 @@ Page({
   },
 
   submit() {
+    if (this.data.guest) {
+      this.guestHint();
+      return Promise.resolve(false);
+    }
     if (this.data.voicePhase) return Promise.resolve(false);
     return this.saveForm(this.data.form).then((saved) => {
       if (saved && this.data.voiceFilled) {
@@ -1151,6 +1249,10 @@ Page({
   // after the cloud write succeeds, so submit() knows whether to clear the
   // voice text/flag.
   saveForm(form) {
+    if (this.data.guest) {
+      this.guestHint();
+      return Promise.resolve(false);
+    }
     if (this.data.busy) return Promise.resolve(false);
     const title = String(form.title || '').trim();
     if (!title) {

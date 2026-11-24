@@ -1,0 +1,132 @@
+<!doctype html>
+<!-- 登录页日期下方空白区的三版探索：375×812，rpx 折半为 px；不是运行时页面。 -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #e9e4d8; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; }
+  * { box-sizing: border-box; }
+  .board { display: flex; gap: 28px; padding: 28px; width: max-content; }
+  .device { width: 375px; }
+  .label { margin: 0 0 10px 2px; font-size: 13px; color: #6f6b61; letter-spacing: .04em; }
+  .label b { color: #17181a; font-weight: 500; }
+  .screen { position: relative; width: 375px; height: 812px; overflow: hidden; background: #fbfaf6; border-radius: 18px; box-shadow: 0 1px 0 rgba(0,0,0,.04); }
+  .status { position: absolute; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px 0 24px; font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+  .capsule { width: 87px; height: 32px; border: .5px solid #e5e0d4; border-radius: 16px; display: flex; align-items: center; justify-content: space-evenly; }
+  .capsule .dots { font-size: 11px; letter-spacing: 1px; }
+  .capsule .ring { width: 11px; height: 11px; border: 1.5px solid #17181a; border-radius: 50%; position: relative; }
+  .capsule .ring::after { content: ""; position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #17181a; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+  .page { position: absolute; inset: 0; padding: 80px 28px 28px; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 48px; height: 48px; flex: none; display: block; }
+  .brand-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .title { font-size: 26px; font-weight: 300; line-height: 1.1; letter-spacing: .02em; }
+  .subtitle { font-size: 11px; line-height: 1.3; letter-spacing: .3em; color: #8b8578; }
+  .today { margin-top: 48px; padding-bottom: 16px; border-bottom: .5px solid #17181a; }
+  .today-kicker { display: block; font-size: 11px; line-height: 1.4; letter-spacing: .18em; color: #9a9487; }
+  .today-row { display: flex; align-items: flex-end; gap: 12px; margin-top: 5px; }
+  .today-day { font-size: 100px; font-weight: 200; line-height: .82; letter-spacing: -.04em; font-feature-settings: "tnum"; }
+  .today-side { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; font-size: 13px; line-height: 1.4; letter-spacing: .08em; color: #6f6b61; }
+  .foot { margin-top: auto; padding-top: 32px; }
+  .cta { display: flex; align-items: center; justify-content: center; width: 100%; height: 52px; background: #1e3050; color: #fff; font-size: 15px; letter-spacing: .14em; border-radius: 2px; }
+  .guest { display: flex; align-items: center; justify-content: center; min-height: 52px; }
+  .guest span { font-size: 14px; letter-spacing: .12em; color: #9a9487; }
+  .dev { display: flex; align-items: center; justify-content: center; min-height: 44px; font-size: 11px; letter-spacing: .08em; color: #a39c8d; }
+
+  /* A: month grid */
+  .month { margin-top: 40px; }
+  .month-week { display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; }
+  .month-wd { text-align: center; padding-bottom: 8px; font-size: 9px; letter-spacing: .04em; color: #b0aa98; }
+  .month-cell { height: 27px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #9a9487; font-feature-settings: "tnum"; }
+  .month-cell.out { color: #d8d2c2; }
+  .month-cell .mark { display: flex; align-items: center; justify-content: center; width: 21px; height: 21px; border: .5px solid #17181a; border-radius: 50%; color: #17181a; }
+
+  /* B: day ruler */
+  .ruler { margin-top: 54px; display: flex; gap: 16px; width: 190px; }
+  .ruler-hours { display: flex; flex-direction: column; justify-content: space-between; height: 210px; padding: 2px 0; font-size: 9px; letter-spacing: .05em; color: #b0aa98; }
+  .ruler-track { position: relative; flex: 1; border-left: .5px solid #ddd7c9; height: 214px; }
+  .tick { position: absolute; left: 0; width: 7px; height: .5px; background: #ddd7c9; }
+  .now { position: absolute; left: -3px; width: 6px; height: 6px; border-radius: 50%; background: #1e3050; }
+  .ruler-note { margin-top: 10px; font-size: 9px; letter-spacing: .15em; color: #c9c3b3; }
+
+  /* C: no new content, balanced whitespace */
+  .balanced .today { margin-top: auto; }
+  .balanced .foot { margin-top: auto; }
+</style>
+</head>
+<body>
+<div class="board">
+  <div class="device">
+    <div class="label"><b>A · 月历</b> · 补一张本月小月历</div>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span class="capsule"><span class="dots">•••</span><span class="ring"></span></span></div>
+      <div class="page">
+        <div class="brand"><img class="logo" src="../../miniprogram/CalCal_logo.png"><div class="brand-copy"><div class="title">墨程CalCal</div><div class="subtitle">把日程写进墨水屏</div></div></div>
+        <div class="today"><span class="today-kicker">今天 · 周二</span><div class="today-row"><span class="today-day">24</span><div class="today-side"><span>十一月</span><span>2026</span></div></div></div>
+        <div class="month" id="month" aria-hidden="true"></div>
+        <div class="foot"><div class="cta">微信一键登录</div><div class="guest"><span>游客模式</span></div><div class="dev">开发模式登录</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="device">
+    <div class="label"><b>B · 日刻度</b> · 竖向时间轴，只做气氛</div>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span class="capsule"><span class="dots">•••</span><span class="ring"></span></span></div>
+      <div class="page">
+        <div class="brand"><img class="logo" src="../../miniprogram/CalCal_logo.png"><div class="brand-copy"><div class="title">墨程CalCal</div><div class="subtitle">把日程写进墨水屏</div></div></div>
+        <div class="today"><span class="today-kicker">今天 · 周二</span><div class="today-row"><span class="today-day">24</span><div class="today-side"><span>十一月</span><span>2026</span></div></div></div>
+        <div class="ruler" aria-hidden="true">
+          <div class="ruler-hours"><span>08</span><span>10</span><span>12</span><span>14</span><span>16</span><span>18</span></div>
+          <div class="ruler-track">
+            <span class="tick" style="top:0"></span><span class="tick" style="top:42px"></span><span class="tick" style="top:84px"></span><span class="tick" style="top:126px"></span><span class="tick" style="top:168px"></span><span class="tick" style="top:210px"></span>
+            <span class="now" style="top:104px"></span>
+          </div>
+        </div>
+        <div class="ruler-note">一天</div>
+        <div class="foot"><div class="cta">微信一键登录</div><div class="guest"><span>游客模式</span></div><div class="dev">开发模式登录</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="device">
+    <div class="label"><b>C · 只调留白</b> · 不加内容，把日期放在中间</div>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span class="capsule"><span class="dots">•••</span><span class="ring"></span></span></div>
+      <div class="page balanced">
+        <div class="brand"><img class="logo" src="../../miniprogram/CalCal_logo.png"><div class="brand-copy"><div class="title">墨程CalCal</div><div class="subtitle">把日程写进墨水屏</div></div></div>
+        <div class="today"><span class="today-kicker">今天 · 周二</span><div class="today-row"><span class="today-day">24</span><div class="today-side"><span>十一月</span><span>2026</span></div></div></div>
+        <div class="foot"><div class="cta">微信一键登录</div><div class="guest"><span>游客模式</span></div><div class="dev">开发模式登录</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function renderMonth() {
+    const el = document.getElementById('month');
+    const now = new Date(2026, 10, 24);
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const first = new Date(year, month, 1);
+    const start = new Date(year, month, 1 - first.getDay());
+    const days = new Date(year, month + 1, 0).getDate();
+    const weeks = Math.ceil((first.getDay() + days) / 7);
+    const initials = ['日','一','二','三','四','五','六'];
+    let html = '<div class="month-week">' + initials.map((w) => `<span class="month-wd">${w}</span>`).join('') + '</div>';
+    for (let w = 0; w < weeks; w += 1) {
+      html += '<div class="month-week">';
+      for (let i = 0; i < 7; i += 1) {
+        const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + i);
+        const inMonth = date.getMonth() === month;
+        const isToday = inMonth && date.getDate() === 24;
+        const body = !inMonth ? '' : (isToday ? `<span class="mark">${date.getDate()}</span>` : date.getDate());
+        html += `<div class="month-cell ${inMonth ? '' : 'out'}">${body}</div>`;
+      }
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  }
+  renderMonth();
+</script>
+</body>
+</html>

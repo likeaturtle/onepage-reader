@@ -14,6 +14,7 @@ const utf8 = require('../../utils/utf8');
  */
 Page({
   data: {
+    guest: false,
     monthCursor: '',
     monthLabel: '',
     monthTitle: '',
@@ -38,6 +39,7 @@ Page({
     const meta = fmt.monthMeta(now);
     this.events = [];
     this.setData({
+      guest: auth.isGuest(),
       monthCursor: fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1)),
       monthLabel: fmt.monthLabel(now),
       monthTitle: meta.title,
@@ -46,10 +48,11 @@ Page({
   },
 
   onShow() {
-    if (!auth.getToken()) {
+    if (!auth.get()) {
       wx.reLaunch({ url: '/pages/login/login' });
       return;
     }
+    this.setData({ guest: auth.isGuest() });
     // The 添加 tab can change the cloud (create/delete/sync), so every visit
     // reloads instead of trusting an old list.
     return this.loadMonth();
@@ -98,8 +101,16 @@ Page({
     return this.shiftMonth(1);
   },
 
+  guestHint() {
+    wx.showToast({ title: '游客模式仅可查看样例数据', icon: 'none' });
+  },
+
   // --- edit -------------------------------------------------------------
   edit(event) {
+    if (this.data.guest) {
+      this.guestHint();
+      return null;
+    }
     if (this.data.busy || this.data.saving) return null;
     const id = event.currentTarget.dataset.id;
     const target = (this.events || []).find((item) => item.id === id);
@@ -160,6 +171,10 @@ Page({
   },
 
   saveEditor() {
+    if (this.data.guest) {
+      this.guestHint();
+      return Promise.resolve();
+    }
     if (this.data.saving) return Promise.resolve();
     const editor = this.data.editor;
     if (!editor || !editor.id) return Promise.resolve();
@@ -215,6 +230,10 @@ Page({
 
   // --- delete -----------------------------------------------------------
   remove(event) {
+    if (this.data.guest) {
+      this.guestHint();
+      return;
+    }
     if (this.data.saving) return;
     const id = event.currentTarget.dataset.id;
     const target = (this.events || []).find((item) => item.id === id);
@@ -233,6 +252,10 @@ Page({
   },
 
   doRemove(target) {
+    if (this.data.guest) {
+      this.guestHint();
+      return Promise.resolve();
+    }
     if (this.data.busy) return Promise.resolve();
     this.setData({ busy: true, error: '' });
     const wasConnected = ble.isConnected();

@@ -1,4 +1,5 @@
-/* 登录 · 一张纸：字标、细线、一段说明、一个墨条 */
+/* 登录 · 一张纸：品牌抬头、今天的日期、一个墨条和两个安静入口。
+ * 没有说明段落：短标签和留白承担解释。 */
 
 .login-page {
   min-height: 100vh;
@@ -9,57 +10,138 @@
   flex-direction: column;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
 .logo {
   display: block;
-  width: 156rpx;
-  height: 156rpx;
+  width: 96rpx;
+  height: 96rpx;
+  flex: none;
+}
+
+.brand-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
 }
 
 .title {
-  margin-top: 24rpx;
-  font-size: 70rpx;
+  font-size: 52rpx;
   font-weight: 300;
-  line-height: 1.15;
+  line-height: 1.1;
   letter-spacing: 0.02em;
   color: #17181a;
 }
 
 .subtitle {
-  margin-top: 12rpx;
   font-size: 22rpx;
+  line-height: 1.3;
   letter-spacing: 0.3em;
   color: #8b8578;
 }
 
-.login-body {
-  margin-top: 72rpx;
+/* The one sharp element: today's number, in the same voice as the 添加 tab. */
+.today {
+  margin-top: 96rpx;
+  padding-bottom: 32rpx;
+  border-bottom: 1rpx solid #17181a;
 }
 
-.hair {
-  height: 1rpx;
-  background: #ddd7c9;
+.today-kicker {
+  display: block;
+  font-size: 22rpx;
+  line-height: 1.4;
+  letter-spacing: 0.18em;
+  color: #9a9487;
 }
 
-.panel-desc {
-  margin-top: 28rpx;
-  max-width: 570rpx;
-  font-size: 28rpx;
-  line-height: 2;
-  color: #4e4b45;
+.today-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 24rpx;
+  margin-top: 10rpx;
+}
+
+.today-day {
+  font-size: 200rpx;
+  font-weight: 200;
+  line-height: 0.82;
+  letter-spacing: -0.04em;
+  color: #17181a;
+  font-feature-settings: "tnum";
+}
+
+.today-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  padding-bottom: 12rpx;
+  font-size: 26rpx;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  color: #6f6b61;
+}
+
+/* The printed month is context, not a date picker: no tap handlers, no
+ * selected state, and no neighbouring-month numbers. */
+.month {
+  margin-top: 56rpx;
+}
+
+.month-week {
+  display: flex;
+}
+
+.month-wd {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-bottom: 8rpx;
+  text-align: center;
+  font-size: 20rpx;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  color: #b0aa98;
+}
+
+.month-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  color: #9a9487;
+  font-feature-settings: "tnum";
+}
+
+.month-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.month-day.on {
+  border: 1rpx solid #17181a;
+  color: #17181a;
 }
 
 .login-foot {
   margin-top: auto;
-}
-
-.btn.dev {
-  margin-top: 20rpx;
-  color: #6f6b61;
-  border-color: #ddd7c9;
+  padding-top: 64rpx;
 }
 
 .login-error {
-  margin-top: 24rpx;
+  margin-bottom: 24rpx;
   padding: 12rpx 0 12rpx 20rpx;
   border-left: 4rpx solid #9c3427;
   color: #9c3427;
@@ -67,18 +149,44 @@
   line-height: 1.7;
 }
 
-.note {
-  margin-top: 24rpx;
-  font-size: 22rpx;
-  line-height: 1.8;
+/* Guest is a quiet text action, centered under the ink bar. */
+.guest-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 104rpx;
+}
+
+.guest-entry-hover {
+  opacity: 0.55;
+}
+
+.guest-entry-label {
+  font-size: 28rpx;
+  letter-spacing: 0.12em;
   color: #9a9487;
 }
 
-.foot {
-  margin-top: 32rpx;
-  text-align: center;
-  font-size: 20rpx;
-  letter-spacing: 0.02em;
-  color: #b0aa98;
-  word-break: break-all;
+.dev-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 88rpx;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  letter-spacing: 0.08em;
+  color: #a39c8d;
+}
+
+.dev-entry-hover {
+  opacity: 0.55;
+}
+
+/* On 16:9 phones the login CTA needs the height more than the decorative
+ * month does; the month returns on the taller screens where the blank gap
+ * actually exists. */
+@media (max-height: 760px) {
+  .month {
+    display: none;
+  }
 }

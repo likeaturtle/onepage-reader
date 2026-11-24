@@ -77,6 +77,15 @@
   border-bottom: 1rpx solid #efeae0;
 }
 
+/* Guest has no editable nickname; the name carries the same weight as the
+ * input so the masthead keeps its size. */
+.guest-name {
+  font-size: 40rpx;
+  font-weight: 500;
+  line-height: 60rpx;
+  color: #17181a;
+}
+
 .name-placeholder {
   color: #a39c8d;
   font-weight: 400;

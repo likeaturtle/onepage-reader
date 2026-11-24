@@ -2,11 +2,19 @@
 
 const config = require('../config');
 const auth = require('./auth');
+const sample = require('./sample');
 
 let redirecting = false;
 
 function base() {
   return String(config.apiBase || '').replace(/\/+$/, '');
+}
+
+function guestBlocked() {
+  const error = new Error('游客模式仅可查看样例数据');
+  error.status = 403;
+  error.guest = true;
+  return error;
 }
 
 function currentRoute() {
@@ -29,6 +37,9 @@ function handleUnauthorized() {
 }
 
 function request(path, options) {
+  // Belt and braces: every real endpoint funnels through here, so a guest can
+  // never reach the network even if a new caller forgets its sample override.
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   const opts = options || {};
   const method = opts.method || 'GET';
   const needAuth = opts.auth !== false;
@@ -84,10 +95,12 @@ function devLogin() {
 }
 
 function me() {
+  if (auth.isGuest()) return Promise.resolve({ user: sample.user() });
   return request('/api/me');
 }
 
 function updateMe(nickname) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request('/api/me', {
     method: 'POST',
     data: { nickname },
@@ -95,6 +108,7 @@ function updateMe(nickname) {
 }
 
 function uploadAvatar(dataUri) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request('/api/me/avatar', {
     method: 'POST',
     data: { data: dataUri },
@@ -103,6 +117,8 @@ function uploadAvatar(dataUri) {
 }
 
 function transcribe(audio, meta) {
+  // The guest hears a canned sentence instead of uploading the recording.
+  if (auth.isGuest()) return Promise.resolve({ text: sample.transcribe(), sample: true });
   const opts = meta || {};
   return request('/api/ai/transcribe', {
     method: 'POST',
@@ -118,6 +134,8 @@ function transcribe(audio, meta) {
 }
 
 function parseSchedule(text) {
+  // A canned draft instead of calling the server-side DeepSeek parser.
+  if (auth.isGuest()) return Promise.resolve(sample.scheduleDraft());
   return request('/api/ai/schedule', {
     method: 'POST',
     data: { text },
@@ -127,6 +145,7 @@ function parseSchedule(text) {
 
 function events(params) {
   const opts = params || {};
+  if (auth.isGuest()) return Promise.resolve(sample.eventsBetween(opts.from, opts.to));
   const query = [];
   if (opts.from) query.push(`from=${encodeURIComponent(opts.from)}`);
   if (opts.to) query.push(`to=${encodeURIComponent(opts.to)}`);
@@ -136,6 +155,7 @@ function events(params) {
 }
 
 function createEvent(event) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request('/api/events', {
     method: 'POST',
     data: event,
@@ -143,6 +163,7 @@ function createEvent(event) {
 }
 
 function updateEvent(id, event) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request(`/api/events/${encodeURIComponent(id)}`, {
     // wx.request does not document PATCH; the server accepts POST here too.
     method: 'POST',
@@ -151,12 +172,14 @@ function updateEvent(id, event) {
 }
 
 function deleteEvent(id) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request(`/api/events/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   }).then((res) => res.event);
 }
 
 function claimDevice(did, name, pid) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request('/api/devices/claim', {
     method: 'POST',
     data: { did, name, pid },
@@ -164,10 +187,12 @@ function claimDevice(did, name, pid) {
 }
 
 function devices() {
+  if (auth.isGuest()) return Promise.resolve({ devices: [] });
   return request('/api/devices');
 }
 
 function unbindDevice(did) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request(`/api/devices/${encodeURIComponent(did)}/unbind`, {
     method: 'POST',
     data: {},
@@ -175,6 +200,7 @@ function unbindDevice(did) {
 }
 
 function mapDevice(id, deviceId) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request(`/api/events/${encodeURIComponent(id)}/device`, {
     method: 'POST',
     data: { deviceId },
@@ -182,6 +208,7 @@ function mapDevice(id, deviceId) {
 }
 
 function purgeEvent(id) {
+  if (auth.isGuest()) return Promise.reject(guestBlocked());
   return request(`/api/events/${encodeURIComponent(id)}/purge`, {
     method: 'POST',
     data: {},
@@ -189,6 +216,7 @@ function purgeEvent(id) {
 }
 
 function logout() {
+  if (auth.isGuest()) return Promise.resolve(null);
   return request('/api/logout', { method: 'POST', auth: false }).catch(() => null);
 }
 
