@@ -1,11 +1,13 @@
 <view class="page profile-page">
-  <view wx:if="{{guest}}" class="profile-head">
-    <view class="avatar big avatar-text">游</view>
+  <view wx:if="{{!loggedIn}}" class="profile-head">
+    <view class="avatar big avatar-logo-wrap">
+      <image class="avatar-logo" src="/CalCal_logo.png" mode="aspectFit" />
+    </view>
     <view class="profile-copy">
-      <view class="name-row"><text class="guest-name">游客</text></view>
+      <view class="name-row"><text class="account-name">未登录</text></view>
       <view class="avatar-meta">
-        <text>游客模式 · 仅查看样例数据</text>
-        <text>不连接服务器，也不读取设备</text>
+        <text>日程只保存在本机</text>
+        <text>登录后可同步云端与设备</text>
       </view>
     </view>
   </view>
@@ -37,13 +39,14 @@
 
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
 
-  <view wx:if="{{guest}}" class="section">
-    <view class="section-head"><text class="section-title">游客模式</text></view>
-    <view class="note-text">只展示默认样例日程；语音识别与日程解析返回样例；不连接服务器，无法保存、修改或删除日程。</view>
-    <view class="note-text">体验完整功能请退出游客模式，回到登录页用微信登录账号</view>
+  <view wx:if="{{!loggedIn}}" class="section">
+    <view class="section-head"><text class="section-title">本机模式</text></view>
+    <view class="note-text">未登录也可以创建、编辑和删除日程，数据只保存在这台手机上，不会上传云端，也不会同步到设备。</view>
+    <view class="note-text">按住说话、解析日程和云端同步需要微信登录；登录后日程会保存到云端并和设备同步。</view>
+    <button class="btn primary block login-btn" bindtap="goLogin">微信登录</button>
   </view>
 
-  <view wx:if="{{!guest}}" class="section">
+  <view wx:if="{{loggedIn}}" class="section">
     <view class="section-head">
       <text class="section-title">我的设备</text>
       <text class="hint">{{devices.length ? devices.length + ' 台' : ''}}</text>
@@ -73,13 +76,13 @@
   <view class="section">
     <view class="section-head"><text class="section-title">信息</text></view>
     <view class="kv"><text>应用</text><text>{{appName}}</text></view>
-    <view class="kv"><text>登录方式</text><text>{{guest ? '游客模式（未登录）' : '微信登录'}}</text></view>
-    <view class="kv"><text>接口地址</text><text class="mono">{{guest ? '不连接（样例数据）' : apiBase}}</text></view>
+    <view class="kv"><text>登录方式</text><text>{{loggedIn ? '微信登录' : '未登录（本机日程）'}}</text></view>
+    <view class="kv"><text>接口地址</text><text class="mono">{{loggedIn ? apiBase : '不连接（本机模式）'}}</text></view>
     <view class="kv"><text>客户端版本</text><text>{{version}}</text></view>
     <view class="kv"><text>设备间协议版本</text><text>v{{protocol}}</text></view>
   </view>
 
-  <view wx:if="{{!guest}}" class="section">
+  <view wx:if="{{loggedIn}}" class="section">
     <view class="section-head"><text class="section-title">关于设备归属</text></view>
     <view class="note-text">
       登录用于账号身份识别和云端日程归属。连接设备后日程自动双向同步，设备端删除也会同步删除云端对应日程。
@@ -92,7 +95,7 @@
     </view>
   </view>
 
-  <view class="logout-row">
-    <text class="logout-link" bindtap="logout">{{guest ? '退出游客模式' : '退出登录'}}</text>
+  <view wx:if="{{loggedIn}}" class="logout-row">
+    <text class="logout-link" bindtap="logout">退出登录</text>
   </view>
 </view>

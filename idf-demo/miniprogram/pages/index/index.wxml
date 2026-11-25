@@ -12,12 +12,13 @@
     </view>
     <view class="avatar" bindtap="goProfile" hover-class="avatar-hover" aria-role="button" aria-label="我的">
       <image wx:if="{{userAvatar}}" class="avatar-img" src="{{userAvatar}}" mode="aspectFill" />
+      <image wx:elif="{{!loggedIn}}" class="avatar-logo" src="/CalCal_logo.png" mode="aspectFit" />
       <text wx:else>{{userInitial}}</text>
     </view>
   </view>
 
-  <view wx:if="{{guest}}" class="banner guest">
-    游客模式 · 仅展示样例数据
+  <view wx:if="{{!loggedIn}}" class="banner local">
+    未登录 · 日程只保存在本机，不会上传云端或同步设备
   </view>
 
   <view wx:if="{{!adapterAvailable}}" class="banner error banner-switch">
@@ -33,12 +34,12 @@
   </view>
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
   <view wx:if="{{syncError}}" class="banner warn">{{syncError}}</view>
-  <view wx:if="{{!connected && !guest}}" class="banner cloud">
+  <view wx:if="{{!connected && loggedIn}}" class="banner cloud">
     未连接设备，日程保存在云端，连接设备后自动同步
   </view>
 
   <!-- Device: one status line; the scan panel expands when disconnected. -->
-  <view wx:if="{{!guest}}" class="device-section">
+  <view class="device-section">
     <view
       class="device-line"
       bindtap="toggleDeviceCard"
@@ -103,14 +104,6 @@
     </block>
   </view>
 
-  <view wx:if="{{guest}}" class="section">
-    <view class="section-head">
-      <text class="section-title">设备</text>
-      <text class="hint">游客模式不可用</text>
-    </view>
-    <view class="muted device-copy">体验完整功能请使用微信登录账号</view>
-  </view>
-
   <!-- Voice: one-sentence capture. -->
   <view class="section">
     <view class="section-head">
@@ -120,24 +113,25 @@
 
     <textarea
       class="voice-text"
-      placeholder="按住下方按钮说出日程"
+      placeholder="{{loggedIn ? '按住下方按钮说出日程' : '登录后可用语音输入'}}"
       placeholder-class="voice-placeholder"
       value="{{voiceText}}"
       maxlength="500"
       bindinput="onVoiceText"
-      disabled="{{voicePhase !== ''}}"
+      disabled="{{voicePhase !== '' || !loggedIn}}"
     />
 
     <view class="voice-actions">
       <view
-        class="voice-hold {{voiceRecording ? 'recording' : ''}} {{voicePhase ? 'off' : ''}}"
+        class="voice-hold {{voiceRecording ? 'recording' : ''}} {{voicePhase || !loggedIn ? 'off' : ''}}"
         bindtouchstart="startVoice"
         bindtouchend="stopVoice"
         bindtouchcancel="onVoiceTouchCancel"
         catchtouchmove="noop"
         hover-class="voice-hold-hover"
         aria-role="button"
-        aria-label="{{voiceRecording ? '松开结束录音' : '按住说话'}}"
+        aria-disabled="{{!loggedIn}}"
+        aria-label="{{!loggedIn ? '登录后可使用语音日程' : (voiceRecording ? '松开结束录音' : '按住说话')}}"
       >
         <view class="voice-hold-content">
           <view class="voice-dot"></view>
@@ -165,13 +159,13 @@
           class="btn voice-confirm"
           bindtap="confirmVoice"
           loading="{{voicePhase === 'parsing'}}"
-          disabled="{{voicePhase !== '' || voiceRecording || busy}}"
+          disabled="{{voicePhase !== '' || voiceRecording || busy || !loggedIn}}"
         >解析日程</button>
       </view>
     </view>
 
     <view wx:if="{{voiceError}}" class="banner error voice-error">{{voiceError}}</view>
-    <view wx:elif="{{guest}}" class="voice-note">游客模式下语音识别和解析日常按钮均使用样例内容，不上传录音或调用云端服务</view>
+    <view wx:elif="{{!loggedIn}}" class="voice-note">未登录不可使用语音识别与日程解析；登录后可按住说话并让 AI 填写表单</view>
     <view wx:else class="voice-note">录音单次最长 60 秒，语音输入和日程解析使用云端服务</view>
   </view>
 
@@ -179,11 +173,11 @@
   <view id="add-card" class="section form-section">
     <view class="section-head">
       <text class="section-title">日程</text>
-      <text class="hint">{{guest ? '仅查看样例' : (voiceFilled ? '已按语音填好' : (connected ? '同时写入设备' : '先保存到云端'))}}</text>
+      <text class="hint">{{voiceFilled ? '已按语音填好' : (!loggedIn ? '只保存到本机' : (connected ? '同时写入设备' : '先保存到云端'))}}</text>
     </view>
 
     <view wx:if="{{voiceFilled}}" class="inline-tip voice-filled">
-      {{guest ? '已按样例填入表单；游客模式只能查看，不能保存日程' : '已按语音内容解析日程，请核对后点「保存日程」'}}
+      已按语音内容解析日程，请核对后点「保存日程」
     </view>
 
     <view class="line-row datetime-row">
@@ -259,19 +253,19 @@
     </view>
     <view class="line-counter note-counter">{{noteBytes}}/{{noteLimit}}</view>
 
-    <view wx:if="{{guest}}" class="inline-tip">
-      游客模式仅支持查看样例数据，体验完整功能请使用微信登录账号
+    <view wx:if="{{!loggedIn}}" class="inline-tip">
+      未登录，保存后只存在本机，不会上传云端或同步设备
     </view>
     <view wx:elif="{{!connected}}" class="inline-tip">
       未连接设备蓝牙，保存后云端储存，连接设备时自动同步
     </view>
 
-    <button class="btn primary block save-btn" bindtap="submit" loading="{{busy}}" disabled="{{busy || voicePhase !== '' || guest}}">
-      {{guest ? '游客模式不可保存' : '保存日程'}}
+    <button class="btn primary block save-btn" bindtap="submit" loading="{{busy}}" disabled="{{busy || voicePhase !== ''}}">
+      保存日程
     </button>
   </view>
 
-  <view wx:if="{{!guest}}" class="log-wrap">
+  <view class="log-wrap">
     <view class="log-toggle" bindtap="toggleLog">
       {{logOpen ? '收起协议日志' : '查看蓝牙协议日志'}}
     </view>

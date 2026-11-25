@@ -7,6 +7,7 @@ const deviceSync = require('../../utils/device-sync');
 const eventRules = require('../../utils/event');
 const fmt = require('../../utils/format');
 const utf8 = require('../../utils/utf8');
+const localEvents = require('../../utils/local-events');
 
 /**
  * Month list tab. The 添加 tab keeps the device card and the create form;
@@ -14,19 +15,20 @@ const utf8 = require('../../utils/utf8');
  */
 Page({
   data: {
-    guest: false,
+    loggedIn: false,
     monthCursor: '',
     monthLabel: '',
     monthTitle: '',
     monthYear: '',
     groups: [],
     eventCount: 0,
+    localCount: 0,
     loading: false,
     busy: false,
     error: '',
     editorOpen: false,
     saving: false,
-    editor: { id: '', date: '', start: '', end: '', title: '', note: '', deviceId: null },
+    editor: { id: '', date: '', start: '', end: '', title: '', note: '', deviceId: null, local: false },
     editorTitleBytes: 0,
     editorNoteBytes: 0,
     editorError: '',
@@ -39,7 +41,7 @@ Page({
     const meta = fmt.monthMeta(now);
     this.events = [];
     this.setData({
-      guest: auth.isGuest(),
+      loggedIn: auth.isLoggedIn(),
       monthCursor: fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1)),
       monthLabel: fmt.monthLabel(now),
       monthTitle: meta.title,
@@ -48,12 +50,8 @@ Page({
   },
 
   onShow() {
-    if (!auth.get()) {
-      wx.reLaunch({ url: '/pages/login/login' });
-      return;
-    }
-    this.setData({ guest: auth.isGuest() });
-    // The 添加 tab can change the cloud (create/delete/sync), so every visit
+    this.setData({ loggedIn: auth.isLoggedIn() });
+    // The 添加 tab can change the store (local or cloud), so every visit
     // reloads instead of trusting an old list.
     return this.loadMonth();
   },
@@ -62,13 +60,19 @@ Page({
     this.setData({ loading: true, error: '' });
     const cursor = this.data.monthCursor;
     const bounds = fmt.monthBounds(cursor);
-    return api.events({ from: bounds.from, to: bounds.to })
+    const local = Promise.resolve(localEvents.list(bounds));
+    const source = this.data.loggedIn
+      ? Promise.all([api.events({ from: bounds.from, to: bounds.to }), local])
+        .then(([cloud, offline]) => cloud.concat(offline))
+      : local;
+    return source
       .then((events) => {
         if (cursor !== this.data.monthCursor) return; // a newer month won
         this.events = events;
         this.setData({
           groups: fmt.groupEvents(events),
           eventCount: events.length,
+          localCount: events.filter((event) => event.local).length,
         });
       })
       .catch((err) => {
@@ -101,16 +105,8 @@ Page({
     return this.shiftMonth(1);
   },
 
-  guestHint() {
-    wx.showToast({ title: '游客模式仅可查看样例数据', icon: 'none' });
-  },
-
   // --- edit -------------------------------------------------------------
   edit(event) {
-    if (this.data.guest) {
-      this.guestHint();
-      return null;
-    }
     if (this.data.busy || this.data.saving) return null;
     const id = event.currentTarget.dataset.id;
     const target = (this.events || []).find((item) => item.id === id);
@@ -129,6 +125,7 @@ Page({
         title: target.title || '',
         note: target.note || '',
         deviceId: target.deviceId == null ? null : target.deviceId,
+        local: target.local === true,
       },
       editorTitleBytes: utf8.byteLength(target.title || ''),
       editorNoteBytes: utf8.byteLength(target.note || ''),
@@ -171,10 +168,6 @@ Page({
   },
 
   saveEditor() {
-    if (this.data.guest) {
-      this.guestHint();
-      return Promise.resolve();
-    }
     if (this.data.saving) return Promise.resolve();
     const editor = this.data.editor;
     if (!editor || !editor.id) return Promise.resolve();
@@ -196,6 +189,17 @@ Page({
       title,
       note: String(editor.note || '').trim(),
     };
+
+    if (editor.local || !this.data.loggedIn) {
+      const updated = localEvents.update(editor.id, payload);
+      if (!updated) {
+        this.setData({ saving: false, editorError: '这条日程已不存在' });
+        return Promise.resolve();
+      }
+      this.setData({ editorOpen: false, editorError: '', saving: false });
+      wx.showToast({ title: '已保存到本机', icon: 'none', duration: 2200 });
+      return this.loadMonth();
+    }
 
     return api.updateEvent(editor.id, payload)
       .then(async (saved) => {
@@ -230,19 +234,19 @@ Page({
 
   // --- delete -----------------------------------------------------------
   remove(event) {
-    if (this.data.guest) {
-      this.guestHint();
-      return;
-    }
     if (this.data.saving) return;
     const id = event.currentTarget.dataset.id;
     const target = (this.events || []).find((item) => item.id === id);
     if (!target) return;
+    const isLocal = target.local === true || !this.data.loggedIn;
+    const content = isLocal
+      ? '删除后无法恢复。这条日程只保存在本机，不会影响云端。'
+      : (ble.isConnected()
+        ? '删除后无法恢复，确定删除这条日程吗？'
+        : '删除后无法恢复。当前未连接蓝牙设备，删除会先改云端，连接设备后再同步。');
     wx.showModal({
       title: '删除日程',
-      content: ble.isConnected()
-        ? '删除后无法恢复，确定删除这条日程吗？'
-        : '删除后无法恢复。当前未连接蓝牙设备，删除会先改云端，连接设备后再同步。',
+      content,
       confirmText: '删除',
       confirmColor: '#9c3427',
       success: (res) => {
@@ -252,12 +256,19 @@ Page({
   },
 
   doRemove(target) {
-    if (this.data.guest) {
-      this.guestHint();
-      return Promise.resolve();
-    }
     if (this.data.busy) return Promise.resolve();
     this.setData({ busy: true, error: '' });
+
+    if (target.local || !this.data.loggedIn) {
+      try {
+        localEvents.remove(target.id);
+        wx.showToast({ title: '已从本机删除', icon: 'none', duration: 2200 });
+      } catch (err) {
+        this.setData({ error: err.message });
+      }
+      return this.loadMonth().then(() => this.setData({ busy: false }));
+    }
+
     const wasConnected = ble.isConnected();
     let deviceError = '';
     return api.deleteEvent(target.id)

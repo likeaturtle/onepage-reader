@@ -148,6 +148,13 @@
   word-break: break-all;
 }
 
+.event-local {
+  margin-top: 2rpx;
+  font-size: 20rpx;
+  letter-spacing: 0.08em;
+  color: #8b7b4a;
+}
+
 .event-actions {
   flex: none;
   display: flex;

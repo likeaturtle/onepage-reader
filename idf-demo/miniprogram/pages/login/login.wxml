@@ -1,4 +1,9 @@
 <view class="login-page">
+  <view class="back" bindtap="goBack" hover-class="back-hover" aria-role="button" aria-label="返回">
+    <text class="back-arrow">‹</text>
+    <text class="back-label">返回</text>
+  </view>
+
   <view class="brand">
     <image class="logo" src="/CalCal_logo.png" mode="aspectFit" />
     <view class="brand-copy">
@@ -42,16 +47,6 @@
     <button class="btn primary block" bindtap="wechatLogin" loading="{{busy}}" disabled="{{busy}}">
       微信一键登录
     </button>
-
-    <view
-      class="guest-entry"
-      bindtap="guestMode"
-      hover-class="guest-entry-hover"
-      aria-role="button"
-      aria-label="游客模式"
-    >
-      <text class="guest-entry-label">游客模式</text>
-    </view>
 
     <view
       wx:if="{{devLogin}}"

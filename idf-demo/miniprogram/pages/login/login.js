@@ -108,15 +108,16 @@ Page({
       .catch((err) => this.setData({ busy: false, error: err.message || '开发登录失败' }));
   },
 
-  // A local-only session: the whole app keeps working, but utils/api.js answers
-  // from utils/sample.js and the write paths stay closed. Land on the 日程 tab
-  // so the guest sees the sample list immediately.
-  guestMode() {
-    if (this.data.busy) return;
-    const session = auth.startGuest();
-    const app = getApp();
-    if (app) app.globalData.user = session.user;
-    wx.switchTab({ url: '/pages/calendar/calendar' });
+  // A local-only session is gone by design: login is now opt-in from 我的.
+  // This page is only reached from that entry, so it needs a way back to the
+  // tab pages without logging in.
+  goBack() {
+    const pages = typeof getCurrentPages === 'function' ? getCurrentPages() : [];
+    if (pages.length > 1) {
+      wx.navigateBack({ delta: 1 });
+      return;
+    }
+    wx.switchTab({ url: '/pages/index/index' });
   },
 
   finish(session) {

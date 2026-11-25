@@ -46,7 +46,7 @@ function makePage(ble, api, options = {}) {
       get: () => ({ token: 'token', user: { id: 'u1', nickname: '测试' } }),
       getToken: () => 'token',
       getUser: () => ({ id: 'u1', nickname: '测试' }),
-      isGuest: () => false,
+      isLoggedIn: () => true,
       setUser() {},
     },
   };
@@ -60,6 +60,7 @@ function makePage(ble, api, options = {}) {
       Object.assign(this.data, patch);
     },
   });
+  page.data.loggedIn = true;
   page.modalCalls = modalCalls;
   return page;
 }

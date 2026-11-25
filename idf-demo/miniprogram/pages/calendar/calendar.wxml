@@ -1,11 +1,11 @@
 <view class="page">
   <view wx:if="{{error}}" class="banner error">{{error}}</view>
-  <view wx:if="{{guest}}" class="banner guest">游客模式 · 以下为内置样例日程，编辑与删除不可用</view>
+  <view wx:if="{{!loggedIn}}" class="banner local">未登录 · 日程只保存在本机，可编辑和删除，不会上传云端</view>
 
-  <view wx:if="{{editorOpen && !guest}}" class="editor-section">
+  <view wx:if="{{editorOpen}}" class="editor-section">
     <view class="section-head">
       <text class="section-title">编辑日程</text>
-      <text class="hint">{{saving ? '保存中…' : '保存后同步到设备'}}</text>
+      <text class="hint">{{saving ? '保存中…' : (editor.local || !loggedIn ? '保存到本机' : '保存后同步到设备')}}</text>
     </view>
 
     <view class="line-row datetime-row">
@@ -70,12 +70,12 @@
   </view>
   <view class="agenda-meta">
     <text>{{eventCount}} 条日程</text>
-    <text>{{guest ? '样例数据 · 只读' : (loading ? '读取中…' : '云端 · 已同步')}}</text>
+    <text>{{!loggedIn ? '本机 · 未登录' : (loading ? '读取中…' : (localCount ? '云端 + 本机 ' + localCount + ' 条' : '云端 · 已同步'))}}</text>
   </view>
 
-  <view wx:if="{{loading}}" class="empty">{{guest ? '正在读取样例…' : '正在读取云端…'}}</view>
+  <view wx:if="{{loading}}" class="empty">{{loggedIn ? '正在读取云端…' : '正在读取本机日程…'}}</view>
   <view wx:elif="{{!groups.length && error}}" class="empty">云端日程加载失败，请检查网络后重试。</view>
-  <view wx:elif="{{!groups.length}}" class="empty">{{guest ? '本月没有样例日程，可以翻到其他月份看看。' : '本月还没有日程，到「添加」页新建一条。'}}</view>
+  <view wx:elif="{{!groups.length}}" class="empty">{{loggedIn ? '本月还没有日程，到「添加」页新建一条。' : '本月还没有日程，到「添加」页新建一条，暂时只保存在本机。'}}</view>
 
   <view wx:for="{{groups}}" wx:key="date" class="day">
     <view class="day-head">
@@ -93,13 +93,14 @@
         bindtap="edit"
         data-id="{{event.id}}"
         hover-class="event-main-hover"
-        aria-role="{{guest ? '' : 'button'}}"
-        aria-label="{{guest ? '样例日程（只读）' : '编辑日程'}}"
+        aria-role="button"
+        aria-label="编辑日程"
       >
         <text class="event-title">{{event.title}}</text>
         <text wx:if="{{event.note}}" class="event-note">{{event.note}}</text>
+        <text wx:if="{{event.local}}" class="event-local">本机日程</text>
       </view>
-      <view wx:if="{{!guest}}" class="event-actions">
+      <view class="event-actions">
         <button class="btn tiny" catchtap="edit" data-id="{{event.id}}">编辑</button>
         <button class="btn tiny danger" catchtap="remove" data-id="{{event.id}}">删除</button>
       </view>

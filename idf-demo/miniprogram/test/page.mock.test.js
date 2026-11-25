@@ -89,7 +89,7 @@ function makePage(formDate, options = {}) {
       get: () => ({ token: 'token', user: {} }),
       getToken: () => 'token',
       getUser: () => ({}),
-      isGuest: () => false,
+      isLoggedIn: () => true,
       setUser() {},
     },
   };

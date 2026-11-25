@@ -98,6 +98,7 @@ function groupEvents(events) {
       end: event.end || '',
       title: event.title || '(无标题)',
       note: event.note || '',
+      local: event.local === true,
     });
   }
   return groups;

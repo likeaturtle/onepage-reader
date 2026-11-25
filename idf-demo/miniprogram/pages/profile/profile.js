@@ -33,9 +33,9 @@ function clientVersion() {
 
 Page({
   data: {
-    guest: false,
+    loggedIn: false,
     user: {},
-    initial: '页',
+    initial: '未',
     avatarUrl: '',
     nickname: '',
     saving: false,
@@ -53,30 +53,32 @@ Page({
   },
 
   onShow() {
-    const session = auth.get();
-    if (!session) {
-      wx.reLaunch({ url: '/pages/login/login' });
+    const loggedIn = auth.isLoggedIn();
+    this.setData({ loggedIn });
+    this.sync(loggedIn);
+    if (!loggedIn) {
+      this.setData({ devices: [], devicesLoading: false, deviceError: '' });
       return;
     }
-    const guest = Boolean(session.guest);
-    this.setData({ guest });
-    this.sync();
-    if (guest) return;
     this.loadDevices();
     api.me()
       .then((res) => {
         auth.setUser(res.user);
-        this.sync();
+        this.sync(true);
       })
       .catch(() => {});
   },
 
-  guestHint() {
-    wx.showToast({ title: '游客模式仅可查看样例数据', icon: 'none' });
+  goLogin() {
+    wx.navigateTo({ url: '/pages/login/login' });
+  },
+
+  loginHint() {
+    wx.showToast({ title: '登录后可同步云端与设备', icon: 'none' });
   },
 
   loadDevices() {
-    if (this.data.guest) return;
+    if (!this.data.loggedIn) return;
     if (this.data.devicesLoading) return;
     this.setData({ devicesLoading: true, deviceError: '' });
     api.devices()
@@ -92,8 +94,8 @@ Page({
   },
 
   unbindDevice(event) {
-    if (this.data.guest) {
-      this.guestHint();
+    if (!this.data.loggedIn) {
+      this.loginHint();
       return;
     }
     const did = event.currentTarget.dataset.did;
@@ -122,12 +124,13 @@ Page({
     });
   },
 
-  sync() {
+  sync(loggedIn) {
+    const signedIn = loggedIn === undefined ? auth.isLoggedIn() : loggedIn;
     const user = auth.getUser() || {};
     const path = user.avatar || '';
     this.setData({
       user,
-      initial: fmt.initial(user.nickname || '微信用户'),
+      initial: fmt.initial(user.nickname || (signedIn ? '微信用户' : '未登录')),
       avatarUrl: '',
       nickname: user.nickname || '',
     });
@@ -142,8 +145,8 @@ Page({
   },
 
   save() {
-    if (this.data.guest) {
-      this.guestHint();
+    if (!this.data.loggedIn) {
+      this.loginHint();
       return;
     }
     const nickname = String(this.data.nickname || '').trim();
@@ -164,8 +167,8 @@ Page({
   },
 
   chooseAvatar(event) {
-    if (this.data.guest) {
-      this.guestHint();
+    if (!this.data.loggedIn) {
+      this.loginHint();
       return;
     }
     const filePath = event.detail.avatarUrl;
@@ -199,28 +202,24 @@ Page({
   },
 
   logout() {
-    const guest = this.data.guest;
+    if (!this.data.loggedIn) {
+      this.goLogin();
+      return;
+    }
     wx.showModal({
-      title: guest ? '退出游客模式' : '退出登录',
-      content: guest
-        ? '退出后回到登录页。游客模式没有保存任何数据，样例内容会消失。'
-        : '退出后需要重新登录才能继续使用小程序，设备上的日程不会删除。',
+      title: '退出登录',
+      content: '退出后回到本机模式：新日程只保存在这台手机上，云端和设备同步暂停。设备上的日程不会删除。',
       confirmText: '退出',
       confirmColor: '#9c3427',
       success: (res) => {
         if (!res.confirm) return;
-        const finish = () => {
-          avatar.clear();
-          auth.clear();
-          wx.reLaunch({ url: '/pages/login/login' });
-        };
-        if (guest) {
-          ble.disconnect().catch(() => null).then(finish);
-          return;
-        }
         api.logout()
           .then(() => ble.disconnect().catch(() => null))
-          .then(finish);
+          .then(() => {
+            avatar.clear();
+            auth.clear();
+            wx.reLaunch({ url: '/pages/index/index' });
+          });
       },
     });
   },

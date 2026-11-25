@@ -69,7 +69,7 @@ function makePage(options = {}) {
       get: () => ({ token: 'token', user: {} }),
       getToken: () => 'token',
       getUser: () => ({}),
-      isGuest: () => false,
+      isLoggedIn: () => true,
       setUser() {},
     },
   };
@@ -91,6 +91,7 @@ function makePage(options = {}) {
       if (typeof callback === 'function') callback();
     },
   });
+  page.data.loggedIn = true;
   page.calls = calls;
   return page;
 }

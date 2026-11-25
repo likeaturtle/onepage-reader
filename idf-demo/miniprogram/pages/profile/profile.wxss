@@ -77,9 +77,9 @@
   border-bottom: 1rpx solid #efeae0;
 }
 
-/* Guest has no editable nickname; the name carries the same weight as the
- * input so the masthead keeps its size. */
-.guest-name {
+/* Local mode has no editable nickname; the name carries the same weight as
+ * the input so the masthead keeps its size. */
+.account-name {
   font-size: 40rpx;
   font-weight: 500;
   line-height: 60rpx;
@@ -163,6 +163,10 @@
   font-size: 22rpx;
   line-height: 1.95;
   color: #8b8578;
+}
+
+.login-btn {
+  margin-top: 32rpx;
 }
 
 .logout-row {

@@ -95,7 +95,7 @@ function makePage(options = {}) {
     exports: {
       get: () => ({ token: 'token', user: {} }),
       getToken: () => 'token',
-      isGuest: () => false,
+      isLoggedIn: () => true,
     },
   };
 

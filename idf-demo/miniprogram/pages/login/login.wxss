@@ -1,13 +1,40 @@
-/* 登录 · 一张纸：品牌抬头、今天的日期、一个墨条和两个安静入口。
- * 没有说明段落：短标签和留白承担解释。 */
+/* 登录 · 一张纸：品牌抬头、今天的日期、一个墨条和一个安静入口。
+ * 登录是可选的，页面左上角保留一条返回本机模式的路。 */
 
 .login-page {
+  position: relative;
   min-height: 100vh;
   padding: calc(env(safe-area-inset-top) + 160rpx) 56rpx calc(56rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #fbfaf6;
   display: flex;
   flex-direction: column;
+}
+
+.back {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 24rpx);
+  left: 40rpx;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  padding: 12rpx 16rpx 12rpx 8rpx;
+}
+
+.back-hover {
+  opacity: 0.55;
+}
+
+.back-arrow {
+  font-size: 40rpx;
+  line-height: 1;
+  color: #6f6b61;
+}
+
+.back-label {
+  font-size: 24rpx;
+  letter-spacing: 0.08em;
+  color: #9a9487;
 }
 
 .brand {
@@ -147,24 +174,6 @@
   color: #9c3427;
   font-size: 24rpx;
   line-height: 1.7;
-}
-
-/* Guest is a quiet text action, centered under the ink bar. */
-.guest-entry {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 104rpx;
-}
-
-.guest-entry-hover {
-  opacity: 0.55;
-}
-
-.guest-entry-label {
-  font-size: 28rpx;
-  letter-spacing: 0.12em;
-  color: #9a9487;
 }
 
 .dev-entry {

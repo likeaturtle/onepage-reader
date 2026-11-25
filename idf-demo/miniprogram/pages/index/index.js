@@ -11,7 +11,7 @@ const eventRules = require('../../utils/event');
 const fmt = require('../../utils/format');
 const utf8 = require('../../utils/utf8');
 const voice = require('../../utils/voice');
-const sample = require('../../utils/sample');
+const localEvents = require('../../utils/local-events');
 
 const SYNC_PAST_DAYS = 7;
 const SYNC_FUTURE_DAYS = 120;
@@ -136,10 +136,10 @@ Page({
   data: {
     appName: config.appName,
     tagline: config.tagline,
-    guest: false,
+    loggedIn: false,
     today: fmt.todayMeta(),
     user: {},
-    userInitial: '页',
+    userInitial: '未',
     userAvatar: '',
     connected: false,
     connecting: false,
@@ -194,14 +194,15 @@ Page({
 
   onLoad() {
     this.syncedThisSession = false;
-    const guest = auth.isGuest();
+    this.claimedThisSession = false;
+    const loggedIn = auth.isLoggedIn();
     this.setData({
       form: defaultForm(),
       today: fmt.todayMeta(),
-      guest,
-      voiceStatus: guest ? '游客模式：按住按钮填入样例文字' : '说一句，AI 帮你填好',
+      loggedIn,
+      voiceStatus: loggedIn ? '说一句，AI 帮你填好' : '登录后可用语音与 AI 解析',
     });
-    this.syncUser();
+    this.syncUser(loggedIn);
 
     this.offState = ble.onState((state) => {
       const banner = bluetoothBanner(state.adapterReason);
@@ -243,6 +244,7 @@ Page({
           patch.scanning = false;
         }
         this.syncedThisSession = false;
+        this.claimedThisSession = false;
       } else if (!this.data.connected) {
         // Freshly connected: roll the device card up to its header so the
         // calendar and the add-event form stay in reach. The header tap opens
@@ -312,30 +314,28 @@ Page({
   },
 
   onShow() {
-    if (!auth.get()) {
-      wx.reLaunch({ url: '/pages/login/login' });
-      return;
+    const loggedIn = auth.isLoggedIn();
+    const idleVoiceStatus = loggedIn ? '说一句，AI 帮你填好' : '登录后可用语音与 AI 解析';
+    const patch = { today: fmt.todayMeta(), loggedIn };
+    if (!this.data.voiceRecording && !this.data.voicePhase && !this.data.voiceText) {
+      patch.voiceStatus = idleVoiceStatus;
     }
-    const guest = auth.isGuest();
-    // The masthead is the paper's date; refresh it on every visit so a page
-    // left open past midnight does not keep yesterday's number.
-    this.setData({ today: fmt.todayMeta(), guest });
-    this.syncUser();
-    if (!guest) {
-      api.me()
-        .then((res) => {
-          auth.setUser(res.user);
-          this.syncUser();
-        })
-        .catch(() => {
-          // 401 already redirects from utils/api; network errors keep the cache.
-        });
-    }
+    this.setData(patch);
+    this.syncUser(loggedIn);
+    if (!loggedIn) return;
+
+    api.me()
+      .then((res) => {
+        auth.setUser(res.user);
+        this.syncUser(true);
+      })
+      .catch(() => {
+        // A stale token is cleared by utils/api; network errors keep the cache.
+      });
 
     // The month list lives on the 日程 tab; this page only syncs when a board
-    // is connected, so switching there always reads a fresh list. Guest mode
-    // never talks to a real device.
-    if (!guest && ble.isConnected() && !this.syncedThisSession && !this.syncing) {
+    // is connected, so switching there always reads a fresh list.
+    if (ble.isConnected() && !this.syncedThisSession && !this.syncing) {
       this.syncDevice();
     }
   },
@@ -360,12 +360,13 @@ Page({
     }
   },
 
-  syncUser() {
+  syncUser(loggedIn) {
+    const signedIn = loggedIn === undefined ? auth.isLoggedIn() : loggedIn;
     const user = auth.getUser() || {};
     const path = user.avatar || '';
     this.setData({
       user,
-      userInitial: fmt.initial(user.nickname || '微信用户'),
+      userInitial: fmt.initial(user.nickname || (signedIn ? '微信用户' : '未登录')),
       userAvatar: '',
     });
     avatar.resolve(path).then((url) => {
@@ -378,10 +379,12 @@ Page({
     wx.switchTab({ url: '/pages/profile/profile' });
   },
 
-  // One copy for every closed guest path (device, sync, save) so the message
-  // never drifts between buttons.
-  guestHint() {
-    wx.showToast({ title: '游客模式仅可查看样例数据', icon: 'none' });
+  loginHint() {
+    wx.showToast({ title: '登录后可同步云端与设备', icon: 'none' });
+  },
+
+  voiceLoginHint() {
+    wx.showToast({ title: '登录后可使用语音日程', icon: 'none' });
   },
 
   // --- device -----------------------------------------------------------
@@ -405,10 +408,6 @@ Page({
   },
 
   startScan() {
-    if (this.data.guest) {
-      this.guestHint();
-      return;
-    }
     if (this.data.scanning || this.data.connecting) return;
     this.clearScanTimer();
     const session = (this.scanSession || 0) + 1;
@@ -495,10 +494,6 @@ Page({
 
   connect(event) {
     const deviceId = event.currentTarget.dataset.id;
-    if (this.data.guest) {
-      this.guestHint();
-      return;
-    }
     if (!deviceId || this.data.connecting) return;
     this.scanSession = (this.scanSession || 0) + 1;
     this.clearScanTimer();
@@ -508,8 +503,16 @@ Page({
     })
       .then((hello) => {
         this.setData({ hello, deviceTime: fmt.deviceTime(hello) });
+        if (!this.data.loggedIn) {
+          // BLE auth works without an account, but cloud ownership, sync and
+          // device writes all need one. Keep the link for device info/sleep.
+          this.claimedThisSession = false;
+          wx.showToast({ title: '已连接（未登录，不同步日程）', icon: 'none' });
+          return null;
+        }
         return this.claimDevice(hello).then((device) => {
           if (!device) return null;
+          this.claimedThisSession = true;
           wx.showToast({ title: '已连接，正在同步', icon: 'none' });
           return this.syncDevice();
         });
@@ -524,7 +527,7 @@ Page({
   // WeChat account owns the physical device. The random `did` is only revealed
   // inside the authenticated hello, so it cannot be claimed from a distance.
   claimDevice(hello) {
-    if (this.data.guest) {
+    if (!this.data.loggedIn) {
       ble.disconnect().catch(() => {});
       return Promise.resolve(null);
     }
@@ -604,10 +607,6 @@ Page({
   },
 
   disconnect() {
-    if (this.data.guest) {
-      this.guestHint();
-      return;
-    }
     if (!this.data.connected) return;
     wx.showModal({
       title: '断开设备',
@@ -624,10 +623,6 @@ Page({
   },
 
   sleepDevice() {
-    if (this.data.guest) {
-      this.guestHint();
-      return;
-    }
     wx.showModal({
       title: '锁屏并休眠',
       content: '设备会显示接下来的日程并进入深睡，之后按电源键唤醒。',
@@ -642,11 +637,11 @@ Page({
   },
 
   refresh() {
-    if (this.data.guest) {
-      this.guestHint();
+    if (this.data.syncing) return;
+    if (!this.data.loggedIn) {
+      this.loginHint();
       return;
     }
-    if (this.data.syncing) return;
     wx.showModal({
       title: '同步日程',
       content: '将把云端与设备上的日程双向补齐，过程中请让设备保持在附近。要现在同步吗？',
@@ -670,7 +665,7 @@ Page({
   // between two devices under one account mis-deletes events; see DEVNOTES
   // section 24 before changing this function.
   syncDevice() {
-    if (this.data.guest) return Promise.resolve();
+    if (!this.data.loggedIn) return Promise.resolve();
     if (!ble.isConnected() || this.syncing) return Promise.resolve();
     this.syncing = true;
     this.setData({ syncing: true, error: '', syncError: '' });
@@ -678,6 +673,14 @@ Page({
     return (async () => {
       const errors = [];
       try {
+        // A link opened while logged out has no account claim yet. Claim it
+        // now, before importing/exporting anything, so another account's
+        // device cannot be synced by accident.
+        if (this.data.hello && !this.claimedThisSession) {
+          const device = await this.claimDevice(this.data.hello);
+          if (!device) return;
+          this.claimedThisSession = true;
+        }
         const cloud = await api.events({ includeDeleted: true });
         const deviceEvents = await ble.list();
         const deviceIds = new Set(deviceEvents.map((event) => event.id));
@@ -927,16 +930,8 @@ Page({
 
   // --- voice schedule ---------------------------------------------------
   startVoice() {
-    // Guest mode never opens the microphone: holding the button only stages
-    // the gesture, releasing it fills a canned sentence.
-    if (this.data.guest) {
-      if (this.data.voicePhase || this.data.busy || this.data.voiceRecording) return;
-      this.setData({
-        voiceRecording: true,
-        voiceButtonLabel: '松开 发送',
-        voiceStatus: '游客模式：松开后填入样例文字',
-        voiceError: '',
-      });
+    if (!this.data.loggedIn) {
+      this.voiceLoginHint();
       return;
     }
     if (!this.voiceRecorder) return;
@@ -978,36 +973,11 @@ Page({
 
   stopVoice() {
     this.voicePressed = false;
-    if (this.data.guest) {
-      this.stopGuestVoice();
-      return;
-    }
     if (this.voiceRecorder) this.voiceRecorder.stop();
-  },
-
-  stopGuestVoice() {
-    if (!this.data.voiceRecording) return;
-    this.setData({
-      voiceRecording: false,
-      voiceButtonLabel: '按住 说话',
-      voiceText: sample.transcribe(),
-      voicePhase: '',
-      voiceStatus: '样例识别结果，可修改后解析',
-      voiceError: '',
-    });
   },
 
   onVoiceTouchCancel() {
     this.voicePressed = false;
-    if (this.data.guest) {
-      this.setData({
-        voiceRecording: false,
-        voiceButtonLabel: '按住 说话',
-        voicePhase: '',
-        voiceStatus: '已取消录音',
-      });
-      return;
-    }
     this.cancelVoiceRecording();
     this.setData({ voicePhase: '', voiceStatus: '已取消录音' });
   },
@@ -1015,12 +985,6 @@ Page({
   cancelVoiceRecording() {
     this.voicePressed = false;
     this.stopVoiceTimer();
-    if (this.data.guest) {
-      if (this.data.voiceRecording) {
-        this.setData({ voiceRecording: false, voiceButtonLabel: '按住 说话' });
-      }
-      return;
-    }
     if (this.voiceRecorder) this.voiceRecorder.cancel();
   },
 
@@ -1117,6 +1081,10 @@ Page({
   },
 
   confirmVoice() {
+    if (!this.data.loggedIn) {
+      this.voiceLoginHint();
+      return Promise.resolve(false);
+    }
     if (!this.voiceRecorder) return Promise.resolve(false);
     if (this.data.voicePhase || this.data.busy || this.data.voiceRecording) {
       return Promise.resolve(false);
@@ -1129,7 +1097,7 @@ Page({
 
     this.setData({
       voicePhase: 'parsing',
-      voiceStatus: this.data.guest ? '正在读取样例解析…' : 'AI 正在解析…',
+      voiceStatus: 'AI 正在解析…',
       voiceError: '',
     });
     return api.parseSchedule(text)
@@ -1152,9 +1120,7 @@ Page({
           voiceFilled: true,
           voicePhase: '',
           voiceButtonLabel: '按住 说话',
-          voiceStatus: this.data.guest
-            ? '样例已填入表单（游客不可保存）'
-            : '已填入下方表单，确认后保存',
+          voiceStatus: '已填入下方表单，确认后保存',
           voiceError: '',
         }, () => this.revealAddForm());
         return true;
@@ -1163,9 +1129,7 @@ Page({
         this.setData({
           voicePhase: '',
           voiceButtonLabel: '按住 说话',
-          voiceStatus: this.data.guest
-            ? '游客模式：按住按钮填入样例文字'
-            : '说一句，AI 帮你填好',
+          voiceStatus: '说一句，AI 帮你填好',
           voiceError: (err && err.message) || 'AI 解析失败，请重试',
         });
         return false;
@@ -1224,10 +1188,6 @@ Page({
   },
 
   submit() {
-    if (this.data.guest) {
-      this.guestHint();
-      return Promise.resolve(false);
-    }
     if (this.data.voicePhase) return Promise.resolve(false);
     return this.saveForm(this.data.form).then((saved) => {
       if (saved && this.data.voiceFilled) {
@@ -1246,13 +1206,10 @@ Page({
   },
 
   // Shared by the manual form and the AI-filled draft. Resolves to true only
-  // after the cloud write succeeds, so submit() knows whether to clear the
-  // voice text/flag.
+  // after the write succeeds, so submit() knows whether to clear the voice
+  // text/flag. Without a login the event goes to wx storage on this phone and
+  // never reaches the server or the e-ink board.
   saveForm(form) {
-    if (this.data.guest) {
-      this.guestHint();
-      return Promise.resolve(false);
-    }
     if (this.data.busy) return Promise.resolve(false);
     const title = String(form.title || '').trim();
     if (!title) {
@@ -1264,16 +1221,39 @@ Page({
       return Promise.resolve(false);
     }
 
-    this.setData({ busy: true, error: '' });
-    let deviceError = '';
-    let saved = false;
-    return api.createEvent({
+    const payload = {
       date: form.date,
       start: form.start,
       end: form.end,
       title,
       note: String(form.note || '').trim(),
-    })
+    };
+
+    if (!this.data.loggedIn) {
+      this.setData({ busy: true, error: '' });
+      let saved = false;
+      try {
+        localEvents.create(payload);
+        wx.showToast({ title: '已保存到本机', icon: 'none', duration: 2200 });
+        const fresh = defaultForm();
+        this.setData({
+          form: Object.assign({}, fresh, { date: form.date }),
+          calendarOpen: false,
+          titleBytes: 0,
+          noteBytes: 0,
+        });
+        saved = true;
+      } catch (err) {
+        this.setData({ error: err.message });
+      }
+      this.setData({ busy: false });
+      return Promise.resolve(saved);
+    }
+
+    this.setData({ busy: true, error: '' });
+    let deviceError = '';
+    let saved = false;
+    return api.createEvent(payload)
       .then((event) => {
         if (!ble.isConnected()) return event;
         return ble.add(event)

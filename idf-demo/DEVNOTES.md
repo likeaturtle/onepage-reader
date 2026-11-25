@@ -917,7 +917,7 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
   「日程」（`pages/calendar`，本月列表 + 翻月 + 删除）、「我的」（`pages/profile`）。
 - 新增 `pages/calendar/`（js/wxml/wxss/json）：`loadMonth/shiftMonth/prevMonth/nextMonth/
   remove/doRemove` 和 `monthCursor/monthLabel/groups/eventCount/loading` 从 index 原样搬过去；
-  `onShow` 每次重新拉当月（添加页可能刚写过云端），未登录仍 `reLaunch` 登录页。
+  `onShow` 每次重新拉当月（添加页可能刚写过云端/本机）。
 - 列表相关样式（`.month-bar/.month-btn/.month-label/.day-group/.day-head/.event*`）
   从 `pages/index/index.wxss` 移到 `pages/calendar/calendar.wxss`，index 不再引用。
 - index 页面删掉 month 状态、`loadMonth` 调用（onShow/connect/refresh/submit/syncDevice）
@@ -929,6 +929,26 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
   已连接同时删设备，4 个用例），全量 43 个用例通过。
 - 预览 `tools/preview_miniprogram_tabs.png` 是按真实 wxss 1:1 渲染的排版检查图
   （tabBar 是模拟绘制，不是真机截图，已 gitignore）。
+
+### 16.25 2026-11-25 小程序免登录 + 本机日程
+
+- 移除游客模式和 `utils/sample.js`：登录页只保留微信登录/开发登录，未登录不再
+  `reLaunch` 登录页，冷启动直接落在「添加」tab。
+- `utils/auth.js` 只把带 token 的 session 当成有效登录，旧游客记录（无 token）会被
+  忽略；`utils/api.js` 在无 token 时直接拒绝需要认证的调用，401 清 token 后回到本机
+  模式（`reLaunch` 添加页），不再把用户锁在登录页。
+- 新增 `utils/local-events.js`：wx storage `onepage.local.events.v1`，提供
+  list/all/create/update/remove，id 前缀 `local-`。未登录保存日程只写这里；「日程」页
+  在登录后仍把本机事件和云端事件并列展示并标「本机日程」，本机事件只在手机上改。
+- 未登录时「添加」页禁用按住说话/解析日程（textarea 和按钮置灰，handler 也会提示先
+  登录），保存只写本机；BLE 扫描/连接仍可用，但跳过 `claimDevice` 和 `syncDevice`，
+  同步按钮提示先登录。
+- 「我的」页未登录显示「本机模式 → 微信登录」；登录页左上角「返回」回本机模式；退出
+  登录回到「添加」页。登录页不再有游客入口。
+- 测试：删除 `guest.test.js` / `guest-page.mock.test.js`，新增
+  `local-events.test.js`（存储/重启/旧 guest 忽略/写失败）和
+  `local-page.mock.test.js`（无跳转、语音禁用、本机保存、本机编辑删除、登录后并列、
+  登录页无游客入口）；全量 126 个用例通过。
 
 ## 17. 2026-11-16：日程从 NVS 迁到 LittleFS
 

@@ -121,7 +121,7 @@ function makePage(options = {}) {
       get: () => ({ token: 'token', user: {} }),
       getToken: () => 'token',
       getUser: () => ({}),
-      isGuest: () => false,
+      isLoggedIn: () => true,
       setUser() {},
     },
   };
