@@ -35,6 +35,9 @@ function makePage(options = {}) {
   };
   const toasts = [];
   const events = options.events || [];
+  const scrollCalls = [];
+  const queries = [];
+  const rects = options.rects || {};
 
   global.Page = (value) => { definition = value; };
   global.wx = {
@@ -43,6 +46,32 @@ function makePage(options = {}) {
       if (opts.success) opts.success({ confirm: true, cancel: false });
     },
     reLaunch() {},
+    getWindowInfo: () => ({ windowHeight: Number(options.windowHeight) || 700 }),
+    pageScrollTo: (opts) => scrollCalls.push(opts),
+    createSelectorQuery() {
+      let found = null;
+      let view = null;
+      return {
+        select(selector) {
+          return {
+            boundingClientRect() {
+              found = rects[selector] || null;
+              queries.push(selector);
+              return this;
+            },
+          };
+        },
+        selectViewport() {
+          return {
+            scrollOffset() {
+              view = { scrollTop: Number(options.scrollTop) || 0 };
+              return this;
+            },
+          };
+        },
+        exec(callback) { callback([found, view]); },
+      };
+    },
   };
 
   require.cache[blePath] = {
@@ -119,6 +148,8 @@ function makePage(options = {}) {
   });
   page.calls = calls;
   page.toasts = toasts;
+  page.scrollCalls = scrollCalls;
+  page.queries = queries;
   return page;
 }
 
@@ -305,4 +336,128 @@ test('a 24:00 end from the server opens as 23:59 in the native time picker', asy
 
   page.edit({ currentTarget: { dataset: { id: 'e5' } } });
   assert.equal(page.data.editor.end, '23:59');
+});
+
+test('opening the tab lands on today, not on the first event of the month', async () => {
+  const todayText = today();
+  const page = makePage({
+    events: [
+      { id: 'e0', date: '2026-01-01', start: '09:00', end: '09:30', title: '月初', note: '', deviceId: null },
+      { id: 'e1', date: todayText, start: '13:00', end: '14:00', title: '今天', note: '', deviceId: null },
+    ],
+    rects: { [`#day-${todayText}`]: { top: 800, height: 160 } },
+    windowHeight: 700,
+  });
+  page.onLoad();
+  await page.onShow();
+
+  assert.deepEqual(page.queries, [`#day-${todayText}`]);
+  // 800 px down, anchored 12 px below the top of the page.
+  assert.deepEqual(page.scrollCalls, [{ scrollTop: 788, duration: 200 }]);
+});
+
+test('a today row already on screen keeps the current scroll position', async () => {
+  const todayText = today();
+  const page = makePage({
+    events: [{ id: 'e1', date: todayText, start: '13:00', end: '14:00', title: '今天', note: '', deviceId: null }],
+    rects: { [`#day-${todayText}`]: { top: 120, height: 160 } },
+    scrollTop: 400,
+    windowHeight: 700,
+  });
+  page.onLoad();
+  await page.onShow();
+
+  assert.deepEqual(page.scrollCalls, []);
+});
+
+test('a blank today still gets a section with no items and is revealed', async () => {
+  const now = new Date();
+  const todayText = fmt.ymd(now);
+  const later = fmt.ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
+  const page = makePage({
+    events: [{ id: 'e1', date: later, start: '09:00', end: '09:30', title: '后天', note: '', deviceId: null }],
+    rects: { [`#day-${todayText}`]: { top: 800, height: 120 } },
+    windowHeight: 700,
+  });
+  page.onLoad();
+  await page.onShow();
+
+  assert.deepEqual(page.data.groups.map((group) => group.date), [todayText, later]);
+  const todayGroup = page.data.groups[0];
+  assert.equal(todayGroup.today, true);
+  assert.deepEqual(todayGroup.items, []);
+  assert.equal(page.data.eventCount, 1);
+  assert.deepEqual(page.queries, [`#day-${todayText}`]);
+  assert.deepEqual(page.scrollCalls, [{ scrollTop: 788, duration: 200 }]);
+});
+
+test('an empty current month still lists today with no items', async () => {
+  const todayText = today();
+  const page = makePage({ events: [] });
+  page.onLoad();
+  await page.onShow();
+
+  assert.equal(page.data.eventCount, 0);
+  assert.deepEqual(page.data.groups.map((group) => group.date), [todayText]);
+  assert.equal(page.data.groups[0].today, true);
+  assert.deepEqual(page.data.groups[0].items, []);
+});
+
+test('reloads after an edit or a month arrow do not move the page', async () => {
+  const todayText = today();
+  const page = makePage({
+    events: [{ id: 'e1', date: todayText, start: '09:00', end: '09:30', title: 'A', note: '', deviceId: null }],
+    rects: { [`#day-${todayText}`]: { top: 800, height: 160 } },
+    windowHeight: 700,
+  });
+  page.onLoad();
+  await page.onShow();
+  page.scrollCalls.length = 0;
+  page.queries.length = 0;
+
+  await page.loadMonth();
+  assert.deepEqual(page.scrollCalls, []);
+
+  await page.nextMonth();
+  assert.deepEqual(page.scrollCalls, []);
+  assert.deepEqual(page.queries, []);
+});
+
+test('a month boundary crossed in the background moves the tab to the new month', async () => {
+  const page = makePage({ events: [] });
+  page.onLoad();
+  await page.onShow();
+
+  // Pretend the last visit happened in the previous month and the app stayed
+  // in the background until today, which is now in another month.
+  const now = new Date();
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  page.todayMonth = fmt.ymd(previous);
+  page.data.monthCursor = fmt.ymd(previous);
+  page.calls.events.length = 0;
+
+  await page.onShow();
+
+  const currentMonth = fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+  assert.equal(page.data.monthCursor, currentMonth);
+  assert.deepEqual(page.calls.events[0], fmt.monthBounds(currentMonth));
+  assert.deepEqual(page.data.groups.map((group) => group.date), [today()]);
+});
+
+test('a month the user browsed to is not pulled back to the current month', async () => {
+  const page = makePage({ events: [] });
+  page.onLoad();
+  await page.onShow();
+
+  const now = new Date();
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const browsed = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  page.todayMonth = fmt.ymd(previous); // stale current month
+  page.data.monthCursor = fmt.ymd(browsed); // the user had navigated here
+  page.calls.events.length = 0;
+
+  await page.onShow();
+
+  assert.equal(page.data.monthCursor, fmt.ymd(browsed));
+  assert.deepEqual(page.calls.events[0], fmt.monthBounds(fmt.ymd(browsed)));
 });

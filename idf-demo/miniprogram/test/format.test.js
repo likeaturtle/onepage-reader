@@ -33,3 +33,48 @@ test('localDateTime renders a server timestamp in local time', () => {
   assert.equal(fmt.localDateTime(null), '');
   assert.equal(fmt.localDateTime('not a date'), '');
 });
+
+test('groupEvents sorts events by date and start and groups them by day', () => {
+  const groups = fmt.groupEvents([
+    { id: 'b', date: '2026-11-10', start: '13:00', end: '14:00', title: 'B' },
+    { id: 'a', date: '2026-11-10', start: '09:00', end: '10:00', title: 'A' },
+    { id: 'c', date: '2026-11-09', start: '09:00', end: '10:00', title: 'C' },
+  ]);
+  assert.deepEqual(groups.map((group) => group.date), ['2026-11-09', '2026-11-10']);
+  assert.deepEqual(groups[1].items.map((item) => item.title), ['A', 'B']);
+  assert.equal(groups[0].weekday, '周一'); // 2026-11-09 is a Monday
+});
+
+test('groupEvents inserts an empty section for today when it has no events', () => {
+  const todayText = fmt.ymd(new Date());
+  const groups = fmt.groupEvents([
+    { id: 'a', date: '2000-01-01', start: '09:00', end: '10:00', title: 'A' },
+    { id: 'b', date: '2999-12-31', start: '09:00', end: '10:00', title: 'B' },
+  ], { today: todayText });
+
+  assert.deepEqual(groups.map((group) => group.date),
+    ['2000-01-01', todayText, '2999-12-31']);
+  const todayGroup = groups[1];
+  assert.equal(todayGroup.today, true);
+  assert.equal(todayGroup.day, new Date().getDate());
+  assert.deepEqual(todayGroup.items, []);
+});
+
+test('groupEvents does not duplicate today and still lists a blank current month', () => {
+  const todayText = fmt.ymd(new Date());
+  const groups = fmt.groupEvents([
+    { id: 'a', date: todayText, start: '09:00', end: '10:00', title: 'A' },
+  ], { today: todayText });
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].items.length, 1);
+
+  // An empty current month still gets today's section; the month-level hint
+  // is driven by the event count instead of the group count.
+  const emptyMonth = fmt.groupEvents([], { today: todayText });
+  assert.equal(emptyMonth.length, 1);
+  assert.equal(emptyMonth[0].date, todayText);
+  assert.deepEqual(emptyMonth[0].items, []);
+
+  // Other months pass no `today` option, so they stay group-less when empty.
+  assert.deepEqual(fmt.groupEvents([]), []);
+});

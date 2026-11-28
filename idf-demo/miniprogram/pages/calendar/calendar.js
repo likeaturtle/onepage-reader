@@ -6,6 +6,7 @@ const api = require('../../utils/api');
 const deviceSync = require('../../utils/device-sync');
 const eventRules = require('../../utils/event');
 const fmt = require('../../utils/format');
+const cal = require('../../utils/calendar');
 const utf8 = require('../../utils/utf8');
 const localEvents = require('../../utils/local-events');
 
@@ -40,9 +41,12 @@ Page({
     const now = new Date();
     const meta = fmt.monthMeta(now);
     this.events = [];
+    // The month that is "current" for this visit; compared on the next show
+    // so a month boundary crossed in the background moves the cursor along.
+    this.todayMonth = fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1));
     this.setData({
       loggedIn: auth.isLoggedIn(),
-      monthCursor: fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1)),
+      monthCursor: this.todayMonth,
       monthLabel: fmt.monthLabel(now),
       monthTitle: meta.title,
       monthYear: meta.year,
@@ -51,12 +55,39 @@ Page({
 
   onShow() {
     this.setData({ loggedIn: auth.isLoggedIn() });
+    this.followTodayMonth();
     // The 添加 tab can change the store (local or cloud), so every visit
     // reloads instead of trusting an old list.
+    // A tab visit also lands on today instead of the month's first event;
+    // the reloads caused by edits and month arrows must not move the page.
+    this.revealPending = true;
     return this.loadMonth();
   },
 
+  /* A month boundary crossed while the mini program was in the background
+   * must not leave the tab on last month (where today has no section at all).
+   * Only follow it when the page was still showing the month that was current
+   * at the previous visit; a month the user navigated to is left alone. */
+  followTodayMonth() {
+    const now = new Date();
+    const currentMonth = fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+    if (!this.todayMonth || this.todayMonth === currentMonth) return;
+    if (this.data.monthCursor === this.todayMonth) {
+      const meta = fmt.monthMeta(now);
+      this.setData({
+        monthCursor: currentMonth,
+        monthLabel: fmt.monthLabel(now),
+        monthTitle: meta.title,
+        monthYear: meta.year,
+        groups: [],
+      });
+    }
+    this.todayMonth = currentMonth;
+  },
+
   loadMonth() {
+    const reveal = this.revealPending === true;
+    this.revealPending = false;
     this.setData({ loading: true, error: '' });
     const cursor = this.data.monthCursor;
     const bounds = fmt.monthBounds(cursor);
@@ -69,8 +100,13 @@ Page({
       .then((events) => {
         if (cursor !== this.data.monthCursor) return; // a newer month won
         this.events = events;
+        const now = new Date();
+        const currentMonth = fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1));
         this.setData({
-          groups: fmt.groupEvents(events),
+          // Today gets a section even without events, so a tap on the tab
+          // still lands on today with a "暂无日程" placeholder.
+          groups: fmt.groupEvents(events,
+            cursor === currentMonth ? { today: fmt.ymd(now) } : undefined),
           eventCount: events.length,
           localCount: events.filter((event) => event.local).length,
         });
@@ -79,8 +115,48 @@ Page({
         if (cursor === this.data.monthCursor) this.setData({ error: err.message });
       })
       .then(() => {
-        if (cursor === this.data.monthCursor) this.setData({ loading: false });
+        if (cursor !== this.data.monthCursor) return;
+        // The loading placeholder sits above the list; wait until it is gone
+        // so the measured position of today's row matches the final layout.
+        this.setData({ loading: false }, () => {
+          if (reveal) this.revealToday();
+        });
       });
+  },
+
+  /* Jump to today's day section after the tab's first load. The current month
+   * always carries a section for today: groupEvents inserts an empty one when
+   * the day has no events. Only the current month is anchored, so browsing
+   * another month (or an open editor) leaves the page where it is. */
+  revealToday() {
+    if (this.data.editorOpen) return;
+    if (typeof wx === 'undefined' || typeof wx.createSelectorQuery !== 'function') return;
+    const groups = this.data.groups || [];
+    if (!groups.length) return;
+    const now = new Date();
+    if (this.data.monthCursor !== fmt.ymd(new Date(now.getFullYear(), now.getMonth(), 1))) return;
+    const todayText = fmt.ymd(now);
+    const anchor = groups.find((group) => group.date === todayText);
+    if (!anchor) return; // no sections yet (failed load)
+
+    const query = wx.createSelectorQuery();
+    query.select(`#day-${anchor.date}`).boundingClientRect();
+    query.selectViewport().scrollOffset();
+    query.exec((res) => {
+      const rect = res && res[0];
+      const view = res && res[1];
+      if (!rect || !view) return;
+      const info = typeof wx.getWindowInfo === 'function'
+        ? wx.getWindowInfo()
+        : wx.getSystemInfoSync();
+      const target = cal.revealAnchorScrollTop({
+        top: rect.top,
+        scrollTop: view.scrollTop,
+        viewport: Number(info && info.windowHeight),
+      });
+      if (target == null) return;
+      wx.pageScrollTo({ scrollTop: target, duration: 200 });
+    });
   },
 
   shiftMonth(delta) {

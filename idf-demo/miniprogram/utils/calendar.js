@@ -79,6 +79,28 @@ function revealScrollTop(options) {
   return Math.max(0, Math.round(scrollTop + delta));
 }
 
+/**
+ * Absolute scrollTop that puts an element's top `margin` px below the viewport
+ * top, or `null` when the element is already on screen. `top` is the element's
+ * viewport offset and `scrollTop` the current page offset.
+ *
+ * Unlike `revealScrollTop()`, this aligns the top edge instead of fitting the
+ * whole element: a day section can be taller than the screen, and only its
+ * header (the anchor the user aims for) has to be readable.
+ */
+function revealAnchorScrollTop(options) {
+  const top = Number(options && options.top);
+  const scrollTop = Number(options && options.scrollTop) || 0;
+  const viewport = Number(options && options.viewport);
+  const margin = Number.isFinite(Number(options && options.margin))
+    ? Number(options.margin)
+    : REVEAL_MARGIN;
+  if (!Number.isFinite(top) || !Number.isFinite(viewport)) return null;
+  // Already on screen: keep the scroll position the user left the tab at.
+  if (top >= 0 && top < viewport) return null;
+  return Math.max(0, Math.round(scrollTop + top - margin));
+}
+
 module.exports = {
   CELLS,
   WEEKDAY_INITIALS,
@@ -87,4 +109,5 @@ module.exports = {
   cursorFrom,
   monthGrid,
   revealScrollTop,
+  revealAnchorScrollTop,
 };

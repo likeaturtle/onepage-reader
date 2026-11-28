@@ -98,6 +98,16 @@
   color: #a39c8d;
 }
 
+/* Empty day (today without events): same top rule as an event row, so the
+ * placeholder sits exactly where the schedule content would start. */
+.day-empty {
+  padding: 20rpx 0;
+  border-top: 1rpx solid #f4f0e8;
+  font-size: 24rpx;
+  letter-spacing: 0.04em;
+  color: #a39c8d;
+}
+
 .event {
   display: flex;
   align-items: flex-start;

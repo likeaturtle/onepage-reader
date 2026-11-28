@@ -75,14 +75,15 @@
 
   <view wx:if="{{loading}}" class="empty">{{loggedIn ? '正在读取云端…' : '正在读取本机日程…'}}</view>
   <view wx:elif="{{!groups.length && error}}" class="empty">云端日程加载失败，请检查网络后重试。</view>
-  <view wx:elif="{{!groups.length}}" class="empty">{{loggedIn ? '本月还没有日程，到「添加」页新建一条。' : '本月还没有日程，到「添加」页新建一条，暂时只保存在本机。'}}</view>
+  <view wx:elif="{{!eventCount}}" class="empty">{{loggedIn ? '本月还没有日程，到「添加」页新建一条。' : '本月还没有日程，到「添加」页新建一条，暂时只保存在本机。'}}</view>
 
-  <view wx:for="{{groups}}" wx:key="date" class="day">
+  <view wx:for="{{groups}}" wx:key="date" id="day-{{item.date}}" class="day">
     <view class="day-head">
       <text class="day-num {{item.today ? 'on' : ''}}">{{item.day}}</text>
       <text class="day-weekday">{{item.weekday}}{{item.today ? ' · 今天' : ''}}</text>
-      <text class="day-count">{{item.items.length}} 条</text>
+      <text wx:if="{{item.items.length}}" class="day-count">{{item.items.length}} 条</text>
     </view>
+    <view wx:if="{{!item.items.length}}" class="day-empty">暂无日程</view>
     <view wx:for="{{item.items}}" wx:for-item="event" wx:key="id" class="event">
       <view class="event-time">
         <text>{{event.start}}</text>

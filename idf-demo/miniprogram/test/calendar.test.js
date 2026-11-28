@@ -87,3 +87,24 @@ test('revealScrollTop ignores incomplete measurements', () => {
   assert.equal(cal.revealScrollTop({ top: 10, height: 10 }), null);
   assert.equal(cal.revealScrollTop({ top: 'x', height: 10, scrollTop: 0, viewport: 600 }), null);
 });
+
+test('revealAnchorScrollTop aligns an off-screen top and leaves a visible one alone', () => {
+  // Below the fold: 800 - 12 px above, added to the current scroll.
+  assert.equal(
+    cal.revealAnchorScrollTop({ top: 800, scrollTop: 40, viewport: 700 }),
+    828
+  );
+  // Partially above the fold: scroll back up.
+  assert.equal(cal.revealAnchorScrollTop({ top: -30, scrollTop: 120, viewport: 700 }), 78);
+  // Already on screen, even at the very bottom edge.
+  assert.equal(cal.revealAnchorScrollTop({ top: 0, scrollTop: 120, viewport: 700 }), null);
+  assert.equal(cal.revealAnchorScrollTop({ top: 699, scrollTop: 0, viewport: 700 }), null);
+  // Just above the page top: clamp to zero instead of a negative scroll.
+  assert.equal(cal.revealAnchorScrollTop({ top: -3, scrollTop: 0, viewport: 700 }), 0);
+});
+
+test('revealAnchorScrollTop ignores incomplete measurements', () => {
+  assert.equal(cal.revealAnchorScrollTop({}), null);
+  assert.equal(cal.revealAnchorScrollTop({ top: 10, scrollTop: 0 }), null);
+  assert.equal(cal.revealAnchorScrollTop({ top: 'x', scrollTop: 0, viewport: 700 }), null);
+});

@@ -950,6 +950,35 @@ logo、20 px wordmark 和 64 px 分隔线保持不变；`HEADER_STATUS_Y` 随之
   `local-page.mock.test.js`（无跳转、语音禁用、本机保存、本机编辑删除、登录后并列、
   登录页无游客入口）；全量 126 个用例通过。
 
+### 16.26 2026-11-28 日程 tab 打开时定位到今天
+
+- 「日程」页原来每次 `onShow` 拉完当月列表后停在页面顶部，第一条是本月初最早的日程，
+  不一定在今天，用户得自己往下滚。
+- 每个 `view.day` 加 `id="day-{{item.date}}"`。`onShow` 触发的那次 `loadMonth()` 在
+  `loading` 占位块移除后再测量（第二个 `setData` 的回调，否则会算上占位块的高度），
+  查 `#day-<today>` 的 `boundingClientRect`，用 `cal.revealAnchorScrollTop()` 算目标，
+  `wx.pageScrollTo` 把这一天滚到距页面顶部 12 px 的位置。
+- 今天没有日程时，`fmt.groupEvents(events, { today })` 仍插入一个空的今天分组，
+  `view.day` 里用 `暂无日程` 占位（隐藏「0 条」计数），所以 tab 总是落在今天而不是
+  下一条有日程的日期。今天有日程时不重复插入；整月全空时仍保留
+  `eventCount === 0` 的「本月还没有日程」提示，今天那一行照常显示在提示下面。
+- 今天那一行已经在视口里（`0 <= top < windowHeight`）时不滚动，保留用户上次留下的
+  滚动位置。
+- 只在当前月、没有打开编辑面板时定位：翻月、编辑/删除后的 `loadMonth()` 是直接调用，
+  不带 `revealPending` 标记，不会把页面从用户正在看的位置拉走；标记在 `loadMonth()`
+  开头消费，翻月请求覆盖尚未完成的首次加载时也不会误跳。
+- 空分组不写 storage/云端，每次 `loadMonth()` 按当天重新生成，所以第二天不会残留
+  昨天的「今天 · 暂无日程」；昨天若本来有日程，只剩普通日期行，不再有「今天」标记。
+- 跨月：`onShow` 先跑 `followTodayMonth()`。页面还停在“上次访问时的当前月”时，把月份
+  游标推进到新的当前月（否则第二天进新月会停在上个月、页面里根本没有今天）；用户手动
+  翻到的其它月份不跟随。小程序一直停在日程页跨过零点时，标签要等下一次 `onShow`
+  重载才会更新。
+- 测试：`test/format.test.js` 补 `groupEvents` 的分组/空今天/不重复用例；
+  `test/calendar.test.js` 加 `revealAnchorScrollTop` 的边界用例；
+  `test/month.mock.test.js` 增加 7 个用例（首次打开跳今天、今天行已可见不动、今天无
+  日程仍显示并定位、整月为空仍列出今天、编辑/翻月重载不滚动、跨月跟随、手动翻月不被
+  拉回）；全量 138 个用例通过。
+
 ## 17. 2026-11-16：日程从 NVS 迁到 LittleFS
 
 ### 17.1 分区表重排（方案 B′）

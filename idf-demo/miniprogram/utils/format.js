@@ -66,7 +66,27 @@ function shiftClock(hhmm, minutes) {
   return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
 }
 
-function groupEvents(events) {
+function dayGroup(dateText, todayYmd) {
+  const day = parseYmd(dateText);
+  return {
+    date: dateText,
+    label: `${day.getMonth() + 1} 月 ${day.getDate()} 日 ${WEEKDAYS[day.getDay()]}`,
+    day: day.getDate(),
+    weekday: SHORT_WEEKDAYS[day.getDay()],
+    today: dateText === todayYmd,
+    items: [],
+  };
+}
+
+/**
+ * Group events into agenda day sections, sorted by date and start time.
+ *
+ * `options.today` (`YYYY-MM-DD`) inserts an empty section for that day when
+ * none of the events falls on it, so the agenda tab can show "暂无日程" for
+ * today instead of opening on an older event. The month-level "还没有日程"
+ * hint is driven by the event count, so an empty current month keeps it.
+ */
+function groupEvents(events, options) {
   const sorted = (events || []).slice().sort((a, b) => {
     const left = `${a.date} ${a.start || ''}`;
     const right = `${b.date} ${b.start || ''}`;
@@ -81,15 +101,7 @@ function groupEvents(events) {
   let current = null;
   for (const event of sorted) {
     if (!current || current.date !== event.date) {
-      const day = parseYmd(event.date);
-      current = {
-        date: event.date,
-        label: `${day.getMonth() + 1} 月 ${day.getDate()} 日 ${WEEKDAYS[day.getDay()]}`,
-        day: day.getDate(),
-        weekday: SHORT_WEEKDAYS[day.getDay()],
-        today: event.date === todayYmd,
-        items: [],
-      };
+      current = dayGroup(event.date, todayYmd);
       groups.push(current);
     }
     current.items.push({
@@ -100,6 +112,14 @@ function groupEvents(events) {
       note: event.note || '',
       local: event.local === true,
     });
+  }
+
+  const emptyToday = options && options.today;
+  if (emptyToday && !groups.some((group) => group.date === emptyToday)) {
+    const group = dayGroup(emptyToday, todayYmd);
+    const index = groups.findIndex((item) => item.date > emptyToday);
+    if (index < 0) groups.push(group);
+    else groups.splice(index, 0, group);
   }
   return groups;
 }

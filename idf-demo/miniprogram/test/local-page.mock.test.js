@@ -257,7 +257,9 @@ test('the 日程 page lists, edits and deletes local events without touching the
 
   assert.equal(page.data.loggedIn, false);
   assert.equal(page.data.eventCount, 1);
-  assert.equal(page.data.groups.length, 1);
+  const eventGroup = page.data.groups.find((group) => group.date === '2026-11-19');
+  assert.ok(eventGroup);
+  assert.equal(eventGroup.items.length, 1);
   assert.equal(calls.me + calls.create, 0);
 
   page.edit({ currentTarget: { dataset: { id: event.id } } });
@@ -309,7 +311,8 @@ test('a logged-in 日程 page keeps local events visible and edits them locally'
   assert.equal(page.data.loggedIn, true);
   assert.equal(page.data.eventCount, 2);
   assert.equal(page.data.localCount, 1);
-  assert.ok(page.data.groups[0].items.some((item) => item.local === true));
+  const eventGroup = page.data.groups.find((group) => group.date === '2026-11-19');
+  assert.ok(eventGroup.items.some((item) => item.local === true));
 
   page.edit({ currentTarget: { dataset: { id: event.id } } });
   page.onEditorTitle({ detail: { value: '本机改后' } });
